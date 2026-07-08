@@ -30,6 +30,12 @@ export function createGoogleClient(apiKey: string) {
 
     return {
       content: text,
+      usage: result.response.usageMetadata
+        ? {
+            promptTokens: result.response.usageMetadata.promptTokenCount,
+            completionTokens: result.response.usageMetadata.candidatesTokenCount ?? result.response.usageMetadata.totalTokenCount - result.response.usageMetadata.promptTokenCount,
+          }
+        : undefined,
     };
   }
 

@@ -176,7 +176,7 @@ export default function NuevaCuentaPage() {
                   <p className="text-muted-darker mt-1">
                     En tu App de Meta, configura el webhook con la URL:{" "}
                     <code className="text-xs bg-surface px-1.5 py-0.5 rounded font-mono">
-                      https://TUDOMINIO.com/api/whatsapp/webhook
+                      {typeof window !== "undefined" ? `${window.location.origin}/api/whatsapp/webhook` : "/api/whatsapp/webhook"}
                     </code>
                   </p>
                   <p className="text-muted-darker mt-1">

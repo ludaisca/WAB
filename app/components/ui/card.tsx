@@ -16,9 +16,10 @@ interface CardProps {
   className?: string;
   children: React.ReactNode;
   as?: React.ElementType;
+  [key: string]: unknown;
 }
 
-export function Card({ padding = "md", interactive = false, className, children, as: Tag = "div" }: CardProps) {
+export function Card({ padding = "md", interactive = false, className, children, as: Tag = "div", ...rest }: CardProps) {
   return (
     <Tag
       className={cn(
@@ -27,6 +28,7 @@ export function Card({ padding = "md", interactive = false, className, children,
         interactive && "transition-shadow cursor-pointer hover:shadow-md hover:border-border",
         className
       )}
+      {...rest}
     >
       {children}
     </Tag>

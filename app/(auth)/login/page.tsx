@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { Suspense } from "react";
 import { LogIn } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody, CardFooter } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
@@ -11,10 +12,13 @@ import { Input } from "@/app/components/ui/input";
 import { FormField } from "@/app/components/ui/form-field";
 import { Banner } from "@/app/components/ui/banner";
 import { Logo } from "@/app/components/ui/logo";
+import { Spinner } from "@/app/components/ui/spinner";
 import { loginSchema } from "@/lib/validations";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -49,7 +53,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/dashboard");
+    router.push(callbackUrl || "/dashboard");
     router.refresh();
   }
 
@@ -71,7 +75,7 @@ export default function LoginPage() {
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <FormField label="Email" required error={errors.email}>
-              {(id, describedBy) => (
+              {(id) => (
                 <Input
                   id={id}
                   type="email"
@@ -85,7 +89,7 @@ export default function LoginPage() {
             </FormField>
 
             <FormField label="Contraseña" required error={errors.password}>
-              {(id, describedBy) => (
+              {(id) => (
                 <Input
                   id={id}
                   type="password"
@@ -113,5 +117,17 @@ export default function LoginPage() {
         </CardFooter>
       </Card>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center py-16">
+        <Spinner />
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }

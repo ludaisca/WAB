@@ -31,10 +31,12 @@ export default function SettingsPage() {
   const [passwordError, setPasswordError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const [savingName, setSavingName] = useState(false);
   const [notifications, setNotifications] = useState(true);
   const [twoFactor, setTwoFactor] = useState(false);
   const [allowRegistration, setAllowRegistration] = useState(true);
   const [savingSystem, setSavingSystem] = useState(false);
+  const [systemLoading, setSystemLoading] = useState(false);
 
   const isAdmin = session?.user?.role === "admin";
 
@@ -47,8 +49,32 @@ export default function SettingsPage() {
           setAllowRegistration(d.allowRegistration);
         }
       })
-      .catch(() => {});
+      .catch(() => toastError("Error al cargar configuración"));
   }, [isAdmin]);
+
+  const createdAt = (session?.user as { createdAt?: string })?.createdAt;
+
+  async function handleSaveName() {
+    if (!newName.trim()) return;
+    setSavingName(true);
+    try {
+      const res = await fetch("/api/auth/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Error al guardar");
+      }
+      await update();
+      success("Nombre actualizado");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error");
+    } finally {
+      setSavingName(false);
+    }
+  }
 
   async function handleSaveSystem() {
     setSavingSystem(true);
@@ -126,7 +152,7 @@ export default function SettingsPage() {
               <Badge tone="info" size="sm">{user?.role === "user" ? "Usuario" : user?.role}</Badge>
               <span className="text-xs text-muted-darker flex items-center gap-1">
                 <CalendarDays size={11} />
-                Miembro desde {new Date().toLocaleDateString("es-MX", { year: "numeric", month: "long" })}
+                Miembro desde {createdAt ? new Date(createdAt).toLocaleDateString("es-MX", { year: "numeric", month: "long" }) : new Date().toLocaleDateString("es-MX", { year: "numeric", month: "long" })}
               </span>
             </div>
           </div>
@@ -151,7 +177,7 @@ export default function SettingsPage() {
               )}
             </FormField>
 
-            <Button size="sm" icon={User}>Guardar nombre</Button>
+            <Button size="sm" icon={User} onClick={handleSaveName} loading={savingName}>Guardar nombre</Button>
           </div>
         </CardBody>
       </Card>
@@ -246,13 +272,28 @@ export default function SettingsPage() {
                 </div>
                 <Switch
                   checked={allowRegistration}
-                  onCheckedChange={(v) => {
+                  disabled={systemLoading}
+                  onCheckedChange={async (v) => {
                     setAllowRegistration(v);
-                    fetch("/api/configuracion/sistema", {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ allowRegistration: v }),
-                    }).catch(() => {});
+                    setSystemLoading(true);
+                    try {
+                      const res = await fetch("/api/configuracion/sistema", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ allowRegistration: v }),
+                      });
+                      if (!res.ok) {
+                        setAllowRegistration(!v);
+                        toastError("Error al actualizar");
+                      } else {
+                        success(v ? "Registro libre activado" : "Registro libre desactivado");
+                      }
+                    } catch {
+                      setAllowRegistration(!v);
+                      toastError("Error al actualizar");
+                    } finally {
+                      setSystemLoading(false);
+                    }
                   }}
                 />
               </div>

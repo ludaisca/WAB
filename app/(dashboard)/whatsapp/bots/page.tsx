@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Plus, Bot, Power, PowerOff, Trash2, Settings, TestTube, ExternalLink } from "lucide-react";
+import { Plus, Bot, Power, PowerOff, Trash2, Settings } from "lucide-react";
 import { Card, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";

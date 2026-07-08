@@ -69,6 +69,8 @@ model WAAccount {
   bots        WABot[]
   sharedWith  WAAccountShare[]
 
+  @@index([phoneNumberId])
+  @@unique([phoneNumberId])
   @@unique([userId, name])
   @@map("wa_accounts")
 }
@@ -80,6 +82,7 @@ model WAAccountShare {
   userId      String
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
   @@unique([waAccountId, userId])
   @@map("wa_account_shares")
 }
@@ -127,6 +130,7 @@ model WAMessage {
   createdAt   DateTime         @default(now()) @map("created_at")
 
   @@unique([chatId, wamid])
+  @@index([wamid])
   @@index([chatId, timestamp])
   @@map("wa_messages")
 }
@@ -160,9 +164,9 @@ model WACampaign {
   userId          String
   user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   waAccountId     String
-  waAccount       WAAccount            @relation(fields: [waAccountId], references: [id])
+  waAccount       WAAccount            @relation(fields: [waAccountId], references: [id], onDelete: Cascade)
   waTemplateId    String
-  waTemplate      WATemplate           @relation(fields: [waTemplateId], references: [id])
+  waTemplate      WATemplate           @relation(fields: [waTemplateId], references: [id], onDelete: Cascade)
   name            String
   status          CampaignStatus       @default(DRAFT)
   scheduledAt     DateTime?
@@ -178,6 +182,8 @@ model WACampaign {
 
   recipients WACampaignRecipient[]
 
+  @@index([userId])
+  @@index([waAccountId])
   @@map("wa_campaigns")
 }
 
@@ -272,7 +278,7 @@ model WABotKnowledge {
   id         String   @id @default(cuid())
   title      String
   content    String   @db.Text
-  embedding  Unsupported("vector(1536)")
+  embedding  Unsupported("vector(768)")
   chunkIndex Int
   sourceName String?
   createdAt  DateTime @default(now()) @map("created_at")

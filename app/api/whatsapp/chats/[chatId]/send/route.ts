@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { sendMessageSchema } from "@/lib/validations";
 import { decrypt } from "@/lib/crypto";
 import { sendMessage } from "@/lib/whatsapp";
+import { getUserAccountIds } from "@/lib/shared-accounts";
 
 export async function POST(
   req: Request,
@@ -16,11 +17,12 @@ export async function POST(
     }
 
     const { chatId } = await params;
+    const accountIds = await getUserAccountIds(session.user.id);
 
     const chat = await prisma.wAChat.findFirst({
       where: {
         id: chatId,
-        account: { userId: session.user.id },
+        accountId: { in: accountIds },
       },
       include: { account: true },
     });

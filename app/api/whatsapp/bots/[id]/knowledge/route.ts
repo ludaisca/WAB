@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { indexDocument, getKnowledgeForBot, unlinkKnowledgeFromBot } from "@/lib/ai/rag";
+import { getKnowledgeForBot, unlinkKnowledgeFromBot } from "@/lib/ai/rag";
 import { getUserApiKey } from "@/lib/ai/settings";
+import { ragQueue } from "@/lib/queue";
 import type { AIProvider } from "@/lib/ai/types";
 
 export async function POST(
@@ -49,9 +50,15 @@ export async function POST(
       );
     }
 
-    await indexDocument(title, text, botIds, provider, apiKey);
+    await ragQueue.add("index", {
+      title,
+      content: text,
+      botIds,
+      provider,
+      userId: bot.userId,
+    });
 
-    return NextResponse.json({ success: true }, { status: 201 });
+    return NextResponse.json({ success: true, message: "Documento encolado para indexación" }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });

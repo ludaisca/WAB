@@ -36,27 +36,31 @@ export async function processRagJob(job: RagJob) {
   const chunks = chunkText(content);
 
   for (let i = 0; i < chunks.length; i++) {
-    const embedding = await generateEmbedding(chunks[i], provider, apiKey);
+    try {
+      const embedding = await generateEmbedding(chunks[i], provider, apiKey);
 
-    const knowledgeId = `${Date.now()}_${i}`;
+      const knowledgeId = crypto.randomUUID();
 
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO "wa_bot_knowledge" ("id", "title", "content", "embedding", "chunk_index", "source_name", "created_at")
-       VALUES ($1, $2, $3, $4::vector, $5, $6, NOW())`,
-      knowledgeId,
-      title,
-      chunks[i],
-      `[${embedding.join(",")}]`,
-      i,
-      sourceName ?? null
-    );
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "wa_bot_knowledge" ("id", "title", "content", "embedding", "chunk_index", "source_name", "created_at")
+         VALUES ($1, $2, $3, $4::vector, $5, $6, NOW())`,
+        knowledgeId,
+        title,
+        chunks[i],
+        `[${embedding.join(",")}]`,
+        i,
+        sourceName ?? null
+      );
 
-    for (const botId of botIds) {
-      await prisma.wABotKnowledgeBot.create({
-        data: { knowledgeId, botId },
-      });
+      for (const botId of botIds) {
+        await prisma.wABotKnowledgeBot.create({
+          data: { knowledgeId, botId },
+        });
+      }
+
+      await new Promise((r) => setTimeout(r, 200));
+    } catch (err) {
+      console.error(`[rag-worker] Error processing chunk ${i}:`, err instanceof Error ? err.message : err);
     }
-
-    await new Promise((r) => setTimeout(r, 200));
   }
 }

@@ -28,7 +28,7 @@ export async function POST(req: Request) {
         where: { id: waAccountId, userId: session.user.id },
       }),
       prisma.wATemplate.findFirst({
-        where: { id: waTemplateId, waAccountId },
+        where: { id: waTemplateId, waAccountId, status: "APPROVED" },
       }),
     ]);
 
@@ -37,8 +37,8 @@ export async function POST(req: Request) {
     }
     if (!template) {
       return NextResponse.json(
-        { error: "Plantilla no encontrada" },
-        { status: 404 }
+        { error: "La plantilla no está aprobada o no existe" },
+        { status: 400 }
       );
     }
 
@@ -73,7 +73,7 @@ export async function POST(req: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(_req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Send, MessageSquare } from "lucide-react";
 import { Button } from "@/app/components/ui/button";
@@ -72,7 +72,6 @@ function MessageBubble({ msg }: { msg: Message }) {
 
 export default function ChatDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const { error: toastError } = useToast();
   const chatId = params.chatId as string;
 

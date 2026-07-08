@@ -86,3 +86,31 @@ export const campaignSchema = z.object({
 export type BotInput = z.infer<typeof botSchema>;
 export type BotUpdateInput = z.infer<typeof botUpdateSchema>;
 export type CampaignInput = z.infer<typeof campaignSchema>;
+
+const headerFormatEnum = z.enum(["TEXT", "IMAGE", "VIDEO", "DOCUMENT"]);
+const buttonTypeEnum = z.enum(["QUICK_REPLY", "URL"]);
+
+export const templateCreateSchema = z.object({
+  waAccountId: z.string().min(1, "La cuenta es requerida"),
+  name: z.string()
+    .min(1, "El nombre es requerido")
+    .max(512, "El nombre es demasiado largo")
+    .regex(/^[a-z][a-z0-9_]*$/, "Solo minúsculas, números y guiones bajos (debe empezar con letra)"),
+  language: z.string().min(2, "El idioma es requerido").max(5).default("es"),
+  components: z.object({
+    header: z.object({
+      format: headerFormatEnum,
+      text: z.string().optional(),
+      exampleUrl: z.string().url("URL inválida").optional(),
+    }).optional(),
+    body: z.string().min(1, "El cuerpo es requerido").max(1024, "El cuerpo es demasiado largo"),
+    footer: z.string().max(60, "Máximo 60 caracteres").optional(),
+    buttons: z.array(z.object({
+      type: buttonTypeEnum,
+      text: z.string().min(1, "Texto requerido").max(25, "Máximo 25 caracteres"),
+      url: z.string().url("URL inválida").optional(),
+    })).max(10, "Máximo 10 botones").optional(),
+  }),
+});
+
+export type TemplateCreateInput = z.infer<typeof templateCreateSchema>;

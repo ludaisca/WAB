@@ -30,6 +30,7 @@ export function createOpenRouterClient(apiKey: string) {
     const res = await client.embeddings.create({
       model: params.model,
       input: inputs,
+      dimensions: 768,
     });
 
     return {

@@ -14,6 +14,14 @@ interface BotMessageJob {
 }
 
 export async function processBotMessageJob(job: BotMessageJob) {
+  try {
+    await handleBotMessage(job);
+  } catch (err) {
+    console.error("[bot-worker] Error processing job:", err instanceof Error ? err.message : err);
+  }
+}
+
+async function handleBotMessage(job: BotMessageJob) {
   const { botId, waChatId, incomingMessage } = job;
 
   const bot = await prisma.wABot.findUnique({

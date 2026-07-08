@@ -6,10 +6,17 @@ import { ChevronRight, Home } from "lucide-react";
 
 const LABELS: Record<string, string> = {
   dashboard: "Panel",
-  examples:  "Ejemplos",
-  table:     "Tabla",
-  form:      "Formulario",
+  estadisticas: "Estadísticas",
+  whatsapp: "WhatsApp",
+  bots: "Bots",
+  campanas: "Campañas",
+  chat: "Chats",
+  cuentas: "Cuentas",
+  conocimiento: "Conocimiento",
+  plantillas: "Plantillas",
+  usuarios: "Usuarios",
   configuracion: "Configuración",
+  ia: "IA",
 };
 
 export function Breadcrumb() {

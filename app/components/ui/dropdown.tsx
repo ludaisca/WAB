@@ -52,7 +52,13 @@ export function Dropdown({
 
   return (
     <div ref={ref} className={cn("relative inline-block", className)}>
-      <div onClick={toggle} className="cursor-pointer">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={toggle}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}
+        className="cursor-pointer"
+      >
         {trigger}
       </div>
       {isOpen && (

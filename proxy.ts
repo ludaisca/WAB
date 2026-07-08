@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { type NextRequest, NextResponse } from "next/server";
 
 const PROTECTED = ["/dashboard", "/configuracion", "/whatsapp", "/usuarios", "/estadisticas"];
-const EXECUTIVE_BLOCKED = ["/dashboard", "/estadisticas", "/whatsapp/bots", "/whatsapp/conocimiento", "/whatsapp/campanas", "/usuarios", "/whatsapp/cuentas"];
+const EXECUTIVE_BLOCKED = ["/dashboard", "/estadisticas", "/whatsapp/bots", "/whatsapp/conocimiento", "/whatsapp/campanas", "/whatsapp/plantillas", "/usuarios", "/whatsapp/cuentas"];
 const AUTH = ["/login", "/register"];
 const EXCLUDE = ["/_next", "/api", "/favicon.ico"];
 

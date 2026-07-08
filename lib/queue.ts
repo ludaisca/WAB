@@ -4,6 +4,14 @@ const connection = {
   url: process.env.REDIS_URL || "redis://redis:6379",
 };
 
-export const botQueue = new Queue("bot-messages", { connection });
-export const campaignQueue = new Queue("campaign-send", { connection });
-export const ragQueue = new Queue("rag-index", { connection });
+const defaultJobOptions = {
+  removeOnComplete: { count: 100 },
+  removeOnFail: { count: 50 },
+  attempts: 3,
+  backoff: { type: "exponential" as const, delay: 1000 },
+  timeout: 60_000,
+};
+
+export const botQueue = new Queue("bot-messages", { connection, defaultJobOptions });
+export const campaignQueue = new Queue("campaign-send", { connection, defaultJobOptions });
+export const ragQueue = new Queue("rag-index", { connection, defaultJobOptions });

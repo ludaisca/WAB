@@ -9,22 +9,35 @@ const connection = {
 };
 
 let started = false;
+const workers: Worker[] = [];
 
 export function startWorkers() {
   if (started) return;
   started = true;
 
-  new Worker("bot-messages", async (job) => {
+  const botWorker = new Worker("bot-messages", async (job) => {
     await processBotMessageJob(job.data);
   }, { connection, concurrency: 3 });
 
-  new Worker("campaign-send", async (job) => {
+  const campaignWorker = new Worker("campaign-send", async (job) => {
     await processCampaignJob(job.data);
   }, { connection, concurrency: 1 });
 
-  new Worker("rag-index", async (job) => {
+  const ragWorker = new Worker("rag-index", async (job) => {
     await processRagJob(job.data);
   }, { connection, concurrency: 2 });
 
+  workers.push(botWorker, campaignWorker, ragWorker);
+
   console.log("[workers] BullMQ workers started");
 }
+
+async function shutdown() {
+  console.log("[workers] Shutting down workers...");
+  await Promise.all(workers.map((w) => w.close()));
+  console.log("[workers] Workers shut down");
+  process.exit(0);
+}
+
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);

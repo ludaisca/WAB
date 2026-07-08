@@ -34,7 +34,7 @@ export async function indexDocument(
   for (let i = 0; i < chunks.length; i++) {
     const embedding = await generateEmbedding(chunks[i], provider, apiKey);
 
-    const knowledgeId = `${Date.now()}_${i}`;
+    const knowledgeId = `${Date.now()}_${chunks.length}_${i}`;
 
     await prisma.$executeRawUnsafe(
       `INSERT INTO "wa_bot_knowledge" ("id", "title", "content", "embedding", "chunk_index", "source_name", "created_at")
@@ -123,8 +123,4 @@ export async function unlinkKnowledgeFromBot(knowledgeId: string, botId: string)
       knowledgeId
     );
   }
-}
-
-export async function getBotCountForKnowledge(knowledgeId: string) {
-  return prisma.wABotKnowledgeBot.count({ where: { knowledgeId } });
 }

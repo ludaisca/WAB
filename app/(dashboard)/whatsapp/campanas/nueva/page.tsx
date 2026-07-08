@@ -43,7 +43,7 @@ export default function NewCampaignPage() {
   useEffect(() => {
     fetch("/api/whatsapp/accounts").then(r => r.json()).then(d => {
       if (Array.isArray(d)) setAccounts(d);
-    }).catch(() => {});
+    }).catch(() => toastError("Error al cargar cuentas"));
   }, []);
 
   useEffect(() => {
@@ -56,7 +56,7 @@ export default function NewCampaignPage() {
     })
       .then(r => r.json())
       .then(d => { if (Array.isArray(d)) setTemplates(d); })
-      .catch(() => {})
+      .catch(() => toastError("Error al cargar plantillas"))
       .finally(() => setLoadingTemplates(false));
   }, [waAccountId]);
 

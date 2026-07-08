@@ -44,18 +44,17 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
-    const { userId, role } = (await req.json()) as {
-      userId: string;
-      role: string;
-    };
+    const body = await req.json();
+    const validated = z.object({
+      userId: z.string().min(1, "userId requerido"),
+      role: z.enum(["admin", "user", "ejecutivo"]),
+    }).safeParse(body);
 
-    if (!userId || !role) {
-      return NextResponse.json({ error: "userId y role requeridos" }, { status: 400 });
+    if (!validated.success) {
+      return NextResponse.json({ error: validated.error.issues[0].message }, { status: 400 });
     }
 
-    if (!["admin", "user", "ejecutivo"].includes(role)) {
-      return NextResponse.json({ error: "Rol inválido" }, { status: 400 });
-    }
+    const { userId, role } = validated.data;
 
     const user = await prisma.user.update({
       where: { id: userId },

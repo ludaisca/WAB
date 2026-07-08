@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getUserAccountIds } from "@/lib/shared-accounts";
 
 export async function GET(
   req: Request,
@@ -13,11 +14,12 @@ export async function GET(
     }
 
     const { chatId } = await params;
+    const accountIds = await getUserAccountIds(session.user.id);
 
     const chat = await prisma.wAChat.findFirst({
       where: {
         id: chatId,
-        account: { userId: session.user.id },
+        accountId: { in: accountIds },
       },
     });
 

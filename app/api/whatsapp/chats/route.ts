@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getUserAccountIds } from "@/lib/shared-accounts";
 
 export async function GET(req: Request) {
   try {
@@ -9,13 +10,18 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
+    const accountIds = await getUserAccountIds(session.user.id);
+
     const { searchParams } = new URL(req.url);
     const accountId = searchParams.get("accountId");
 
+    if (accountId && !accountIds.includes(accountId)) {
+      return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
+    }
+
     const where: Record<string, unknown> = {
-      account: { userId: session.user.id },
+      accountId: accountId ? accountId : { in: accountIds },
     };
-    if (accountId) where.accountId = accountId;
 
     const chats = await prisma.wAChat.findMany({
       where,

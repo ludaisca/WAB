@@ -1,11 +1,9 @@
-import { PrismaAdapter } from "@auth/prisma-adapter";
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
   providers: [
     Credentials({
@@ -31,6 +29,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           name: user.name,
           role: user.role,
+          createdAt: user.createdAt.toISOString(),
         };
       },
     }),
@@ -40,6 +39,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.id = user.id;
         token.role = (user as { role?: string }).role ?? "user";
+        token.createdAt = (user as { createdAt?: string }).createdAt;
       }
       return token;
     },
@@ -47,6 +47,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (session.user) {
         session.user.id = token.id as string;
         session.user.role = token.role as string;
+        (session.user as { createdAt?: string }).createdAt = token.createdAt as string;
       }
       return session;
     },

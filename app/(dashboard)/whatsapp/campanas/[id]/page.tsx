@@ -95,7 +95,7 @@ export default function CampaignDetailPage() {
       const res = await fetch(`/api/whatsapp/campaigns/${id}/send`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      success(`Envío completado: ${data.sent} enviados, ${data.failed} fallidos`);
+      success(`Campaña encolada para envío`);
       fetchCampaign(page);
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Error");

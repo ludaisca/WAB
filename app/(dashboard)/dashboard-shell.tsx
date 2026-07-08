@@ -10,6 +10,7 @@ import {
   Users,
   BarChart3,
   Database,
+  FileText,
 } from "lucide-react";
 import { AppShell, type NavItem } from "@/app/components/ui/app-shell";
 
@@ -30,6 +31,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         { href: "/whatsapp",                label: "WhatsApp",         icon: MessageSquare },
         { href: "/whatsapp/bots",           label: "Bots IA",          icon: Bot },
         { href: "/whatsapp/conocimiento",   label: "Conocimiento",     icon: Database },
+        { href: "/whatsapp/plantillas",     label: "Plantillas",       icon: FileText },
         { href: "/whatsapp/campanas",       label: "Campañas",         icon: Megaphone },
         ...(isAdmin
           ? [{ href: "/usuarios" as const, label: "Usuarios", icon: Users as React.ElementType, exact: true }]

@@ -43,7 +43,7 @@ export default function BotFormPage() {
       .then((d) => {
         if (Array.isArray(d)) setAccounts(d);
       })
-      .catch(() => {});
+      .catch(() => toastError("Error al cargar cuentas"));
   }, []);
 
   useEffect(() => {

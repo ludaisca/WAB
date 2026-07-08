@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Copy, Check, Trash2, RefreshCw, Phone, MessageCircle, Calendar, Activity } from "lucide-react";
+import { ArrowLeft, Copy, Check, Trash2, RefreshCw, Phone, MessageCircle, Calendar, Activity, FileText } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
@@ -23,7 +23,7 @@ interface AccountDetail {
   lastActivity: string | null;
   createdAt: string;
   updatedAt: string;
-  _count: { chats: number };
+  _count: { chats: number; templates: number };
 }
 
 const STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" | "danger" | "neutral" }> = {
@@ -157,6 +157,10 @@ export default function CuentaDetailPage() {
               <dd className="text-sm font-medium">{account._count.chats}</dd>
             </div>
             <div className="flex justify-between border-b border-border pb-3">
+              <dt className="text-sm text-muted-darker">Plantillas</dt>
+              <dd className="text-sm font-medium">{account._count.templates}</dd>
+            </div>
+            <div className="flex justify-between border-b border-border pb-3">
               <dt className="text-sm text-muted-darker">Última actividad</dt>
               <dd className="text-sm">
                 {account.lastActivity
@@ -203,9 +207,12 @@ export default function CuentaDetailPage() {
         </CardBody>
       </Card>
 
-      <div className="flex gap-3">
+      <div className="flex gap-3 flex-wrap">
         <Link href={`/whatsapp/chat?accountId=${account.id}`}>
           <Button icon={MessageCircle}>Abrir chats</Button>
+        </Link>
+        <Link href={`/whatsapp/plantillas?accountId=${account.id}`}>
+          <Button variant="secondary" icon={FileText}>Gestionar plantillas</Button>
         </Link>
         <Link href={`/whatsapp/cuentas/${account.id}`}>
           <Button variant="secondary" icon={RefreshCw} onClick={fetchAccount}>

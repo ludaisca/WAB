@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Search, Send, ArrowLeft, Phone, Users, MessageSquare, ChevronRight, Smartphone } from "lucide-react";
+import { Search, Send, ArrowLeft, MessageSquare } from "lucide-react";
 import { Input } from "@/app/components/ui/input";
 import { Button } from "@/app/components/ui/button";
 import { Spinner } from "@/app/components/ui/spinner";
@@ -178,7 +178,7 @@ export default function ChatPage() {
 
   const groupedChats: Record<string, ChatItem[]> = {};
   for (const c of filteredChats) {
-    const key = c.account.name;
+    const key = c.account.id;
     if (!groupedChats[key]) groupedChats[key] = [];
     groupedChats[key].push(c);
   }
@@ -212,10 +212,10 @@ export default function ChatPage() {
             </div>
           ) : (
             <div>
-              {Object.entries(groupedChats).map(([accountName, accountChats]) => (
-                <div key={accountName}>
+              {Object.entries(groupedChats).map(([accountId, accountChats]) => (
+                <div key={accountId}>
                   <div className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-darker bg-surface/50 border-b border-border">
-                    {accountName}
+                    {accountChats[0]?.account?.name ?? accountId}
                   </div>
                   {accountChats.map((chat) => (
                     <button

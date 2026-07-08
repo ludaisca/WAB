@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/crypto";
+import { getUserAccountIds } from "@/lib/shared-accounts";
 
 async function syncTemplatesFromMeta(phoneNumberId: string, accessToken: string) {
   const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/message_templates`;
@@ -43,6 +44,12 @@ export async function GET(req: Request) {
         { error: "waAccountId es requerido" },
         { status: 400 }
       );
+    }
+
+    const accountIds = await getUserAccountIds(session.user.id);
+
+    if (!accountIds.includes(waAccountId)) {
+      return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
     }
 
     const templates = await prisma.wATemplate.findMany({
@@ -109,6 +116,14 @@ export async function POST(req: Request) {
         },
       });
     }
+
+    const syncedIds = metaTemplates.map((t) => t.id);
+    await prisma.wATemplate.deleteMany({
+      where: {
+        waAccountId: account.id,
+        templateId: { notIn: syncedIds },
+      },
+    });
 
     const templates = await prisma.wATemplate.findMany({
       where: { waAccountId: account.id },

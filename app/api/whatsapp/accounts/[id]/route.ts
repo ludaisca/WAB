@@ -36,7 +36,7 @@ export async function GET(
         lastActivity: true,
         createdAt: true,
         updatedAt: true,
-        _count: { select: { chats: true } },
+        _count: { select: { chats: true, templates: true } },
       },
     });
 

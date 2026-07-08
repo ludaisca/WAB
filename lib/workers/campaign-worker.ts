@@ -22,9 +22,10 @@ export async function processCampaignJob(job: CampaignJob) {
   const accessToken = decrypt(campaign.waAccount.accessToken);
   const templateName = campaign.waTemplate.name;
   const language = campaign.waTemplate.language;
+  const phoneNumberId = campaign.waAccount.phoneNumberId;
 
-  let successCount = 0;
-  let failCount = 0;
+  let totalSuccess = 0;
+  let totalFailed = 0;
 
   for (const recipient of campaign.recipients) {
     try {
@@ -52,8 +53,8 @@ export async function processCampaignJob(job: CampaignJob) {
         ];
       }
 
-      const res = await fetch(
-        `https://graph.facebook.com/v21.0/${campaign.waAccount.phoneNumberId}/messages`,
+      let res = await fetch(
+        `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
         {
           method: "POST",
           headers: {
@@ -63,6 +64,22 @@ export async function processCampaignJob(job: CampaignJob) {
           body: JSON.stringify(body),
         }
       );
+
+      if (res.status === 429) {
+        const retryAfter = Number(res.headers.get("Retry-After") || "5");
+        await new Promise((r) => setTimeout(r, retryAfter * 1000));
+        res = await fetch(
+          `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+          }
+        );
+      }
 
       if (res.ok) {
         const responseData = (await res.json()) as {
@@ -74,7 +91,7 @@ export async function processCampaignJob(job: CampaignJob) {
           where: { id: recipient.id },
           data: { status: "SENT", sentAt: new Date(), wamid: wamid ?? null },
         });
-        successCount++;
+        totalSuccess++;
       } else {
         const errorBody = await res.json().catch(() => ({}));
         await prisma.wACampaignRecipient.update({
@@ -86,7 +103,7 @@ export async function processCampaignJob(job: CampaignJob) {
                 ?.message ?? `Error HTTP ${res.status}`,
           },
         });
-        failCount++;
+        totalFailed++;
       }
     } catch (err) {
       await prisma.wACampaignRecipient.update({
@@ -96,30 +113,23 @@ export async function processCampaignJob(job: CampaignJob) {
           errorMessage: err instanceof Error ? err.message : "Error desconocido",
         },
       });
-      failCount++;
+      totalFailed++;
     }
-
-    await prisma.wACampaign.update({
-      where: { id: campaignId },
-      data: {
-        sentCount: { increment: successCount },
-        failedCount: { increment: failCount },
-      },
-    });
-    successCount = 0;
-    failCount = 0;
 
     await new Promise((r) => setTimeout(r, 100));
   }
 
-  const finalStatus =
-    campaign.recipients.filter((r) => r.status === "PENDING").length === 0
-      ? "COMPLETED"
-      : "COMPLETED";
+  const pendingCount = await prisma.wACampaignRecipient.count({
+    where: { campaignId, status: "PENDING" },
+  });
+
+  const finalStatus = pendingCount === 0 ? "COMPLETED" : "FAILED";
 
   await prisma.wACampaign.update({
     where: { id: campaignId },
     data: {
+      sentCount: totalSuccess,
+      failedCount: totalFailed,
       status: finalStatus,
       completedAt: new Date(),
     },

@@ -86,7 +86,7 @@ async function validateSignature(
     select: { appSecret: true },
   });
 
-  if (!account?.appSecret) return true;
+  if (!account?.appSecret) return false;
 
   try {
     const { decrypt } = await import("@/lib/crypto");
@@ -160,19 +160,23 @@ export async function POST(req: Request) {
         });
 
         if (value.messages && value.contacts) {
+          const allWamids = value.messages.map((m) => m.id).filter(Boolean);
+
+          const existingMessages = allWamids.length > 0
+            ? await prisma.wAMessage.findMany({
+                where: { wamid: { in: allWamids } },
+                select: { wamid: true },
+              })
+            : [];
+
+          const existingSet = new Set(existingMessages.map((m) => m.wamid));
+
           for (const msg of value.messages) {
+            if (msg.id && existingSet.has(msg.id)) continue;
+
             const contact = value.contacts.find((c) => c.wa_id === msg.from);
             const contactName = contact?.profile?.name ?? msg.from;
             const isGroup = msg.from.includes("@g.us");
-
-            const existing = msg.id
-              ? await prisma.wAMessage.findFirst({
-                  where: { wamid: msg.id },
-                  select: { id: true },
-                })
-              : null;
-
-            if (existing) continue;
 
             const { mediaId, mimeType } = getMediaInfo(msg);
             const messageBody = getMessageBody(msg);
@@ -217,29 +221,36 @@ export async function POST(req: Request) {
             });
           }
 
+          const chatIds = new Map<string, string>();
+
           const activeBots = await prisma.wABot.findMany({
             where: { waAccountId: account.id, isActive: true, status: "ACTIVE" },
             select: { id: true },
           });
 
+          if (activeBots.length > 0) {
+            const allRemoteJids = value.messages.map((m) => m.from);
+            const relatedChats = await prisma.wAChat.findMany({
+              where: {
+                accountId: account.id,
+                remoteJid: { in: allRemoteJids },
+              },
+              select: { id: true, remoteJid: true },
+            });
+            for (const c of relatedChats) {
+              chatIds.set(c.remoteJid, c.id);
+            }
+          }
+
           for (const msg of value.messages) {
+            const waChatId = chatIds.get(msg.from);
+            if (!waChatId) continue;
             for (const bot of activeBots) {
-              const chatForBot = await prisma.wAChat.findUnique({
-                where: {
-                  accountId_remoteJid: {
-                    accountId: account.id,
-                    remoteJid: msg.from,
-                  },
-                },
-                select: { id: true },
+              await botQueue.add("process-message", {
+                botId: bot.id,
+                waChatId,
+                incomingMessage: getMessageBody(msg),
               });
-              if (chatForBot) {
-                await botQueue.add("process-message", {
-                  botId: bot.id,
-                  waChatId: chatForBot.id,
-                  incomingMessage: getMessageBody(msg),
-                });
-              }
             }
           }
         }
@@ -257,16 +268,20 @@ export async function POST(req: Request) {
                 },
               });
 
-              const statusMap: Record<string, "DELIVERED" | "READ"> = {
-                delivered: "DELIVERED",
-                read: "READ",
+              const statusMap: Record<string, { status: string; field?: string }> = {
+                sent: { status: "SENT", field: "sentAt" },
+                delivered: { status: "DELIVERED", field: "deliveredAt" },
+                read: { status: "READ", field: "readAt" },
+                failed: { status: "FAILED" },
               };
-              const recipientStatus = statusMap[status.status];
-              if (recipientStatus) {
-                const updateData: Record<string, unknown> = { status: recipientStatus };
-                if (recipientStatus === "DELIVERED") {
+              const mapped = statusMap[status.status];
+              if (mapped) {
+                const updateData: Record<string, unknown> = { status: mapped.status };
+                if (mapped.field === "sentAt") {
+                  updateData.sentAt = new Date();
+                } else if (mapped.field === "deliveredAt") {
                   updateData.deliveredAt = new Date();
-                } else if (recipientStatus === "READ") {
+                } else if (mapped.field === "readAt") {
                   updateData.readAt = new Date();
                 }
                 await prisma.wACampaignRecipient.updateMany({

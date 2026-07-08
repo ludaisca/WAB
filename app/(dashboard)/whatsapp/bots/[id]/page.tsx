@@ -267,7 +267,7 @@ export default function BotDetailPage() {
                     <input
                       ref={fileRef}
                       type="file"
-                      accept=".txt,.md,.csv,.json,.pdf"
+                      accept=".txt,.md,.csv,.json"
                       onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
                       className="block w-full text-sm text-foreground file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-surface-light file:text-foreground hover:file:bg-surface file:cursor-pointer"
                     />
@@ -339,22 +339,22 @@ export default function BotDetailPage() {
             <Card>
               <CardBody>
                 <p className="text-xs text-muted-darker">Hoy</p>
-                <p className="text-xl font-bold">{usageData?.today.totalTokens.toLocaleString() ?? "—"}</p>
-                <p className="text-xs text-muted-darker">tokens · ${usageData?.today.estimatedCost.toFixed(4) ?? "0.00"}</p>
+                <p className="text-xl font-bold">{usageData?.today.totalTokens?.toLocaleString() ?? "—"}</p>
+                <p className="text-xs text-muted-darker">tokens · ${(usageData?.today?.estimatedCost ?? 0).toFixed(4)}</p>
               </CardBody>
             </Card>
             <Card>
               <CardBody>
                 <p className="text-xs text-muted-darker">Este mes</p>
-                <p className="text-xl font-bold">{usageData?.month.totalTokens.toLocaleString() ?? "—"}</p>
-                <p className="text-xs text-muted-darker">tokens · ${usageData?.month.estimatedCost.toFixed(4) ?? "0.00"}</p>
+                <p className="text-xl font-bold">{usageData?.month.totalTokens?.toLocaleString() ?? "—"}</p>
+                <p className="text-xs text-muted-darker">tokens · ${(usageData?.month?.estimatedCost ?? 0).toFixed(4)}</p>
               </CardBody>
             </Card>
             <Card>
               <CardBody>
                 <p className="text-xs text-muted-darker">Total</p>
-                <p className="text-xl font-bold">{usageData?.total.totalTokens.toLocaleString() ?? "—"}</p>
-                <p className="text-xs text-muted-darker">tokens · ${usageData?.total.estimatedCost.toFixed(4) ?? "0.00"}</p>
+                <p className="text-xl font-bold">{usageData?.total.totalTokens?.toLocaleString() ?? "—"}</p>
+                <p className="text-xs text-muted-darker">tokens · ${(usageData?.total?.estimatedCost ?? 0).toFixed(4)}</p>
               </CardBody>
             </Card>
           </div>

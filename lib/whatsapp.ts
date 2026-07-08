@@ -8,6 +8,7 @@ interface SendMessageParams {
   mediaId?: string;
   mimeType?: string;
   caption?: string;
+  filename?: string;
 }
 
 interface SendMessageResponse {
@@ -68,6 +69,7 @@ export async function sendMessage(
       ...(params.mediaId ? { id: params.mediaId } : {}),
       ...(params.caption ? { caption: params.caption } : {}),
       ...(params.mimeType ? { mime_type: params.mimeType } : {}),
+      ...(params.filename ? { filename: params.filename } : {}),
     };
   }
 
