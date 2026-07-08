@@ -3,9 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Trash2, Power, PowerOff, Send, Upload, FileText, X, BarChart3 } from "lucide-react";
+import { ArrowLeft, Trash2, Power, PowerOff, Send, Upload, X } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
-import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Textarea } from "@/app/components/ui/textarea";
 import { Input } from "@/app/components/ui/input";
@@ -66,7 +65,6 @@ export default function BotDetailPage() {
 
   const [knowledge, setKnowledge] = useState<KnowledgeDoc[]>([]);
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
-  const [docContent, setDocContent] = useState("");
   const [docTitle, setDocTitle] = useState("");
   const [uploading, setUploading] = useState(false);
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
@@ -107,8 +105,11 @@ export default function BotDetailPage() {
     } catch { /* */ } finally { setUsageLoading(false); }
   }, [id]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchBot also used for manual refresh
   useEffect(() => { fetchBot(); }, [fetchBot]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-tab-switch; fetchKnowledge also used for manual refresh
   useEffect(() => { if (tab === "knowledge") fetchKnowledge(); }, [tab, fetchKnowledge]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-tab-switch
   useEffect(() => { if (tab === "uso") fetchUsage(); }, [tab, fetchUsage]);
 
   async function handleToggle() {
@@ -265,6 +266,7 @@ export default function BotDetailPage() {
                 <FormField label="Archivo" hint=".txt, .md, .csv, .json, .pdf (máx 10MB)">
                   {(id) => (
                     <input
+                      id={id}
                       ref={fileRef}
                       type="file"
                       accept=".txt,.md,.csv,.json"

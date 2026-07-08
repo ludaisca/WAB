@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { Image, Video, FileText, Type, Plus, X } from "lucide-react";
+import { Image as ImageIcon, Video, FileText, Type, Plus, X } from "lucide-react";
 import { Modal } from "@/app/components/ui/modal";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -65,7 +65,7 @@ interface Props {
 }
 
 export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = "", onCreated }: Props) {
-  const { success, error: toastError } = useToast();
+  const { success } = useToast();
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
   const [waAccountId, setWaAccountId] = useState(defaultAccountId);
@@ -389,7 +389,7 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
                       </p>
                     ) : (
                       <div className="flex flex-col items-center gap-1">
-                        {headerFormat === "IMAGE" && <Image size={18} />}
+                        {headerFormat === "IMAGE" && <ImageIcon size={18} />}
                         {headerFormat === "VIDEO" && <Video size={18} />}
                         {headerFormat === "DOCUMENT" && <FileText size={18} />}
                         <span className="text-[10px]">{headerFormat.toLowerCase()}</span>

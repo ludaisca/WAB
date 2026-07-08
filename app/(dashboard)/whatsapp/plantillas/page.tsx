@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Plus, RefreshCw, MessageSquareText } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
+import { Card, CardBody } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Select } from "@/app/components/ui/select";
 import { Badge } from "@/app/components/ui/badge";
@@ -57,7 +57,7 @@ function TemplatesContent() {
         }
       })
       .catch(() => toastError("Error al cargar cuentas"));
-  }, [preselectedId]);
+  }, [preselectedId, toastError]);
 
   const fetchTemplates = useCallback(async () => {
     if (!selectedAccountId) {
@@ -77,6 +77,7 @@ function TemplatesContent() {
   }, [selectedAccountId, toastError]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchTemplates also used for manual refresh
     fetchTemplates();
   }, [fetchTemplates]);
 

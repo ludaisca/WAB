@@ -83,6 +83,7 @@ export default function DashboardPage() {
   }, [toastError]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchData also used for manual refresh
     fetchData();
   }, [fetchData]);
 

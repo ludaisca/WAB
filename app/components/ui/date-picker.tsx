@@ -59,14 +59,15 @@ export function DatePicker({
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [display, setDisplay] = useState(formatDate(value));
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setDisplay(formatDate(value));
+  }
 
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
-
-  useEffect(() => {
-    setDisplay(formatDate(value));
-  }, [value]);
 
   useEffect(() => {
     if (!open) return;

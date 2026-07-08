@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Plus, Megaphone, Trash2, Play, Eye } from "lucide-react";
+import { Plus, Megaphone, Trash2, Eye } from "lucide-react";
 import { Card, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
@@ -10,7 +10,6 @@ import { Spinner } from "@/app/components/ui/spinner";
 import { EmptyState } from "@/app/components/ui/empty-state";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { useToast } from "@/app/components/ui/toast";
-import { Pagination } from "@/app/components/ui/pagination";
 
 interface Campaign {
   id: string;
@@ -56,6 +55,7 @@ export default function CampaignsPage() {
     }
   }, [toastError]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchCampaigns also used for manual refresh
   useEffect(() => { fetchCampaigns(); }, [fetchCampaigns]);
 
   async function handleDelete() {

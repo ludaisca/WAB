@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useCallback, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "./cn";
+import { useHasMounted } from "@/app/hooks/use-has-mounted";
 
 type ModalSize = "sm" | "md" | "lg" | "xl";
 
@@ -37,18 +38,21 @@ export function Modal({
   className,
   children,
 }: ModalProps) {
-  const [mounted, setMounted] = useState(false);
+  const mounted = useHasMounted();
   const [visible, setVisible] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<Element | null>(null);
   const titleId = React.useId();
 
-  useEffect(() => setMounted(true), []);
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) setVisible(true);
+  }
 
   useEffect(() => {
     if (open) {
-      setVisible(true);
       triggerRef.current = document.activeElement;
     }
   }, [open]);

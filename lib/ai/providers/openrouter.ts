@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { AIMessage, AICompletionParams, AICompletionResponse, AIEmbeddingParams, AIEmbeddingResponse } from "../types";
+import type { AICompletionParams, AICompletionResponse, AIEmbeddingParams, AIEmbeddingResponse } from "../types";
 
 const BASE_URL = "https://openrouter.ai/api/v1";
 

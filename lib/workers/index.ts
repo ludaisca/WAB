@@ -1,5 +1,4 @@
 import { Worker } from "bullmq";
-import { botQueue, campaignQueue, ragQueue } from "@/lib/queue";
 import { processBotMessageJob } from "./bot-worker";
 import { processCampaignJob } from "./campaign-worker";
 import { processRagJob } from "./rag-worker";

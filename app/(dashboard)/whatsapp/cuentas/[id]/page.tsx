@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Copy, Check, Trash2, RefreshCw, Phone, MessageCircle, Calendar, Activity, FileText } from "lucide-react";
+import { ArrowLeft, Copy, Check, Trash2, RefreshCw, MessageCircle, FileText } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
@@ -62,6 +62,7 @@ export default function CuentaDetailPage() {
   }, [id, toastError]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount
     fetchAccount();
   }, [fetchAccount]);
 

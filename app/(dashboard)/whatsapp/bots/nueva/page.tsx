@@ -3,15 +3,14 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Save, Info } from "lucide-react";
-import { Card, CardTitle, CardBody, CardFooter } from "@/app/components/ui/card";
+import { ArrowLeft, Save } from "lucide-react";
+import { Card, CardBody, CardFooter } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { Textarea } from "@/app/components/ui/textarea";
 import { Select } from "@/app/components/ui/select";
 import { FormField } from "@/app/components/ui/form-field";
 import { Switch } from "@/app/components/ui/switch";
-import { Banner } from "@/app/components/ui/banner";
 import { Spinner } from "@/app/components/ui/spinner";
 import { useToast } from "@/app/components/ui/toast";
 
@@ -44,10 +43,11 @@ export default function BotFormPage() {
         if (Array.isArray(d)) setAccounts(d);
       })
       .catch(() => toastError("Error al cargar cuentas"));
-  }, []);
+  }, [toastError]);
 
   useEffect(() => {
     if (!editId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- load-on-mount for edit mode
     setLoading(true);
     fetch(`/api/whatsapp/bots/${editId}`)
       .then((r) => r.json())

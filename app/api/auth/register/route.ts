@@ -51,7 +51,7 @@ export async function POST(req: Request) {
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    const user = await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx) => {
       const userCount = await tx.user.count();
       const role = userCount === 0 ? "admin" : "user";
 

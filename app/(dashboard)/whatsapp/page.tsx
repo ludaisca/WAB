@@ -71,6 +71,7 @@ export default function WhatsAppDashboardPage() {
   }, [toastError]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount
     fetchData();
   }, [fetchData]);
 

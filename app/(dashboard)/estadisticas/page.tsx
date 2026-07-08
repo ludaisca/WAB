@@ -39,6 +39,7 @@ export default function EstadisticasPage() {
     }
   }, [toastError]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchStats also used for manual refresh
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
   if (loading) {

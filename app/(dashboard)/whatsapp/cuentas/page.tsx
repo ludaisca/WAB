@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Search, Plus, RefreshCw, Phone, MoreVertical, Trash2, Settings2 } from "lucide-react";
-import { Card, CardBody } from "@/app/components/ui/card";
+import { Card } from "@/app/components/ui/card";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
 import { Badge } from "@/app/components/ui/badge";
@@ -57,6 +57,7 @@ export default function CuentasPage() {
   }, [toastError]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchAccounts also used for manual refresh
     fetchAccounts();
   }, [fetchAccounts]);
 

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { User, Lock, Shield, CalendarDays, Brain, Users } from "lucide-react";
-import { Card, CardTitle, CardBody, CardFooter } from "@/app/components/ui/card";
+import { Card, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { PasswordInput } from "@/app/components/ui/password-input";
@@ -35,7 +35,6 @@ export default function SettingsPage() {
   const [notifications, setNotifications] = useState(true);
   const [twoFactor, setTwoFactor] = useState(false);
   const [allowRegistration, setAllowRegistration] = useState(true);
-  const [savingSystem, setSavingSystem] = useState(false);
   const [systemLoading, setSystemLoading] = useState(false);
 
   const isAdmin = session?.user?.role === "admin";
@@ -50,7 +49,7 @@ export default function SettingsPage() {
         }
       })
       .catch(() => toastError("Error al cargar configuración"));
-  }, [isAdmin]);
+  }, [isAdmin, toastError]);
 
   const createdAt = (session?.user as { createdAt?: string })?.createdAt;
 
@@ -73,23 +72,6 @@ export default function SettingsPage() {
       toastError(err instanceof Error ? err.message : "Error");
     } finally {
       setSavingName(false);
-    }
-  }
-
-  async function handleSaveSystem() {
-    setSavingSystem(true);
-    try {
-      const res = await fetch("/api/configuracion/sistema", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ allowRegistration }),
-      });
-      if (!res.ok) throw new Error("Error");
-      success("Configuración guardada");
-    } catch {
-      toastError("Error al guardar");
-    } finally {
-      setSavingSystem(false);
     }
   }
 

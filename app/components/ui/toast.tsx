@@ -6,11 +6,13 @@ import React, {
   useState,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
 } from "react";
 import { createPortal } from "react-dom";
 import { X, CheckCircle, AlertTriangle, Info, XCircle } from "lucide-react";
 import { cn } from "./cn";
+import { useHasMounted } from "@/app/hooks/use-has-mounted";
 
 type ToastTone = "success" | "warning" | "danger" | "info";
 
@@ -51,7 +53,7 @@ function ToastItem({
   onDismiss: (id: string) => void;
 }) {
   const [exiting, setExiting] = useState(false);
-  const { bg, border, text, Icon } = TONE_STYLE[toast.tone];
+  const { border, text, Icon } = TONE_STYLE[toast.tone];
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const dismiss = useCallback(() => {
@@ -93,9 +95,7 @@ function ToastItem({
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => setMounted(true), []);
+  const mounted = useHasMounted();
 
   const add = useCallback((tone: ToastTone, message: string, duration?: number) => {
     const id = `${Date.now()}-${Math.random()}`;
@@ -106,12 +106,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const value: ToastContextValue = {
-    success: (msg, dur) => add("success", msg, dur),
-    error:   (msg, dur) => add("danger",  msg, dur),
-    warning: (msg, dur) => add("warning", msg, dur),
-    info:    (msg, dur) => add("info",    msg, dur),
-  };
+  const value: ToastContextValue = useMemo(() => ({
+    success: (msg: string, dur?: number) => add("success", msg, dur),
+    error:   (msg: string, dur?: number) => add("danger",  msg, dur),
+    warning: (msg: string, dur?: number) => add("warning", msg, dur),
+    info:    (msg: string, dur?: number) => add("info",    msg, dur),
+  }), [add]);
 
   return (
     <ToastContext.Provider value={value}>

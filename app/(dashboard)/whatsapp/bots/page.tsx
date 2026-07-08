@@ -52,6 +52,7 @@ export default function BotsPage() {
     }
   }, [toastError]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchBots also used for manual refresh
   useEffect(() => { fetchBots(); }, [fetchBots]);
 
   async function handleDelete() {

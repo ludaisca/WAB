@@ -42,6 +42,7 @@ export function Avatar({ src, alt, name, size = "md", className }: AvatarProps) 
 
   if (src && !error) {
     return (
+      // eslint-disable-next-line @next/next/no-img-element -- src is an arbitrary user-provided URL, not a known domain next/image can optimize
       <img
         src={src}
         alt={alt ?? name ?? "Avatar"}

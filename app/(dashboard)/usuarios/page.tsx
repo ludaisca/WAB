@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Users as UsersIcon, Shield, ShieldOff, Plus, UserPlus } from "lucide-react";
+import { Shield, ShieldOff, Plus, UserPlus } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
@@ -47,6 +47,7 @@ export default function UsersPage() {
     }
   }, [toastError]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchUsers also used for manual refresh
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
   async function toggleRole(userId: string, currentRole: string) {

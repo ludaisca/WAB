@@ -133,6 +133,10 @@ export function AppShell({
   useEffect(() => {
     if (!collapsible) return;
     const stored = localStorage.getItem("sidebar-collapsed");
+    // Deliberately set state after mount: localStorage is unavailable during
+    // SSR, so reading it during render would mismatch the server-rendered
+    // markup. Reading it post-hydration in an effect is the correct fix here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (stored === "true") setCollapsed(true);
   }, [collapsible]);
 

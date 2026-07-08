@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useCallback } from "react";
-import { Upload, X, File, Image } from "lucide-react";
+import { Upload, X, File, Image as ImageIcon } from "lucide-react";
 import { cn } from "./cn";
 
 interface FileInputProps {
@@ -125,13 +125,14 @@ export function FileInput({
               className="flex items-center gap-3 rounded-lg border border-border bg-surface-light px-3 py-2"
             >
               {preview && previews[i] && file.type.startsWith("image/") ? (
+                // eslint-disable-next-line @next/next/no-img-element -- local blob: preview URL, not supported by next/image
                 <img
                   src={previews[i]}
                   alt={file.name}
                   className="h-9 w-9 rounded object-cover"
                 />
               ) : file.type.startsWith("image/") ? (
-                <Image size={18} className="text-muted-darker shrink-0" />
+                <ImageIcon size={18} className="text-muted-darker shrink-0" />
               ) : (
                 <File size={18} className="text-muted-darker shrink-0" />
               )}

@@ -65,15 +65,6 @@ function getMediaInfo(msg: WebhookMessage): {
   return { mediaId: null, mimeType: null };
 }
 
-function extractPhoneNumberId(body: unknown): string | null {
-  try {
-    const obj = body as { entry?: Array<{ changes?: Array<{ value?: { metadata?: { phone_number_id?: string } } }> }> };
-    return obj.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id ?? null;
-  } catch {
-    return null;
-  }
-}
-
 async function validateSignature(
   body: string,
   signature: string | null,

@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import Link from "next/link";
-import { Upload, FileText, X, ArrowLeft, Database } from "lucide-react";
+import { Upload, X, Database } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -70,6 +69,7 @@ export default function ConocimientoPage() {
     }
   }, [toastError]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchData also used for manual refresh
   useEffect(() => { fetchData(); }, [fetchData]);
 
   async function handleUpload() {
@@ -147,6 +147,7 @@ export default function ConocimientoPage() {
             <FormField label="Archivo" hint=".txt, .md, .csv, .json (máx 10MB)">
               {(id) => (
                 <input
+                  id={id}
                   ref={fileRef}
                   type="file"
                   accept=".txt,.md,.csv,.json"

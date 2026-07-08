@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Send, Trash2 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
@@ -87,6 +87,7 @@ export default function CampaignDetailPage() {
     }
   }, [id, toastError]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/page-change; fetchCampaign also used for manual refresh
   useEffect(() => { fetchCampaign(page); }, [fetchCampaign, page]);
 
   async function handleSend() {
@@ -140,12 +141,6 @@ export default function CampaignDetailPage() {
             sentCount: "Enviados",
             deliveredCount: "Entregados",
             readCount: "Leídos",
-          };
-          const tones: Record<string, "neutral" | "info" | "success"> = {
-            recipientCount: "neutral",
-            sentCount: "info",
-            deliveredCount: "success",
-            readCount: "success",
           };
           return (
             <Card key={k}>

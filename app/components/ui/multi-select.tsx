@@ -47,7 +47,7 @@ export function MultiSelect({
 
   const toggle = useCallback(
     (val: string) => {
-      const next = selectedSet.has(val)
+      const next = value.includes(val)
         ? value.filter((v) => v !== val)
         : [...value, val];
       onChange?.(next);

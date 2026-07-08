@@ -2,13 +2,11 @@
 
 import { useTheme } from "next-themes";
 import { Sun, Moon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useHasMounted } from "@/app/hooks/use-has-mounted";
 
 export function ThemeToggle({ className }: { className?: string }) {
   const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => setMounted(true), []);
+  const mounted = useHasMounted();
 
   if (!mounted) {
     return <div className={`h-9 w-9 ${className ?? ""}`} />;

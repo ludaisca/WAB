@@ -41,7 +41,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
     }
 
-    const settings = await prisma.appSettings.upsert({
+    await prisma.appSettings.upsert({
       where: { userId: session.user.id },
       create: { userId: session.user.id },
       update: {},

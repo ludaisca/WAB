@@ -3,14 +3,13 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Save, Upload, X, Plus } from "lucide-react";
-import { Card, CardTitle, CardBody, CardFooter } from "@/app/components/ui/card";
+import { ArrowLeft, Save, X, Plus } from "lucide-react";
+import { Card, CardBody, CardFooter } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
 import { FormField } from "@/app/components/ui/form-field";
 import { DatePicker } from "@/app/components/ui/date-picker";
-import { Badge } from "@/app/components/ui/badge";
 import { Spinner } from "@/app/components/ui/spinner";
 import { useToast } from "@/app/components/ui/toast";
 
@@ -21,7 +20,6 @@ export default function NewCampaignPage() {
   const router = useRouter();
   const { success, error: toastError } = useToast();
 
-  const [step, setStep] = useState(1);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
@@ -44,10 +42,11 @@ export default function NewCampaignPage() {
     fetch("/api/whatsapp/accounts").then(r => r.json()).then(d => {
       if (Array.isArray(d)) setAccounts(d);
     }).catch(() => toastError("Error al cargar cuentas"));
-  }, []);
+  }, [toastError]);
 
   useEffect(() => {
     if (!waAccountId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- load templates when account selection changes
     setLoadingTemplates(true);
     fetch(`/api/whatsapp/templates`, {
       method: "POST",
@@ -58,7 +57,7 @@ export default function NewCampaignPage() {
       .then(d => { if (Array.isArray(d)) setTemplates(d); })
       .catch(() => toastError("Error al cargar plantillas"))
       .finally(() => setLoadingTemplates(false));
-  }, [waAccountId]);
+  }, [waAccountId, toastError]);
 
   function addRecipient() {
     setRecipients(prev => [...prev, { phoneNumber: "", contactName: "" }]);

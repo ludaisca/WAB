@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { Search, Send, ArrowLeft, MessageSquare } from "lucide-react";
 import { Input } from "@/app/components/ui/input";
 import { Button } from "@/app/components/ui/button";
@@ -72,9 +70,6 @@ function MessageBubble({ msg }: { msg: Message }) {
 }
 
 export default function ChatPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const preselectedAccountId = searchParams.get("accountId");
   const { error: toastError } = useToast();
 
   const [chats, setChats] = useState<ChatItem[]>([]);
@@ -103,11 +98,13 @@ export default function ChatPage() {
   }, [toastError]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchChats also used for manual refresh
     fetchChats();
   }, [fetchChats]);
 
   useEffect(() => {
     if (!selectedChatId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- load messages when selected chat changes
     setLoadingMessages(true);
     setSelectedChat(chats.find((c) => c.id === selectedChatId) ?? null);
 

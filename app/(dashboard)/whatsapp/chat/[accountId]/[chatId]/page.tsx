@@ -113,6 +113,7 @@ export default function ChatDetailPage() {
   }, [chatId, toastError]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/chat-change
     fetchChat();
     fetchMessages();
   }, [fetchChat, fetchMessages]);
