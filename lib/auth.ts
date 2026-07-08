@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
+import { rateLimit } from "./rate-limit";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -13,8 +14,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Contraseña", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.email || !credentials?.password) return null;
+
+        const forwarded = request.headers.get("x-forwarded-for");
+        const ip = forwarded?.split(",")[0]?.trim() ?? "unknown";
+        const { allowed } = await rateLimit(`login:${ip}`, 5, 60);
+        if (!allowed) return null;
 
         const email = (credentials.email as string).toLowerCase().trim();
         const password = credentials.password as string;
