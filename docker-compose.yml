@@ -35,8 +35,8 @@ services:
     build:
       context: .
       target: runner
-    ports:
-      - "${PORT:-3001}:5000"
+    expose:
+      - "5000"
     environment:
       DATABASE_URL: "postgresql://postgres:${DB_PASSWORD:-postgres}@db:5432/wab_db"
       AUTH_SECRET: "${AUTH_SECRET}"
