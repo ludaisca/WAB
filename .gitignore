@@ -1,0 +1,29 @@
+# Dependencies
+node_modules
+
+# Build
+.next
+tsconfig.tsbuildinfo
+
+# Env (contiene secrets)
+.env
+.env.local
+.env.production
+.env.production.local
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+pgdata
+
+# Logs
+*.log
+npm-debug.log*

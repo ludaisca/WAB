@@ -1,0 +1,310 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id       String   @id @default(cuid())
+  name     String?
+  email    String   @unique
+  password String?
+  role     String   @default("user")
+
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  waAccounts     WAAccount[]
+  waCampaigns    WACampaign[]
+  waBots         WABot[]
+  appSettings    AppSettings?
+  sharedAccounts WAAccountShare[]
+
+  @@map("users")
+}
+
+model SystemConfig {
+  id                 String   @id @default("default")
+  allowRegistration  Boolean  @default(true)
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("system_config")
+}
+
+model AppSettings {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  openrouterApiKey String?
+  googleApiKey     String?
+  defaultProvider  String   @default("openrouter")
+  defaultModel     String   @default("google/gemini-2.5-flash")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
+}
+
+model WAAccount {
+  id              String           @id @default(cuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  phoneNumber     String?
+  phoneNumberId   String
+  wabaId          String?
+  accessToken     String
+  verifyTokenHash String
+  appSecret       String?
+  status          WaAccountStatus  @default(PENDING)
+  errorMessage    String?
+  lastActivity    DateTime?
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  chats       WAChat[]
+  templates   WATemplate[]
+  campaigns   WACampaign[]
+  bots        WABot[]
+  sharedWith  WAAccountShare[]
+
+  @@unique([userId, name])
+  @@map("wa_accounts")
+}
+
+model WAAccountShare {
+  id          String    @id @default(cuid())
+  waAccountId String
+  waAccount   WAAccount @relation(fields: [waAccountId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([waAccountId, userId])
+  @@map("wa_account_shares")
+}
+
+enum WaAccountStatus {
+  PENDING
+  CONNECTED
+  ERROR
+  DISCONNECTED
+}
+
+model WAChat {
+  id            String    @id @default(cuid())
+  accountId     String
+  account       WAAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  remoteJid     String
+  name          String?
+  isGroup       Boolean   @default(false)
+  lastMessage   String?
+  lastMessageAt DateTime?
+  unreadCount   Int       @default(0)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  messages         WAMessage[]
+  botConversations WABotConversation[]
+
+  @@unique([accountId, remoteJid])
+  @@map("wa_chats")
+}
+
+model WAMessage {
+  id          String           @id @default(cuid())
+  wamid       String?
+  chatId      String
+  chat        WAChat           @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  direction   MessageDirection
+  messageType String
+  body        String?
+  mediaId     String?
+  mediaUrl    String?
+  mimeType    String?
+  status      String?
+  timestamp   DateTime
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  @@unique([chatId, wamid])
+  @@index([chatId, timestamp])
+  @@map("wa_messages")
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+model WATemplate {
+  id          String   @id @default(cuid())
+  waAccountId String
+  waAccount   WAAccount @relation(fields: [waAccountId], references: [id], onDelete: Cascade)
+  templateId  String
+  name        String
+  language    String
+  category    String
+  status      String
+  components  Json
+  syncedAt    DateTime @default(now())
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  campaigns WACampaign[]
+
+  @@unique([waAccountId, templateId])
+  @@map("wa_templates")
+}
+
+model WACampaign {
+  id              String               @id @default(cuid())
+  userId          String
+  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  waAccountId     String
+  waAccount       WAAccount            @relation(fields: [waAccountId], references: [id])
+  waTemplateId    String
+  waTemplate      WATemplate           @relation(fields: [waTemplateId], references: [id])
+  name            String
+  status          CampaignStatus       @default(DRAFT)
+  scheduledAt     DateTime?
+  sentAt          DateTime?
+  completedAt     DateTime?
+  recipientCount  Int                  @default(0)
+  sentCount       Int                  @default(0)
+  deliveredCount  Int                  @default(0)
+  readCount       Int                  @default(0)
+  failedCount     Int                  @default(0)
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+
+  recipients WACampaignRecipient[]
+
+  @@map("wa_campaigns")
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  COMPLETED
+  FAILED
+}
+
+model WACampaignRecipient {
+  id           String          @id @default(cuid())
+  campaignId   String
+  campaign     WACampaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  phoneNumber  String
+  contactName  String?
+  wamid        String?
+  parameters   Json?
+  status       RecipientStatus @default(PENDING)
+  errorMessage String?
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  readAt       DateTime?
+
+  @@map("wa_campaign_recipients")
+}
+
+enum RecipientStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+model WABot {
+  id           String        @id @default(cuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  waAccountId  String
+  waAccount    WAAccount     @relation(fields: [waAccountId], references: [id], onDelete: Cascade)
+  name         String
+  provider     String
+  model        String
+  systemPrompt String        @db.Text
+  temperature  Float         @default(0.7)
+  maxTokens    Int           @default(1024)
+  memoryType   BotMemoryType @default(RECENT)
+  memoryLimit  Int           @default(20)
+  ragEnabled   Boolean       @default(false)
+  isActive     Boolean       @default(false)
+  status       BotStatus     @default(ACTIVE)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  conversations WABotConversation[]
+  knowledgeBots WABotKnowledgeBot[]
+  usage         WABotUsage[]
+
+  @@unique([userId, name])
+  @@map("wa_bots")
+}
+
+enum BotMemoryType {
+  NONE
+  RECENT
+  SUMMARY
+}
+
+enum BotStatus {
+  ACTIVE
+  PAUSED
+  ERROR
+}
+
+model WABotConversation {
+  id              String   @id @default(cuid())
+  botId           String
+  bot             WABot    @relation(fields: [botId], references: [id], onDelete: Cascade)
+  waChatId        String
+  waChat          WAChat   @relation(fields: [waChatId], references: [id], onDelete: Cascade)
+  summary         String?  @db.Text
+  messageCount    Int      @default(0)
+  lastInteraction DateTime @default(now())
+
+  @@unique([botId, waChatId])
+  @@map("wa_bot_conversations")
+}
+
+model WABotKnowledge {
+  id         String   @id @default(cuid())
+  title      String
+  content    String   @db.Text
+  embedding  Unsupported("vector(1536)")
+  chunkIndex Int
+  sourceName String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  bots WABotKnowledgeBot[]
+
+  @@map("wa_bot_knowledge")
+}
+
+model WABotKnowledgeBot {
+  knowledgeId String
+  botId        String
+  knowledge    WABotKnowledge @relation(fields: [knowledgeId], references: [id], onDelete: Cascade)
+  bot          WABot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@id([knowledgeId, botId])
+  @@index([botId])
+  @@map("wa_bot_knowledge_bots")
+}
+
+model WABotUsage {
+  id               String   @id @default(cuid())
+  botId            String
+  bot              WABot    @relation(fields: [botId], references: [id], onDelete: Cascade)
+  waChatId         String?
+  model            String
+  promptTokens     Int
+  completionTokens Int
+  totalTokens      Int
+  estimatedCost    Float
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([botId, createdAt])
+  @@map("wa_bot_usage")
+}

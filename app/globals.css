@@ -1,0 +1,256 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────
+   BASE TOKENS — dark (default)
+   ───────────────────────────────────────────────── */
+:root {
+  /* Surfaces */
+  --background:    #121318;
+  --foreground:    #eef0f5;
+  --surface:       #1b1d24;
+  --surface-light: #23252e;
+  --border:        #2b2e38;
+
+  /* Text */
+  --muted:         #9aa0ae;
+  --muted-darker:  #6b7280;
+
+  /* Brand — WhatsApp green */
+  --accent:        #25D366;
+  --accent-hover:  #1ea952;
+  --on-accent:     #121318;
+
+  /* Semantic */
+  --success:       #34d399;
+  --success-bg:    rgba(16, 185, 129, 0.12);
+  --success-border:rgba(16, 185, 129, 0.25);
+
+  --warning:       #fbbf24;
+  --warning-bg:    rgba(251, 191, 36, 0.10);
+  --warning-border:rgba(251, 191, 36, 0.25);
+
+  --danger:        #f87171;
+  --danger-bg:     rgba(248, 113, 113, 0.10);
+  --danger-border: rgba(248, 113, 113, 0.25);
+
+  --info:          #60a5fa;
+  --info-bg:       rgba(96, 165, 250, 0.10);
+  --info-border:   rgba(96, 165, 250, 0.25);
+
+  /* Elevation */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.45), 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.5), 0 2px 4px rgba(0,0,0,0.35);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.55), 0 4px 8px rgba(0,0,0,0.4);
+
+  /* Focus */
+  --ring:      var(--accent);
+  --ring-offset: var(--background);
+
+  /* Radius */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  /* Durations */
+  --dur-fast: 120ms;
+  --dur:      200ms;
+  --dur-slow: 320ms;
+  --ease:     cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ─────────────────────────────────────────────────
+   LIGHT TOKENS
+   ───────────────────────────────────────────────── */
+.light {
+  color-scheme: light;
+
+  --background:    #f7f8fb;
+  --foreground:    #16171c;
+  --surface:       #eef0f5;
+  --surface-light: #e4e7ee;
+  --border:        #d7dbe4;
+  --muted:         #5b6270;
+  --muted-darker:  #8b93a3;
+
+  --accent:        #1ea952;
+  --accent-hover:  #128C7E;
+  --on-accent:     #ffffff;
+
+  --success:        #059669;
+  --success-bg:     #d1fae5;
+  --success-border: #6ee7b7;
+
+  --warning:        #b45309;
+  --warning-bg:     #fef3c7;
+  --warning-border: #fcd34d;
+
+  --danger:         #dc2626;
+  --danger-bg:      #fee2e2;
+  --danger-border:  #fca5a5;
+
+  --info:           #2563eb;
+  --info-bg:        #dbeafe;
+  --info-border:    #93c5fd;
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.12), 0 4px 8px rgba(0,0,0,0.08);
+
+  --ring:       var(--accent);
+  --ring-offset: var(--background);
+}
+
+/* ─────────────────────────────────────────────────
+   TAILWIND v4 — @theme inline mapping
+   ───────────────────────────────────────────────── */
+@theme inline {
+  --color-background:   var(--background);
+  --color-foreground:   var(--foreground);
+  --color-surface:      var(--surface);
+  --color-surface-light:var(--surface-light);
+  --color-border:       var(--border);
+  --color-muted:        var(--muted);
+  --color-muted-darker: var(--muted-darker);
+
+  --color-accent:       var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent:    var(--on-accent);
+
+  --color-success:        var(--success);
+  --color-success-bg:     var(--success-bg);
+  --color-success-border: var(--success-border);
+  --color-warning:        var(--warning);
+  --color-warning-bg:     var(--warning-bg);
+  --color-warning-border: var(--warning-border);
+  --color-danger:         var(--danger);
+  --color-danger-bg:      var(--danger-bg);
+  --color-danger-border:  var(--danger-border);
+  --color-info:           var(--info);
+  --color-info-bg:        var(--info-bg);
+  --color-info-border:    var(--info-border);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  --font-sans:    var(--font-body), system-ui, sans-serif;
+  --font-display: var(--font-display), Georgia, serif;
+  --font-mono:    var(--font-data), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ─────────────────────────────────────────────────
+   GLOBAL BASE
+   ───────────────────────────────────────────────── */
+html {
+  scroll-behavior: smooth;
+  color-scheme: dark;
+}
+
+.light {
+  color-scheme: light;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────
+   ANIMATIONS
+   ───────────────────────────────────────────────── */
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes scale-out {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.95); }
+}
+
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-100%); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slide-out-left {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(-100%); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(100%); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slide-out-right {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(100%); }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-down {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(12px); }
+}
+
+@keyframes shimmer {
+  from { background-position: -200% center; }
+  to   { background-position:  200% center; }
+}
+
+.animate-fade-in-up  { animation: fade-in-up  0.6s ease-out both; }
+.animate-fade-in     { animation: fade-in     0.6s ease-out both; }
+.animate-fade-out    { animation: fade-out    var(--dur) var(--ease) both; }
+.animate-scale-in    { animation: scale-in    var(--dur) var(--ease) both; }
+.animate-scale-out   { animation: scale-out   var(--dur) var(--ease) both; }
+.animate-slide-in-left  { animation: slide-in-left  var(--dur-slow) var(--ease) both; }
+.animate-slide-out-left { animation: slide-out-left var(--dur-slow) var(--ease) both; }
+.animate-slide-in-right  { animation: slide-in-right  var(--dur-slow) var(--ease) both; }
+.animate-slide-out-right { animation: slide-out-right var(--dur-slow) var(--ease) both; }
+.animate-slide-up    { animation: slide-up    var(--dur) var(--ease) both; }
+.animate-slide-down  { animation: slide-down  var(--dur) var(--ease) both; }
+
+.animation-delay-100 { animation-delay: 100ms; }
+.animation-delay-200 { animation-delay: 200ms; }
+.animation-delay-300 { animation-delay: 300ms; }
+.animation-delay-400 { animation-delay: 400ms; }

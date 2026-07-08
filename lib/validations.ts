@@ -1,0 +1,88 @@
+import { z } from "zod";
+
+export const loginSchema = z.object({
+  email: z.string().email("Email inválido"),
+  password: z.string().min(1, "La contraseña es requerida"),
+});
+
+export const registerSchema = z.object({
+  name: z.string().min(2, "El nombre debe tener al menos 2 caracteres"),
+  email: z.string().email("Email inválido"),
+  password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres"),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Contraseña actual requerida"),
+  newPassword: z.string().min(8, "Mínimo 8 caracteres"),
+  confirmPassword: z.string(),
+}).refine((d) => d.newPassword === d.confirmPassword, {
+  message: "Las contraseñas no coinciden",
+  path: ["confirmPassword"],
+});
+
+export type LoginInput = z.infer<typeof loginSchema>;
+export type RegisterInput = z.infer<typeof registerSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+export const waAccountSchema = z.object({
+  name: z.string().min(1, "El nombre es requerido").max(100),
+  phoneNumberId: z.string().min(1, "El Phone Number ID es requerido").regex(/^\d+$/, "Debe ser un ID numérico"),
+  accessToken: z.string().min(1, "El token de acceso es requerido"),
+  wabaId: z.string().regex(/^\d+$/, "Debe ser un ID numérico").optional().or(z.literal("")),
+  verifyToken: z.string().min(6, "El verify token debe tener al menos 6 caracteres"),
+  appSecret: z.string().optional().or(z.literal("")),
+});
+
+export const waAccountUpdateSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  accessToken: z.string().min(1).optional(),
+  verifyToken: z.string().min(6).optional(),
+  appSecret: z.string().optional(),
+  wabaId: z.string().optional(),
+});
+
+export const sendMessageSchema = z.object({
+  type: z.enum(["text", "image", "audio", "video", "document"]),
+  body: z.string().optional(),
+  mediaId: z.string().optional(),
+  caption: z.string().optional(),
+  mimeType: z.string().optional(),
+}).refine(
+  (d) => d.type === "text" ? !!d.body : true,
+  { message: "El cuerpo del mensaje es requerido para texto", path: ["body"] }
+);
+
+export type WaAccountInput = z.infer<typeof waAccountSchema>;
+export type WaAccountUpdateInput = z.infer<typeof waAccountUpdateSchema>;
+export type SendMessageInput = z.infer<typeof sendMessageSchema>;
+
+export const botSchema = z.object({
+  name: z.string().min(1, "El nombre es requerido").max(100),
+  waAccountId: z.string().min(1, "La cuenta es requerida"),
+  provider: z.enum(["openrouter", "google"], { message: "Proveedor inválido" }),
+  model: z.string().min(1, "El modelo es requerido"),
+  systemPrompt: z.string().min(1, "El prompt del sistema es requerido"),
+  temperature: z.number().min(0).max(2).optional(),
+  maxTokens: z.number().min(1).max(8192).optional(),
+  memoryType: z.enum(["NONE", "RECENT", "SUMMARY"]).optional(),
+  memoryLimit: z.number().min(1).max(100).optional(),
+  ragEnabled: z.boolean().optional(),
+});
+
+export const botUpdateSchema = botSchema.partial();
+
+export const campaignSchema = z.object({
+  name: z.string().min(1, "El nombre es requerido").max(200),
+  waAccountId: z.string().min(1, "La cuenta es requerida"),
+  waTemplateId: z.string().min(1, "La plantilla es requerida"),
+  scheduledAt: z.string().datetime().optional().nullable(),
+  recipients: z.array(z.object({
+    phoneNumber: z.string().min(1, "El número es requerido").regex(/^\d+$/, "Debe ser numérico"),
+    contactName: z.string().optional(),
+    parameters: z.record(z.string(), z.string()).optional(),
+  })).min(1, "Al menos un destinatario es requerido"),
+});
+
+export type BotInput = z.infer<typeof botSchema>;
+export type BotUpdateInput = z.infer<typeof botUpdateSchema>;
+export type CampaignInput = z.infer<typeof campaignSchema>;
