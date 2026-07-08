@@ -3,7 +3,7 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: "${DB_PASSWORD:-postgres}"
       POSTGRES_DB: wab_db
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -20,7 +20,7 @@ services:
       db:
         condition: service_healthy
     command: >
-      sh -c "PGPASSWORD=postgres psql -h db -U postgres -d wab_db -c 'CREATE EXTENSION IF NOT EXISTS vector;'"
+      sh -c "PGPASSWORD=${DB_PASSWORD:-postgres} psql -h db -U postgres -d wab_db -c 'CREATE EXTENSION IF NOT EXISTS vector;'"
     restart: "no"
 
   redis:
@@ -34,20 +34,21 @@ services:
   app:
     build:
       context: .
-      target: dev
+      target: runner
     ports:
-      - "3001:5000"
-    volumes:
-      - .:/app
-      - /app/node_modules
-    env_file: .env
+      - "${PORT:-3001}:5000"
+    environment:
+      DATABASE_URL: "postgresql://postgres:${DB_PASSWORD:-postgres}@db:5432/wab_db"
+      AUTH_SECRET: "${AUTH_SECRET}"
+      ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
+      REDIS_URL: "redis://redis:6379"
+      NODE_ENV: "${NODE_ENV:-production}"
     depends_on:
       db-init:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
-    command: >
-      sh -c "npx prisma generate && npx prisma db push && npm run dev"
+    restart: unless-stopped
 
 volumes:
   pgdata:
