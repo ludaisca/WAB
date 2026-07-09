@@ -9,6 +9,7 @@ import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
 import { FormField } from "@/app/components/ui/form-field";
 import { Spinner } from "@/app/components/ui/spinner";
+import { PageHeader } from "@/app/components/ui/page-header";
 import { useToast } from "@/app/components/ui/toast";
 
 interface ModelOption { id: string; name: string; }
@@ -123,10 +124,10 @@ export default function IASettingsPage() {
       <Link href="/configuracion" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground transition-colors mb-3">
         <ArrowLeft size={14} /> Volver a configuración
       </Link>
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Configuración IA</h1>
-        <p className="mt-1 text-sm text-muted">Administra las API keys y preferencias de los proveedores de inteligencia artificial.</p>
-      </div>
+      <PageHeader
+        title="Configuración IA"
+        description="Administra las API keys y preferencias de los proveedores de inteligencia artificial."
+      />
 
       <Card>
         <form onSubmit={handleSave}>

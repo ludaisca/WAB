@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { User, Lock, Shield, CalendarDays, Brain, Users } from "lucide-react";
+import { User, Lock, Shield, CalendarDays, Brain, Users, MessageSquareDashed } from "lucide-react";
 import { Card, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -13,6 +13,7 @@ import { FormField } from "@/app/components/ui/form-field";
 import { Banner } from "@/app/components/ui/banner";
 import { Badge } from "@/app/components/ui/badge";
 import { Switch } from "@/app/components/ui/switch";
+import { PageHeader } from "@/app/components/ui/page-header";
 import { useToast } from "@/app/components/ui/toast";
 
 export default function SettingsPage() {
@@ -117,10 +118,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Configuración</h1>
-        <p className="mt-1 text-sm text-muted">Administra tu cuenta y preferencias.</p>
-      </div>
+      <PageHeader title="Configuración" description="Administra tu cuenta y preferencias." />
 
       <Card>
         <div className="flex items-center gap-4">
@@ -234,6 +232,23 @@ export default function SettingsPage() {
           <Link href="/configuracion/ia">
             <Button variant="secondary" size="sm" icon={Brain}>
               Configurar IA
+            </Button>
+          </Link>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardBody>
+          <div className="flex items-center gap-2 mb-4">
+            <MessageSquareDashed size={16} className="text-accent" />
+            <CardTitle>Respuestas rápidas</CardTitle>
+          </div>
+          <p className="text-sm text-muted-darker mb-4">
+            Atajos de texto (/atajo) para responder más rápido en los chats de WhatsApp.
+          </p>
+          <Link href="/configuracion/respuestas-rapidas">
+            <Button variant="secondary" size="sm" icon={MessageSquareDashed}>
+              Gestionar respuestas
             </Button>
           </Link>
         </CardBody>

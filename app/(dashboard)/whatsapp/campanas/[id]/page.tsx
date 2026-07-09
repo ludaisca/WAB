@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Send, Trash2 } from "lucide-react";
+import { ArrowLeft, Send, Trash2, Users } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
@@ -11,6 +11,7 @@ import { Spinner } from "@/app/components/ui/spinner";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { Banner } from "@/app/components/ui/banner";
 import { Pagination } from "@/app/components/ui/pagination";
+import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
 
 const STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" | "info" | "danger" | "neutral" }> = {
@@ -105,6 +106,25 @@ export default function CampaignDetailPage() {
     }
   }
 
+  const recipientColumns: TableColumn<Recipient>[] = useMemo(() => [
+    { key: "phoneNumber", header: "Número", render: (r) => <span className="font-mono text-xs">{r.phoneNumber}</span> },
+    { key: "contactName", header: "Nombre", render: (r) => <span className="text-xs">{r.contactName || "—"}</span>, hideBelow: "sm" },
+    {
+      key: "status",
+      header: "Estado",
+      render: (r) => {
+        const rb = RECIPIENT_BADGE[r.status] ?? { label: r.status, tone: "neutral" as const };
+        return <Badge tone={rb.tone} size="sm">{rb.label}</Badge>;
+      },
+    },
+    {
+      key: "errorMessage",
+      header: "Error",
+      render: (r) => <span className="text-xs text-danger max-w-[140px] truncate block">{r.errorMessage || "—"}</span>,
+      hideBelow: "md",
+    },
+  ], []);
+
   if (loading) return <div className="flex items-center justify-center py-16"><Spinner /></div>;
   if (!campaign) return <Banner tone="danger" title="Campaña no encontrada">La campaña solicitada no existe.</Banner>;
 
@@ -172,31 +192,13 @@ export default function CampaignDetailPage() {
           <CardTitle>Destinatarios ({campaign.recipientCount})</CardTitle>
         </CardHeader>
         <CardBody>
-          <div className="overflow-x-auto -mx-5">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-y border-border">
-                  <th className="px-5 py-2.5 text-left text-xs font-medium text-muted-darker uppercase">Número</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-darker uppercase">Nombre</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-darker uppercase">Estado</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-darker uppercase">Error</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {recipients.map(r => {
-                  const rb = RECIPIENT_BADGE[r.status] ?? { label: r.status, tone: "neutral" as const };
-                  return (
-                    <tr key={r.id} className="hover:bg-surface-light/40">
-                      <td className="px-5 py-3 font-mono text-xs">{r.phoneNumber}</td>
-                      <td className="px-4 py-3 text-xs">{r.contactName || "—"}</td>
-                      <td className="px-4 py-3"><Badge tone={rb.tone} size="sm">{rb.label}</Badge></td>
-                      <td className="px-4 py-3 text-xs text-danger max-w-[140px] truncate">{r.errorMessage || "—"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <Table
+            columns={recipientColumns}
+            rows={recipients}
+            rowKey={(r) => r.id}
+            emptyIcon={Users}
+            emptyTitle="Sin destinatarios"
+          />
           {totalPages > 1 && (
             <div className="flex justify-center mt-4 pt-4 border-t border-border">
               <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />

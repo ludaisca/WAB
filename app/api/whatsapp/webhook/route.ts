@@ -68,26 +68,56 @@ function getMediaInfo(msg: WebhookMessage): {
 async function validateSignature(
   body: string,
   signature: string | null,
-  phoneNumberId: string
+  appSecret: string | null
 ): Promise<boolean> {
-  if (!signature) return false;
-
-  const account = await prisma.wAAccount.findFirst({
-    where: { phoneNumberId },
-    select: { appSecret: true },
-  });
-
-  if (!account?.appSecret) return false;
+  if (!signature || !appSecret) return false;
 
   try {
     const { decrypt } = await import("@/lib/crypto");
-    const secret = decrypt(account.appSecret);
+    const secret = decrypt(appSecret);
     const expected = createHmac("sha256", secret).update(body).digest("hex");
     const received = signature.replace("sha256=", "");
     return expected === received;
   } catch {
     return false;
   }
+}
+
+async function applyStatusUpdate(accountId: string, status: WebhookStatus): Promise<void> {
+  if (!status.id) return;
+
+  await prisma.wAMessage.updateMany({
+    where: {
+      wamid: status.id,
+      chat: { accountId },
+    },
+    data: {
+      status: status.status,
+    },
+  });
+
+  const statusMap: Record<string, { status: string; field?: string }> = {
+    sent: { status: "SENT", field: "sentAt" },
+    delivered: { status: "DELIVERED", field: "deliveredAt" },
+    read: { status: "READ", field: "readAt" },
+    failed: { status: "FAILED" },
+  };
+  const mapped = statusMap[status.status];
+  if (!mapped) return;
+
+  const updateData: Record<string, unknown> = { status: mapped.status };
+  if (mapped.field === "sentAt") {
+    updateData.sentAt = new Date();
+  } else if (mapped.field === "deliveredAt") {
+    updateData.deliveredAt = new Date();
+  } else if (mapped.field === "readAt") {
+    updateData.readAt = new Date();
+  }
+
+  await prisma.wACampaignRecipient.updateMany({
+    where: { wamid: status.id },
+    data: updateData,
+  });
 }
 
 export async function GET(req: Request) {
@@ -142,7 +172,7 @@ export async function POST(req: Request) {
 
         if (!account) continue;
 
-        const sigValid = await validateSignature(rawBody, signature, phoneNumberId);
+        const sigValid = await validateSignature(rawBody, signature, account.appSecret);
         if (!sigValid && account.appSecret) continue;
 
         await prisma.wAAccount.update({
@@ -151,61 +181,40 @@ export async function POST(req: Request) {
         });
 
         if (value.messages && value.contacts) {
+          const groups = new Map<string, WebhookMessage[]>();
           for (const msg of value.messages) {
-            const contact = value.contacts.find((c) => c.wa_id === msg.from);
-            const contactName = contact?.profile?.name ?? msg.from;
-            const { mediaId, mimeType } = getMediaInfo(msg);
-
-            await ingestInboundMessage(account.id, {
-              remoteJid: msg.from,
-              wamid: msg.id ?? null,
-              timestamp: new Date(Number(msg.timestamp) * 1000),
-              type: msg.type,
-              body: getMessageBody(msg),
-              contactName,
-              isGroup: msg.from.includes("@g.us"),
-              mediaId,
-              mimeType,
-            });
+            const list = groups.get(msg.from) ?? [];
+            list.push(msg);
+            groups.set(msg.from, list);
           }
+
+          await Promise.all(
+            Array.from(groups.values()).map(async (msgs) => {
+              for (const msg of msgs) {
+                const contact = value.contacts!.find((c) => c.wa_id === msg.from);
+                const contactName = contact?.profile?.name ?? msg.from;
+                const { mediaId, mimeType } = getMediaInfo(msg);
+
+                await ingestInboundMessage(account.id, {
+                  remoteJid: msg.from,
+                  wamid: msg.id ?? null,
+                  timestamp: new Date(Number(msg.timestamp) * 1000),
+                  type: msg.type,
+                  body: getMessageBody(msg),
+                  contactName,
+                  isGroup: msg.from.includes("@g.us"),
+                  mediaId,
+                  mimeType,
+                });
+              }
+            })
+          );
         }
 
         if (value.statuses) {
-          for (const status of value.statuses) {
-            if (status.id) {
-              await prisma.wAMessage.updateMany({
-                where: {
-                  wamid: status.id,
-                  chat: { accountId: account.id },
-                },
-                data: {
-                  status: status.status,
-                },
-              });
-
-              const statusMap: Record<string, { status: string; field?: string }> = {
-                sent: { status: "SENT", field: "sentAt" },
-                delivered: { status: "DELIVERED", field: "deliveredAt" },
-                read: { status: "READ", field: "readAt" },
-                failed: { status: "FAILED" },
-              };
-              const mapped = statusMap[status.status];
-              if (mapped) {
-                const updateData: Record<string, unknown> = { status: mapped.status };
-                if (mapped.field === "sentAt") {
-                  updateData.sentAt = new Date();
-                } else if (mapped.field === "deliveredAt") {
-                  updateData.deliveredAt = new Date();
-                } else if (mapped.field === "readAt") {
-                  updateData.readAt = new Date();
-                }
-                await prisma.wACampaignRecipient.updateMany({
-                  where: { wamid: status.id },
-                  data: updateData,
-                });
-              }
-            }
-          }
+          await Promise.all(
+            value.statuses.map((status) => applyStatusUpdate(account.id, status))
+          );
         }
       }
     }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Upload, X, Database } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
@@ -8,6 +8,8 @@ import { Input } from "@/app/components/ui/input";
 import { FormField } from "@/app/components/ui/form-field";
 import { Spinner } from "@/app/components/ui/spinner";
 import { Badge } from "@/app/components/ui/badge";
+import { PageHeader } from "@/app/components/ui/page-header";
+import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
 
 interface Bot {
@@ -30,6 +32,7 @@ export default function ConocimientoPage() {
   const [bots, setBots] = useState<Bot[]>([]);
   const [allDocs, setAllDocs] = useState<Doc[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [docTitle, setDocTitle] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedBotId, setSelectedBotId] = useState("");
@@ -37,37 +40,44 @@ export default function ConocimientoPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const fetchData = useCallback(async () => {
+    setLoading(true);
+    setFetchError(null);
     try {
-      const [botsRes] = await Promise.all([
-        fetch("/api/whatsapp/bots"),
-      ]);
+      const botsRes = await fetch("/api/whatsapp/bots");
       const botsData = await botsRes.json();
-      if (Array.isArray(botsData)) setBots(botsData);
+      const botsList: Bot[] = Array.isArray(botsData) ? botsData : [];
+      setBots(botsList);
+
+      const knowledgeByBot = await Promise.all(
+        botsList.map(async (bot) => {
+          try {
+            const kRes = await fetch(`/api/whatsapp/bots/${bot.id}/knowledge`);
+            const kData = await kRes.json();
+            return { bot, docs: Array.isArray(kData) ? (kData as Omit<Doc, "bots">[]) : [] };
+          } catch {
+            return { bot, docs: [] as Omit<Doc, "bots">[] };
+          }
+        })
+      );
 
       const docs: Doc[] = [];
-      for (const bot of Array.isArray(botsData) ? botsData : []) {
-        try {
-          const kRes = await fetch(`/api/whatsapp/bots/${bot.id}/knowledge`);
-          const kData = await kRes.json();
-          if (Array.isArray(kData)) {
-            for (const d of kData) {
-              const existing = docs.find((x) => x.id === d.id);
-              if (existing) {
-                if (!existing.bots.includes(bot.name)) existing.bots.push(bot.name);
-              } else {
-                docs.push({ ...d, bots: [bot.name] });
-              }
-            }
+      for (const { bot, docs: kDocs } of knowledgeByBot) {
+        for (const d of kDocs) {
+          const existing = docs.find((x) => x.id === d.id);
+          if (existing) {
+            if (!existing.bots.includes(bot.name)) existing.bots.push(bot.name);
+          } else {
+            docs.push({ ...d, bots: [bot.name] });
           }
-        } catch {}
+        }
       }
       setAllDocs(docs);
     } catch {
-      toastError("Error al cargar");
+      setFetchError("Error al cargar los documentos");
     } finally {
       setLoading(false);
     }
-  }, [toastError]);
+  }, []);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchData also used for manual refresh
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -99,7 +109,7 @@ export default function ConocimientoPage() {
     }
   }
 
-  async function handleDelete(docId: string, botId: string) {
+  const handleDelete = useCallback(async (docId: string, botId: string) => {
     try {
       await fetch(`/api/whatsapp/bots/${botId}/knowledge/${docId}`, { method: "DELETE" });
       success("Documento eliminado");
@@ -107,16 +117,67 @@ export default function ConocimientoPage() {
     } catch {
       toastError("Error al eliminar");
     }
-  }
+  }, [success, toastError, fetchData]);
+
+  const docColumns: TableColumn<Doc>[] = useMemo(() => [
+    {
+      key: "title",
+      header: "Documento",
+      render: (doc) => (
+        <>
+          <span className="font-medium text-sm">{doc.title}</span>
+          {doc.sourceName && <span className="text-xs text-muted-darker ml-2">{doc.sourceName}</span>}
+        </>
+      ),
+    },
+    {
+      key: "chunkIndex",
+      header: "Chunk",
+      render: (doc) => <span className="text-xs font-mono">{doc.chunkIndex}</span>,
+      hideBelow: "sm",
+    },
+    {
+      key: "bots",
+      header: "Bots",
+      render: (doc) => (
+        <div className="flex flex-wrap gap-1">
+          {doc.bots.map((b) => (
+            <Badge key={b} tone="neutral" size="sm">{b}</Badge>
+          ))}
+        </div>
+      ),
+      hideBelow: "sm",
+    },
+    {
+      key: "createdAt",
+      header: "Fecha",
+      render: (doc) => (
+        <span className="text-xs text-muted-darker">
+          {new Date(doc.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short" })}
+        </span>
+      ),
+      hideBelow: "md",
+    },
+    {
+      key: "actions",
+      header: "",
+      headerClassName: "text-right",
+      cellClassName: "text-right",
+      render: (doc) => {
+        const firstBotId = bots.find((b) => doc.bots.includes(b.name))?.id;
+        return firstBotId ? (
+          <Button variant="ghost" size="sm" icon={X} onClick={() => handleDelete(doc.id, firstBotId)} />
+        ) : null;
+      },
+    },
+  ], [bots, handleDelete]);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Base de Conocimiento</h1>
-        <p className="mt-1 text-sm text-muted">
-          Sube documentos para que los bots con RAG activado puedan buscar información antes de responder.
-        </p>
-      </div>
+      <PageHeader
+        title="Base de Conocimiento"
+        description="Sube documentos para que los bots con RAG activado puedan buscar información antes de responder."
+      />
 
       <Card>
         <CardHeader><CardTitle>Subir documento</CardTitle></CardHeader>
@@ -166,57 +227,17 @@ export default function ConocimientoPage() {
       <Card>
         <CardHeader><CardTitle>Documentos indexados ({allDocs.length})</CardTitle></CardHeader>
         <CardBody>
-          {loading ? (
-            <div className="flex justify-center py-8"><Spinner /></div>
-          ) : allDocs.length === 0 ? (
-            <div className="text-center py-8">
-              <Database size={32} className="mx-auto text-muted-darker mb-2" />
-              <p className="text-sm text-muted">Sin documentos. Sube archivos para empezar.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto -mx-5">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-y border-border">
-                    <th className="px-5 py-2.5 text-left text-xs font-medium text-muted-darker uppercase">Documento</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-darker uppercase">Chunk</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-darker uppercase">Bots</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-darker uppercase">Fecha</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-darker uppercase w-12" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {allDocs.map((doc) => {
-                    const firstBotId = bots.find((b) => doc.bots.includes(b.name))?.id;
-                    return (
-                      <tr key={`${doc.id}-${doc.chunkIndex}`} className="hover:bg-surface-light/40">
-                        <td className="px-5 py-3 font-medium text-sm">
-                          {doc.title}
-                          {doc.sourceName && <span className="text-xs text-muted-darker ml-2">{doc.sourceName}</span>}
-                        </td>
-                        <td className="px-4 py-3 text-xs font-mono">{doc.chunkIndex}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-1">
-                            {doc.bots.map((b) => (
-                              <Badge key={b} tone="neutral" size="sm">{b}</Badge>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-muted-darker">
-                          {new Date(doc.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short" })}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          {firstBotId && (
-                            <Button variant="ghost" size="sm" icon={X} onClick={() => handleDelete(doc.id, firstBotId)} />
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <Table
+            columns={docColumns}
+            rows={allDocs}
+            rowKey={(doc) => `${doc.id}-${doc.chunkIndex}`}
+            loading={loading}
+            error={fetchError}
+            onRetry={fetchData}
+            emptyIcon={Database}
+            emptyTitle="Sin documentos"
+            emptyDescription="Sube archivos para empezar."
+          />
         </CardBody>
       </Card>
     </div>

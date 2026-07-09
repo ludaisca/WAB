@@ -9,6 +9,7 @@ const createUserSchema = z.object({
   email: z.string().email("Email inválido"),
   password: z.string().min(6, "Mínimo 6 caracteres"),
   role: z.enum(["admin", "user", "ejecutivo"]).default("user"),
+  maxOpenChats: z.number().int().positive().nullable().optional(),
 });
 
 export async function GET() {
@@ -83,7 +84,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
 
-    const { name, email, password, role } = parsed.data;
+    const { name, email, password, role, maxOpenChats } = parsed.data;
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -93,7 +94,7 @@ export async function POST(req: Request) {
     const hashedPassword = await bcrypt.hash(password, 12);
 
     const user = await prisma.user.create({
-      data: { name, email, password: hashedPassword, role },
+      data: { name, email, password: hashedPassword, role, maxOpenChats: maxOpenChats ?? null },
       select: { id: true, name: true, email: true, role: true, createdAt: true },
     });
 

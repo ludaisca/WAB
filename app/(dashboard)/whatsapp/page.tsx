@@ -1,14 +1,14 @@
-"use client";
-
-import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Plus, Phone, MessageCircle, CheckCircle2, Activity, Users } from "lucide-react";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { getUserAccountIds } from "@/lib/shared-accounts";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { StatCard } from "@/app/components/ui/stat-card";
-import { Button } from "@/app/components/ui/button";
 import { Badge } from "@/app/components/ui/badge";
-import { Spinner } from "@/app/components/ui/spinner";
-import { useToast } from "@/app/components/ui/toast";
+import { PageHeader } from "@/app/components/ui/page-header";
+import { AddAccountButton } from "./_add-account-button";
 
 const STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" | "danger" | "neutral" }> = {
   CONNECTED:    { label: "Conectado",   tone: "success" },
@@ -17,110 +17,70 @@ const STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" 
   DISCONNECTED: { label: "Desconectado", tone: "neutral" },
 };
 
-interface Account {
-  id: string;
-  name: string;
-  phoneNumber: string | null;
-  phoneNumberId: string;
-  status: string;
-  lastActivity: string | null;
-}
+export default async function WhatsAppDashboardPage() {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+  const userId = session.user.id;
 
-interface DashboardData {
-  accounts: Account[];
-  accountsCount: number;
-  connectedCount: number;
-  chatsCount: number;
-  messagesCount: number;
-}
+  const sharedIds = await prisma.wAAccountShare.findMany({
+    where: { userId },
+    select: { waAccountId: true },
+  });
+  const accountsWhere = {
+    OR: [
+      { userId },
+      ...(sharedIds.length > 0 ? [{ id: { in: sharedIds.map((s) => s.waAccountId) } }] : []),
+    ],
+  };
 
-export default function WhatsAppDashboardPage() {
-  const { error: toastError } = useToast();
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const accountIds = await getUserAccountIds(userId);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [accRes, chatRes] = await Promise.all([
-        fetch("/api/whatsapp/accounts"),
-        fetch("/api/whatsapp/chats"),
-      ]);
-      const accounts = await accRes.json();
-      const chats = await chatRes.json();
+  const [accountsCount, connectedCount, recentAccounts, chatsCount] = await Promise.all([
+    prisma.wAAccount.count({ where: accountsWhere }),
+    prisma.wAAccount.count({ where: { ...accountsWhere, status: "CONNECTED" } }),
+    prisma.wAAccount.findMany({
+      where: accountsWhere,
+      select: { id: true, name: true, phoneNumber: true, phoneNumberId: true, status: true, lastActivity: true },
+      take: 5,
+      orderBy: { updatedAt: "desc" },
+    }),
+    prisma.wAChat.count({ where: { accountId: { in: accountIds } } }),
+  ]);
 
-      const accountList = Array.isArray(accounts) ? accounts : [];
-      const chatList = Array.isArray(chats) ? chats : [];
-
-      const connected = accountList.filter(
-        (a: Account) => a.status === "CONNECTED"
-      ).length;
-
-      setData({
-        accounts: accountList.slice(0, 5),
-        accountsCount: accountList.length,
-        connectedCount: connected,
-        chatsCount: chatList.length,
-        messagesCount: 0,
-      });
-    } catch {
-      toastError("Error al cargar datos");
-    } finally {
-      setLoading(false);
-    }
-  }, [toastError]);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount
-    fetchData();
-  }, [fetchData]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <Spinner />
-      </div>
-    );
-  }
-
-  if (!data) return null;
+  const messagesCount = 0;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">WhatsApp</h1>
-          <p className="mt-1 text-sm text-muted">Gestión de cuentas y chats de WhatsApp Business.</p>
-        </div>
-        <Link href="/whatsapp/cuentas/nueva">
-          <Button icon={Plus} size="sm">Agregar número</Button>
-        </Link>
-      </div>
+      <PageHeader
+        title="WhatsApp"
+        description="Gestión de cuentas y chats de WhatsApp Business."
+        actions={<AddAccountButton />}
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Cuentas"
-          value={String(data.accountsCount)}
+          value={String(accountsCount)}
           icon={Phone}
           tone="accent"
-          sublabel={`${data.connectedCount} conectadas`}
+          sublabel={`${connectedCount} conectadas`}
         />
         <StatCard
           label="Chats activos"
-          value={String(data.chatsCount)}
+          value={String(chatsCount)}
           icon={Users}
           tone="info"
         />
         <StatCard
           label="Mensajes totales"
-          value={String(data.messagesCount)}
+          value={String(messagesCount)}
           icon={MessageCircle}
           tone="success"
         />
         <StatCard
           label="Última actividad"
-          value={data.accounts[0]?.lastActivity
-            ? new Date(data.accounts[0].lastActivity).toLocaleDateString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+          value={recentAccounts[0]?.lastActivity
+            ? recentAccounts[0].lastActivity.toLocaleDateString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
             : "—"}
           icon={Activity}
           tone="neutral"
@@ -134,7 +94,7 @@ export default function WhatsAppDashboardPage() {
             <CardTitle>Cuentas recientes</CardTitle>
           </CardHeader>
           <CardBody>
-            {data.accounts.length === 0 ? (
+            {recentAccounts.length === 0 ? (
               <p className="text-sm text-muted py-4 text-center">
                 No hay cuentas configuradas.{" "}
                 <Link href="/whatsapp/cuentas/nueva" className="text-accent hover:underline">
@@ -143,7 +103,7 @@ export default function WhatsAppDashboardPage() {
               </p>
             ) : (
               <div className="divide-y divide-border -mx-5">
-                {data.accounts.map((a) => {
+                {recentAccounts.map((a) => {
                   const badge = STATUS_BADGE[a.status] ?? { label: a.status, tone: "neutral" as const };
                   return (
                     <div key={a.id} className="flex items-center justify-between px-5 py-3 hover:bg-surface-light/40 transition-colors">

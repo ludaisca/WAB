@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Trash2, Power, PowerOff, Send, Upload, X } from "lucide-react";
@@ -12,7 +12,9 @@ import { FormField } from "@/app/components/ui/form-field";
 import { Spinner } from "@/app/components/ui/spinner";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { Banner } from "@/app/components/ui/banner";
+import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
+import { BotFormModal } from "../_form";
 
 interface BotDetail {
   id: string;
@@ -62,6 +64,7 @@ export default function BotDetailPage() {
   const [loading, setLoading] = useState(true);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const [knowledge, setKnowledge] = useState<KnowledgeDoc[]>([]);
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
@@ -185,6 +188,32 @@ export default function BotDetailPage() {
     } finally { setTesting(false); }
   }
 
+  const usageColumns: TableColumn<UsageData["recent"][number]>[] = useMemo(() => [
+    {
+      key: "createdAt",
+      header: "Fecha",
+      render: (u) => (
+        <span className="text-xs">
+          {new Date(u.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+        </span>
+      ),
+    },
+    {
+      key: "totalTokens",
+      header: "Tokens",
+      headerClassName: "text-right",
+      cellClassName: "text-right",
+      render: (u) => <span className="font-mono text-xs">{u.totalTokens.toLocaleString()}</span>,
+    },
+    {
+      key: "estimatedCost",
+      header: "Costo",
+      headerClassName: "text-right",
+      cellClassName: "text-right",
+      render: (u) => <span className="font-mono text-xs">${u.estimatedCost.toFixed(4)}</span>,
+    },
+  ], []);
+
   if (loading) return <div className="flex items-center justify-center py-16"><Spinner /></div>;
   if (!bot) return <Banner tone="danger" title="Bot no encontrado">El bot solicitado no existe.</Banner>;
 
@@ -215,9 +244,7 @@ export default function BotDetailPage() {
           >
             {toggling ? <Spinner /> : bot.isActive ? "Pausar" : "Activar"}
           </Button>
-          <Link href={`/whatsapp/bots/nueva?edit=${bot.id}`}>
-            <Button variant="secondary" size="sm">Editar</Button>
-          </Link>
+          <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)}>Editar</Button>
           <Button variant="danger" size="sm" icon={Trash2} onClick={() => setDeleteOpen(true)} />
         </div>
       </div>
@@ -373,32 +400,14 @@ export default function BotDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardBody>
-              {usageLoading ? <Spinner /> : !usageData?.recent?.length ? (
-                <p className="text-sm text-muted py-4 text-center">Sin datos de uso aún.</p>
-              ) : (
-                <div className="overflow-x-auto -mx-5">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-y border-border">
-                        <th className="px-5 py-2.5 text-left text-xs font-medium text-muted-darker uppercase">Fecha</th>
-                        <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-darker uppercase">Tokens</th>
-                        <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-darker uppercase">Costo</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {usageData.recent.map((u, i) => (
-                        <tr key={i}>
-                          <td className="px-5 py-3 text-xs">
-                            {new Date(u.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-right font-mono">{u.totalTokens.toLocaleString()}</td>
-                          <td className="px-4 py-3 text-xs text-right font-mono">${u.estimatedCost.toFixed(4)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <Table
+                columns={usageColumns}
+                rows={usageData?.recent ?? []}
+                rowKey={(u) => `${u.createdAt}-${u.totalTokens}-${u.estimatedCost}`}
+                loading={usageLoading}
+                emptyIcon={Send}
+                emptyTitle="Sin datos de uso aún"
+              />
             </CardBody>
           </Card>
         </div>
@@ -412,6 +421,13 @@ export default function BotDetailPage() {
         confirmLabel="Eliminar"
         tone="danger"
         onConfirm={handleDelete}
+      />
+
+      <BotFormModal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        editId={bot.id}
+        onSaved={fetchBot}
       />
     </div>
   );

@@ -13,6 +13,7 @@ model User {
   email    String   @unique
   password String?
   role     String   @default("user")
+  maxOpenChats Int?
 
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
@@ -22,8 +23,10 @@ model User {
   appSettings    AppSettings?
   sharedAccounts WAAccountShare[]
   notes          WANote[]
+  chatNotes      WAChatNote[]
   assignedChats  WAChat[]         @relation("ChatAssignments")
   notifications  Notification[]
+  sentMessages   WAMessage[]
 
   @@map("users")
 }
@@ -63,24 +66,39 @@ model WAAccount {
   accessToken     String?
   verifyTokenHash String?
   appSecret       String?
-  status          WaAccountStatus  @default(PENDING)
-  errorMessage    String?
-  lastActivity    DateTime?
+  status            WaAccountStatus  @default(PENDING)
+  errorMessage      String?
+  lastActivity      DateTime?
+  autoAssignEnabled Boolean          @default(false)
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
 
-  chats          WAChat[]
-  templates      WATemplate[]
-  campaigns      WACampaign[]
-  bots           WABot[]
-  sharedWith     WAAccountShare[]
-  contacts       Contact[]
-  baileysSession WABaileysSession?
+  chats           WAChat[]
+  templates       WATemplate[]
+  campaigns       WACampaign[]
+  bots            WABot[]
+  sharedWith      WAAccountShare[]
+  contacts        Contact[]
+  baileysSession  WABaileysSession?
+  cannedResponses CannedResponse[]
 
   @@index([phoneNumberId])
   @@unique([phoneNumberId])
   @@unique([userId, name])
   @@map("wa_accounts")
+}
+
+model CannedResponse {
+  id          String    @id @default(cuid())
+  waAccountId String
+  waAccount   WAAccount @relation(fields: [waAccountId], references: [id], onDelete: Cascade)
+  shortcut    String
+  content     String
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@unique([waAccountId, shortcut])
+  @@map("canned_responses")
 }
 
 enum WAChannel {
@@ -117,28 +135,41 @@ enum WaAccountStatus {
   DISCONNECTED
 }
 
+enum ChatStatus {
+  OPEN
+  PENDING
+  RESOLVED
+}
+
 model WAChat {
-  id            String    @id @default(cuid())
+  id            String     @id @default(cuid())
   accountId     String
-  account       WAAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account       WAAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   remoteJid     String
   name          String?
-  isGroup       Boolean   @default(false)
+  isGroup       Boolean    @default(false)
   lastMessage   String?
   lastMessageAt DateTime?
-  unreadCount   Int       @default(0)
-  contactId     String?   @unique
-  contact       Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  unreadCount   Int        @default(0)
+  contactId     String?    @unique
+  contact       Contact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
   assignedToId  String?
-  assignedTo    User?     @relation("ChatAssignments", fields: [assignedToId], references: [id], onDelete: SetNull)
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  assignedTo    User?      @relation("ChatAssignments", fields: [assignedToId], references: [id], onDelete: SetNull)
+  status          ChatStatus @default(OPEN)
+  resolvedAt      DateTime?
+  firstResponseAt DateTime?
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
 
   messages         WAMessage[]
   botConversations WABotConversation[]
+  chatTags         ChatTag[]
+  chatNotes        WAChatNote[]
 
   @@unique([accountId, remoteJid])
   @@index([assignedToId])
+  @@index([accountId, lastMessageAt])
+  @@index([accountId, status])
   @@map("wa_chats")
 }
 
@@ -154,6 +185,8 @@ model WAMessage {
   mediaUrl    String?
   mimeType    String?
   status      String?
+  senderId    String?
+  sender      User?            @relation(fields: [senderId], references: [id], onDelete: SetNull)
   timestamp   DateTime
   createdAt   DateTime         @default(now()) @map("created_at")
 
@@ -237,6 +270,8 @@ model WACampaignRecipient {
   deliveredAt  DateTime?
   readAt       DateTime?
 
+  @@index([wamid])
+  @@index([campaignId, status])
   @@map("wa_campaign_recipients")
 }
 
@@ -377,6 +412,7 @@ model Tag {
   createdAt DateTime @default(now()) @map("created_at")
 
   contacts ContactTag[]
+  chats    ChatTag[]
 
   @@map("tags")
 }
@@ -392,6 +428,17 @@ model ContactTag {
   @@map("contact_tags")
 }
 
+model ChatTag {
+  chatId String
+  chat   WAChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  tagId  String
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([chatId, tagId])
+  @@index([tagId])
+  @@map("chat_tags")
+}
+
 model WANote {
   id        String   @id @default(cuid())
   contactId String
@@ -405,12 +452,26 @@ model WANote {
   @@map("wa_notes")
 }
 
+model WAChatNote {
+  id        String   @id @default(cuid())
+  chatId    String
+  chat      WAChat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([chatId, createdAt])
+  @@map("wa_chat_notes")
+}
+
 enum NotificationType {
   CHAT_MESSAGE
   CAMPAIGN_COMPLETED
   CAMPAIGN_FAILED
   BOT_ERROR
   BUDGET_EXCEEDED
+  NOTE_MENTION
 }
 
 model Notification {

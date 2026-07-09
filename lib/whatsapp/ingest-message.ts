@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { botQueue } from "@/lib/queue";
+import { autoAssignChat } from "@/lib/whatsapp/auto-assign";
 
 export interface NormalizedInboundMessage {
   remoteJid: string;
@@ -67,10 +68,15 @@ export async function ingestInboundMessage(accountId: string, msg: NormalizedInb
     },
   });
 
-  if (chat.assignedToId) {
+  let assignedToId = chat.assignedToId;
+  if (!assignedToId) {
+    assignedToId = await autoAssignChat(accountId, chat.id);
+  }
+
+  if (assignedToId) {
     await prisma.notification.create({
       data: {
-        userId: chat.assignedToId,
+        userId: assignedToId,
         type: "CHAT_MESSAGE",
         title: msg.contactName,
         body: msg.body.slice(0, 200),

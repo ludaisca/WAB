@@ -11,4 +11,4 @@ services:
     environment:
       NODE_ENV: development
     command: >
-      sh -c "npx prisma generate && npx prisma db push && npm run dev"
+      sh -c "npx prisma generate && npx prisma db push && npx prisma db execute --file prisma/sql/ensure-vector-index.sql --schema prisma/schema.prisma && npm run dev"

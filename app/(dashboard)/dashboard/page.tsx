@@ -1,157 +1,109 @@
-"use client";
-
-import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Phone, MessageCircle, Bot, Megaphone, Plus, ArrowRight } from "lucide-react";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { getUserAccountIds } from "@/lib/shared-accounts";
 import { StatCard } from "@/app/components/ui/stat-card";
 import { Card, CardTitle } from "@/app/components/ui/card";
 import { IconBox } from "@/app/components/ui/icon-box";
 import { Badge } from "@/app/components/ui/badge";
-import { Spinner } from "@/app/components/ui/spinner";
-import { useToast } from "@/app/components/ui/toast";
+import { PageHeader } from "@/app/components/ui/page-header";
 
-interface DashboardData {
-  accounts: { total: number; connected: number };
-  chats: { total: number; recent: Array<{ id: string; accountId: string; name: string; lastMessage: string | null; lastMessageAt: string | null; accountName: string }> };
-  bots: { total: number; active: number };
-  campaigns: { total: number; completed: number };
+function formatTime(ts: Date | null): string {
+  if (!ts) return "—";
+  const now = new Date();
+  const diffMs = now.getTime() - ts.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+
+  if (diffMin < 1) return "Ahora";
+  if (diffMin < 60) return `Hace ${diffMin} min`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `Hace ${diffH}h`;
+  return ts.toLocaleDateString("es-MX", { day: "2-digit", month: "short" });
 }
 
-export default function DashboardPage() {
-  const { error: toastError } = useToast();
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
+export default async function DashboardPage() {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+  const userId = session.user.id;
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [accRes, chatsRes, botsRes, campsRes] = await Promise.all([
-        fetch("/api/whatsapp/accounts"),
-        fetch("/api/whatsapp/chats"),
-        fetch("/api/whatsapp/bots"),
-        fetch("/api/whatsapp/campaigns"),
-      ]);
+  const accountIds = await getUserAccountIds(userId);
 
-      const accounts = await accRes.json();
-      const chats = await chatsRes.json();
-      const bots = await botsRes.json();
-      const campaigns = await campsRes.json();
+  const [
+    accountsTotal,
+    accountsConnected,
+    chatsTotal,
+    recentChats,
+    botsTotal,
+    botsActive,
+    campaignsTotal,
+    campaignsCompleted,
+  ] = await Promise.all([
+    Promise.resolve(accountIds.length),
+    prisma.wAAccount.count({ where: { id: { in: accountIds }, status: "CONNECTED" } }),
+    prisma.wAChat.count({ where: { accountId: { in: accountIds } } }),
+    prisma.wAChat.findMany({
+      where: { accountId: { in: accountIds } },
+      orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
+      take: 5,
+      select: {
+        id: true,
+        accountId: true,
+        name: true,
+        remoteJid: true,
+        lastMessage: true,
+        lastMessageAt: true,
+        account: { select: { name: true } },
+      },
+    }),
+    prisma.wABot.count({ where: { userId } }),
+    prisma.wABot.count({ where: { userId, isActive: true } }),
+    prisma.wACampaign.count({ where: { userId } }),
+    prisma.wACampaign.count({ where: { userId, status: "COMPLETED" } }),
+  ]);
 
-      const accountList = Array.isArray(accounts) ? accounts : [];
-      const chatList = Array.isArray(chats) ? chats : [];
-      const botList = Array.isArray(bots) ? bots : [];
-      const campaignList = Array.isArray(campaigns) ? campaigns : [];
-
-      setData({
-        accounts: {
-          total: accountList.length,
-          connected: accountList.filter((a: { status: string }) => a.status === "CONNECTED").length,
-        },
-        chats: {
-          total: chatList.length,
-          recent: chatList.slice(0, 5).map((c: {
-            id: string;
-            accountId: string;
-            name: string | null;
-            remoteJid: string;
-            lastMessage: string | null;
-            lastMessageAt: string | null;
-            account: { name: string };
-          }) => ({
-            id: c.id,
-            accountId: c.accountId,
-            name: c.name ?? c.remoteJid ?? "Desconocido",
-            lastMessage: c.lastMessage,
-            lastMessageAt: c.lastMessageAt,
-            accountName: c.account?.name ?? "—",
-          })),
-        },
-        bots: {
-          total: botList.length,
-          active: botList.filter((b: { isActive: boolean }) => b.isActive).length,
-        },
-        campaigns: {
-          total: campaignList.length,
-          completed: campaignList.filter((c: { status: string }) => c.status === "COMPLETED").length,
-        },
-      });
-    } catch {
-      toastError("Error al cargar el panel");
-    } finally {
-      setLoading(false);
-    }
-  }, [toastError]);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchData also used for manual refresh
-    fetchData();
-  }, [fetchData]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Spinner />
-      </div>
-    );
-  }
-
-  if (!data) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Panel</h1>
-          <p className="mt-1 text-sm text-muted">Error al cargar los datos.</p>
-        </div>
-      </div>
-    );
-  }
-
-  function formatTime(ts: string | null): string {
-    if (!ts) return "—";
-    const d = new Date(ts);
-    const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-
-    if (diffMin < 1) return "Ahora";
-    if (diffMin < 60) return `Hace ${diffMin} min`;
-    const diffH = Math.floor(diffMin / 60);
-    if (diffH < 24) return `Hace ${diffH}h`;
-    return d.toLocaleDateString("es-MX", { day: "2-digit", month: "short" });
-  }
+  const chats = {
+    total: chatsTotal,
+    recent: recentChats.map((c) => ({
+      id: c.id,
+      accountId: c.accountId,
+      name: c.name ?? c.remoteJid ?? "Desconocido",
+      lastMessage: c.lastMessage,
+      lastMessageAt: c.lastMessageAt,
+      accountName: c.account?.name ?? "—",
+    })),
+  };
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Panel</h1>
-        <p className="mt-1 text-sm text-muted">Resumen de tu actividad en WhatsApp</p>
-      </div>
+      <PageHeader title="Panel" description="Resumen de tu actividad en WhatsApp" />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Cuentas"
-          value={`${data.accounts.connected}/${data.accounts.total}`}
+          value={`${accountsConnected}/${accountsTotal}`}
           icon={Phone}
           tone="accent"
           sublabel="conectadas"
         />
         <StatCard
           label="Chats activos"
-          value={String(data.chats.total)}
+          value={String(chats.total)}
           icon={MessageCircle}
           tone="info"
           sublabel="conversaciones"
         />
         <StatCard
           label="Bots IA"
-          value={`${data.bots.active}/${data.bots.total}`}
+          value={`${botsActive}/${botsTotal}`}
           icon={Bot}
           tone="success"
           sublabel="activos"
         />
         <StatCard
           label="Campañas"
-          value={`${data.campaigns.completed}/${data.campaigns.total}`}
+          value={`${campaignsCompleted}/${campaignsTotal}`}
           icon={Megaphone}
           tone="warning"
           sublabel="completadas"
@@ -166,7 +118,7 @@ export default function DashboardPage() {
                 <MessageCircle size={16} className="text-accent" />
                 <CardTitle>Chats recientes</CardTitle>
               </div>
-              {data.chats.total > 0 && (
+              {chats.total > 0 && (
                 <Link
                   href="/whatsapp/chat"
                   className="inline-flex items-center gap-1 text-xs text-accent hover:underline underline-offset-2"
@@ -176,7 +128,7 @@ export default function DashboardPage() {
               )}
             </div>
 
-            {data.chats.recent.length === 0 ? (
+            {chats.recent.length === 0 ? (
               <div className="px-5 py-8 text-center">
                 <p className="text-sm text-muted-darker">No hay conversaciones aún.</p>
                 <p className="text-xs text-muted mt-1">
@@ -195,7 +147,7 @@ export default function DashboardPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {data.chats.recent.map((chat) => (
+                    {chats.recent.map((chat) => (
                       <tr key={chat.id} className="hover:bg-surface-light/40 transition-colors">
                         <td className="px-5 py-3">
                           <Link
@@ -221,9 +173,9 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {data.chats.recent.length > 0 && (
+            {chats.recent.length > 0 && (
               <div className="sm:hidden divide-y divide-border">
-                {data.chats.recent.map((chat) => (
+                {chats.recent.map((chat) => (
                   <Link
                     key={chat.id}
                     href={`/whatsapp/chat/${chat.accountId}/${chat.id}`}
@@ -276,7 +228,7 @@ export default function DashboardPage() {
           </Link>
 
           <Link
-            href="/whatsapp/bots/nueva"
+            href="/whatsapp/bots"
             className="flex items-center gap-3 rounded-lg border border-border bg-surface-light p-3.5 transition-all hover:border-accent/30 hover:shadow-sm"
           >
             <IconBox icon={Bot} size="sm" tone="success" />

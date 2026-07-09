@@ -14,5 +14,8 @@ else
   npx prisma db push --skip-generate
 fi
 
-echo "3. Starting application..."
+echo "3. Ensuring pgvector index..."
+npx prisma db execute --file prisma/sql/ensure-vector-index.sql --schema prisma/schema.prisma
+
+echo "4. Starting application..."
 exec npm start

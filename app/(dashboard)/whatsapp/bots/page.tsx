@@ -9,7 +9,9 @@ import { Button } from "@/app/components/ui/button";
 import { Spinner } from "@/app/components/ui/spinner";
 import { EmptyState } from "@/app/components/ui/empty-state";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
+import { PageHeader } from "@/app/components/ui/page-header";
 import { useToast } from "@/app/components/ui/toast";
+import { BotFormModal } from "./_form";
 
 interface WaBot {
   id: string;
@@ -38,6 +40,7 @@ export default function BotsPage() {
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
 
   const fetchBots = useCallback(async () => {
     setLoading(true);
@@ -87,15 +90,15 @@ export default function BotsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Bots IA</h1>
-          <p className="mt-1 text-sm text-muted">Configura bots con IA para responder automáticamente mensajes de WhatsApp.</p>
-        </div>
-        <Link href="/whatsapp/bots/nueva">
-          <Button icon={Plus} size="sm">Crear bot</Button>
-        </Link>
-      </div>
+      <PageHeader
+        title="Bots IA"
+        description="Configura bots con IA para responder automáticamente mensajes de WhatsApp."
+        actions={
+          <Button icon={Plus} size="sm" onClick={() => setFormOpen(true)}>
+            Crear bot
+          </Button>
+        }
+      />
 
       {loading ? (
         <div className="flex items-center justify-center py-16"><Spinner /></div>
@@ -106,6 +109,8 @@ export default function BotsPage() {
           description="Crea tu primer bot de IA para automatizar conversaciones de WhatsApp."
         />
       ) : (
+        // Grid of Card, not <Table>: each bot's primary action is a status toggle with
+        // immediate visual feedback (Power/PowerOff), which reads better as a card than a table row.
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {bots.map((bot) => {
             const provider = PROVIDER_BADGE[bot.provider] ?? { label: bot.provider, tone: "info" as const };
@@ -191,6 +196,12 @@ export default function BotsPage() {
         confirmLabel="Eliminar"
         tone="danger"
         onConfirm={handleDelete}
+      />
+
+      <BotFormModal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        onSaved={fetchBots}
       />
     </div>
   );

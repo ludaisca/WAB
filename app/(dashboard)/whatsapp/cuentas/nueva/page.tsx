@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import QRCode from "qrcode";
 import { ArrowLeft, Save, Info, QrCode, AlertTriangle } from "lucide-react";
 import { Card, CardBody, CardFooter } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
@@ -22,6 +21,10 @@ function BaileysPairing() {
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [qrExpired, setQrExpired] = useState(false);
+  const attemptsRef = useRef(0);
+
+  const MAX_POLL_ATTEMPTS = 60; // ~2 min a 2s por intento
 
   const pollStatus = useCallback(async (id: string) => {
     try {
@@ -29,6 +32,7 @@ function BaileysPairing() {
       const data = await res.json();
       setStatus(data.status);
       if (data.qr) {
+        const { default: QRCode } = await import("qrcode");
         const dataUrl = await QRCode.toDataURL(data.qr, { width: 280 });
         setQrImage(dataUrl);
       } else {
@@ -46,10 +50,19 @@ function BaileysPairing() {
   }, [router, success, toastError]);
 
   useEffect(() => {
-    if (!accountId || status === "CONNECTED") return;
-    const interval = setInterval(() => pollStatus(accountId), 2000);
+    if (!accountId || status === "CONNECTED" || qrExpired) return;
+    attemptsRef.current = 0;
+    const interval = setInterval(() => {
+      attemptsRef.current += 1;
+      if (attemptsRef.current > MAX_POLL_ATTEMPTS) {
+        clearInterval(interval);
+        setQrExpired(true);
+        return;
+      }
+      pollStatus(accountId);
+    }, 2000);
     return () => clearInterval(interval);
-  }, [accountId, status, pollStatus]);
+  }, [accountId, status, qrExpired, pollStatus]);
 
   async function handleStart() {
     if (!name.trim()) {
@@ -57,6 +70,7 @@ function BaileysPairing() {
       return;
     }
     setStarting(true);
+    setQrExpired(false);
     try {
       const res = await fetch("/api/whatsapp/accounts/baileys", {
         method: "POST",
@@ -72,6 +86,13 @@ function BaileysPairing() {
     } finally {
       setStarting(false);
     }
+  }
+
+  function handleRetryQr() {
+    setAccountId(null);
+    setQrImage(null);
+    setStatus(null);
+    setQrExpired(false);
   }
 
   return (
@@ -90,6 +111,15 @@ function BaileysPairing() {
                 <Input id={id} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Prueba local" />
               )}
             </FormField>
+          ) : qrExpired ? (
+            <div className="flex flex-col items-center gap-4 py-8">
+              <Banner tone="warning" title="Código QR expirado">
+                No se detectó la conexión a tiempo. Genera un nuevo código para volver a intentar.
+              </Banner>
+              <Button type="button" variant="secondary" onClick={handleRetryQr}>
+                Generar nuevo código
+              </Button>
+            </div>
           ) : (
             <div className="flex flex-col items-center gap-4 py-4">
               {qrImage ? (

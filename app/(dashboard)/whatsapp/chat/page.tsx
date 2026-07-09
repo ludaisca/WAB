@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, Send, ArrowLeft, MessageSquare, User } from "lucide-react";
+import { Search, Send, ArrowLeft, MessageSquare, User, StickyNote } from "lucide-react";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
 import { Button } from "@/app/components/ui/button";
@@ -11,6 +11,25 @@ import { EmptyState } from "@/app/components/ui/empty-state";
 import { useToast } from "@/app/components/ui/toast";
 import { ContactDrawer } from "@/app/components/whatsapp/contact-drawer";
 import { ChatAssigneePicker } from "@/app/components/whatsapp/chat-assignee-picker";
+import { ChatTagPicker } from "@/app/components/whatsapp/chat-tag-picker";
+import { ChatNotesDrawer } from "@/app/components/whatsapp/chat-notes-drawer";
+
+const CHATS_PAGE_SIZE = 30;
+
+type ChatStatus = "OPEN" | "PENDING" | "RESOLVED";
+
+const STATUS_TABS: Array<{ key: ChatStatus | "ALL"; label: string }> = [
+  { key: "OPEN", label: "Abiertos" },
+  { key: "PENDING", label: "Pendientes" },
+  { key: "RESOLVED", label: "Resueltos" },
+  { key: "ALL", label: "Todos" },
+];
+
+const STATUS_BADGE: Record<ChatStatus, { label: string; tone: "info" | "warning" | "success" }> = {
+  OPEN: { label: "Abierto", tone: "info" },
+  PENDING: { label: "Pendiente", tone: "warning" },
+  RESOLVED: { label: "Resuelto", tone: "success" },
+};
 
 interface ChatItem {
   id: string;
@@ -22,9 +41,16 @@ interface ChatItem {
   lastMessageAt: string | null;
   unreadCount: number;
   contactId: string | null;
+  status: ChatStatus;
   assignedToId: string | null;
   assignedTo: { id: string; name: string | null } | null;
   account: { id: string; name: string; phoneNumber: string | null };
+}
+
+interface CannedResponseItem {
+  id: string;
+  shortcut: string;
+  content: string;
 }
 
 interface Message {
@@ -81,6 +107,8 @@ export default function ChatPage() {
 
   const [chats, setChats] = useState<ChatItem[]>([]);
   const [loadingChats, setLoadingChats] = useState(true);
+  const [loadingMoreChats, setLoadingMoreChats] = useState(false);
+  const [chatsTotal, setChatsTotal] = useState(0);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -89,33 +117,103 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [search, setSearch] = useState("");
   const [accountFilter, setAccountFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ChatStatus | "ALL">("OPEN");
   const [contactDrawerOpen, setContactDrawerOpen] = useState(false);
+  const [notesDrawerOpen, setNotesDrawerOpen] = useState(false);
+  const [cannedResponses, setCannedResponses] = useState<CannedResponseItem[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const fetchChats = useCallback(async () => {
+  const buildChatsParams = useCallback((page: number, pageSize: number): URLSearchParams => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (statusFilter !== "ALL") params.set("status", statusFilter);
+    return params;
+  }, [statusFilter]);
+
+  // Refresca la ventana de chats actualmente visible (page=1..N ya cargadas)
+  // reemplazando el array por completo — usado en polling y tras enviar/actualizar.
+  const refreshChats = useCallback(async () => {
     setLoadingChats(true);
     try {
-      const res = await fetch("/api/whatsapp/chats");
+      const pageSize = Math.min(Math.max(chats.length, CHATS_PAGE_SIZE), 100);
+      const res = await fetch(`/api/whatsapp/chats?${buildChatsParams(1, pageSize)}`);
       const data = await res.json();
-      if (Array.isArray(data)) setChats(data);
+      if (Array.isArray(data.items)) {
+        setChats(data.items);
+        setChatsTotal(data.total ?? 0);
+      }
     } catch {
       toastError("Error al cargar chats");
     } finally {
       setLoadingChats(false);
     }
-  }, [toastError]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chats.length read intentionally to preserve the currently loaded window, not to retrigger on every chats change
+  }, [buildChatsParams, toastError]);
 
+  const loadMoreChats = useCallback(async () => {
+    setLoadingMoreChats(true);
+    try {
+      const nextPage = Math.floor(chats.length / CHATS_PAGE_SIZE) + 1;
+      const res = await fetch(`/api/whatsapp/chats?${buildChatsParams(nextPage, CHATS_PAGE_SIZE)}`);
+      const data = await res.json();
+      if (Array.isArray(data.items)) {
+        setChats((prev) => [...prev, ...data.items]);
+        setChatsTotal(data.total ?? 0);
+      }
+    } catch {
+      toastError("Error al cargar más chats");
+    } finally {
+      setLoadingMoreChats(false);
+    }
+  }, [chats.length, buildChatsParams, toastError]);
+
+  // Se ejecuta al montar y cada vez que cambia el filtro de estado — reinicia
+  // la ventana de chats cargados a la página 1 con el tamaño por defecto.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchChats also used for manual refresh
-    fetchChats();
-  }, [fetchChats]);
+    async function reset() {
+      setLoadingChats(true);
+      try {
+        const res = await fetch(`/api/whatsapp/chats?${buildChatsParams(1, CHATS_PAGE_SIZE)}`);
+        const data = await res.json();
+        if (Array.isArray(data.items)) {
+          setChats(data.items);
+          setChatsTotal(data.total ?? 0);
+        }
+      } catch {
+        toastError("Error al cargar chats");
+      } finally {
+        setLoadingChats(false);
+      }
+    }
+    reset();
+  }, [buildChatsParams, toastError]);
 
+  // Actualiza el chat seleccionado (barato, sin red) cuando cambia la selección
+  // o cuando refreshChats/loadMoreChats trae datos nuevos del mismo chat.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs selectedChat with the chats list, no network involved
+    setSelectedChat(chats.find((c) => c.id === selectedChatId) ?? null);
+  }, [selectedChatId, chats]);
+
+  // Precarga las respuestas rápidas de la cuenta del chat activo (una vez por
+  // cuenta, no por tecla) para el autocomplete "/" del composer.
+  useEffect(() => {
+    if (!selectedChat) return;
+    fetch(`/api/whatsapp/canned-responses?waAccountId=${selectedChat.accountId}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d)) setCannedResponses(d);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only refetch when the account changes, not on every chats poll that recreates selectedChat
+  }, [selectedChat?.accountId]);
+
+  // Carga de mensajes: depende SOLO de selectedChatId, no del array `chats`,
+  // para que el polling de la lista de chats no retrigere este fetch.
   useEffect(() => {
     if (!selectedChatId) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- load messages when selected chat changes
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- kicks off the async message load below
     setLoadingMessages(true);
-    setSelectedChat(chats.find((c) => c.id === selectedChatId) ?? null);
 
     async function load() {
       try {
@@ -129,7 +227,7 @@ export default function ChatPage() {
       }
     }
     load();
-  }, [selectedChatId, chats, toastError]);
+  }, [selectedChatId, toastError]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -143,12 +241,12 @@ export default function ChatPage() {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           setMessages(data);
-          fetchChats();
+          refreshChats();
         }
       } catch {}
     }, 5000);
     return () => clearInterval(interval);
-  }, [selectedChatId, fetchChats]);
+  }, [selectedChatId, refreshChats]);
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
@@ -164,11 +262,28 @@ export default function ChatPage() {
       if (!res.ok) throw new Error(data.error ?? "Error al enviar");
       setMessages((prev) => [...prev, data]);
       setNewMessage("");
-      fetchChats();
+      refreshChats();
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Error al enviar");
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleStatusChange(newStatus: ChatStatus) {
+    if (!selectedChatId) return;
+    try {
+      const res = await fetch(`/api/whatsapp/chats/${selectedChatId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Error al cambiar estado");
+      setSelectedChat((prev) => prev && { ...prev, status: data.status });
+      setChats((prev) => prev.map((c) => (c.id === selectedChatId ? { ...c, status: data.status } : c)));
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al cambiar estado");
     }
   }
 
@@ -196,6 +311,17 @@ export default function ChatPage() {
 
   const selectedMessages = messages;
 
+  const cannedQuery = newMessage.startsWith("/") && !newMessage.includes(" ")
+    ? newMessage.slice(1).toLowerCase()
+    : null;
+  const cannedSuggestions = cannedQuery !== null
+    ? cannedResponses.filter((c) => c.shortcut.startsWith(cannedQuery)).slice(0, 6)
+    : [];
+
+  function insertCannedResponse(content: string) {
+    setNewMessage(content);
+  }
+
   return (
     <div className="flex h-[calc(100vh-9rem)] -m-4 md:-m-6 lg:-m-8">
       <div className={`${selectedChatId ? "hidden md:flex" : "flex"} md:flex flex-col w-full md:w-80 lg:w-96 border-r border-border shrink-0`}>
@@ -220,6 +346,21 @@ export default function ChatPage() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar chat..."
           />
+          <div className="flex gap-1 pt-1">
+            {STATUS_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setStatusFilter(tab.key)}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                  statusFilter === tab.key
+                    ? "bg-accent text-on-accent"
+                    : "bg-surface-light text-muted-darker hover:text-foreground"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
           {loadingChats ? (
@@ -280,6 +421,19 @@ export default function ChatPage() {
                   ))}
                 </div>
               ))}
+              {!search && !accountFilter && chats.length < chatsTotal && (
+                <div className="p-3">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    fullWidth
+                    onClick={loadMoreChats}
+                    disabled={loadingMoreChats}
+                  >
+                    {loadingMoreChats ? <Spinner /> : "Cargar más"}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -314,6 +468,19 @@ export default function ChatPage() {
                 )}
               </div>
               {selectedChat && (
+                <select
+                  value={selectedChat.status}
+                  onChange={(e) => handleStatusChange(e.target.value as ChatStatus)}
+                  className="text-xs font-medium rounded-md border border-border bg-surface-light px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/40"
+                  title="Estado de la conversación"
+                >
+                  {(Object.keys(STATUS_BADGE) as ChatStatus[]).map((s) => (
+                    <option key={s} value={s}>{STATUS_BADGE[s].label}</option>
+                  ))}
+                </select>
+              )}
+              {selectedChat && <ChatTagPicker key={selectedChat.id} chatId={selectedChat.id} />}
+              {selectedChat && (
                 <ChatAssigneePicker
                   chatId={selectedChat.id}
                   assignedTo={selectedChat.assignedTo}
@@ -321,6 +488,15 @@ export default function ChatPage() {
                     setSelectedChat((prev) => prev && ({ ...prev, assignedTo: assignee, assignedToId: assignee?.id ?? null }))
                   }
                 />
+              )}
+              {selectedChat && (
+                <button
+                  onClick={() => setNotesDrawerOpen(true)}
+                  className="text-muted-darker hover:text-foreground transition-colors"
+                  title="Notas internas"
+                >
+                  <StickyNote size={18} />
+                </button>
               )}
               {selectedChat?.contactId && (
                 <button
@@ -350,11 +526,32 @@ export default function ChatPage() {
               <div ref={messagesEndRef} />
             </div>
 
-            <form onSubmit={handleSend} className="flex items-end gap-2 px-4 py-3 border-t border-border bg-surface shrink-0">
+            <form onSubmit={handleSend} className="relative flex items-end gap-2 px-4 py-3 border-t border-border bg-surface shrink-0">
+              {cannedSuggestions.length > 0 && (
+                <div className="absolute bottom-full left-4 right-4 mb-1.5 rounded-lg border border-border bg-surface shadow-lg overflow-hidden">
+                  {cannedSuggestions.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => insertCannedResponse(c.content)}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-surface-light transition-colors border-b border-border last:border-b-0"
+                    >
+                      <span className="font-mono text-accent">/{c.shortcut}</span>
+                      <span className="text-muted-darker ml-2 truncate">{c.content}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <input
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
-                placeholder="Escribe un mensaje..."
+                onKeyDown={(e) => {
+                  if (e.key === "Tab" && cannedSuggestions.length > 0) {
+                    e.preventDefault();
+                    insertCannedResponse(cannedSuggestions[0].content);
+                  }
+                }}
+                placeholder="Escribe un mensaje... (usa /atajo para respuestas rápidas)"
                 className="flex-1 bg-background border border-border rounded-lg px-3 py-2.5 text-sm placeholder:text-muted-darker focus:outline-none focus:ring-2 focus:ring-accent/40 transition-colors"
                 disabled={sending}
               />
@@ -375,7 +572,15 @@ export default function ChatPage() {
         <ContactDrawer
           contactId={selectedChat.contactId}
           onClose={() => setContactDrawerOpen(false)}
-          onUpdated={fetchChats}
+          onUpdated={refreshChats}
+        />
+      )}
+
+      {notesDrawerOpen && selectedChat && (
+        <ChatNotesDrawer
+          chatId={selectedChat.id}
+          chatTitle={selectedChat.name ?? selectedChat.remoteJid}
+          onClose={() => setNotesDrawerOpen(false)}
         />
       )}
     </div>

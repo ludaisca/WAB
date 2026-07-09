@@ -10,6 +10,7 @@ import { Button } from "@/app/components/ui/button";
 import { Spinner } from "@/app/components/ui/spinner";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { Banner } from "@/app/components/ui/banner";
+import { Switch } from "@/app/components/ui/switch";
 import { useToast } from "@/app/components/ui/toast";
 
 interface AccountDetail {
@@ -21,6 +22,7 @@ interface AccountDetail {
   status: string;
   errorMessage: string | null;
   lastActivity: string | null;
+  autoAssignEnabled: boolean;
   createdAt: string;
   updatedAt: string;
   _count: { chats: number; templates: number };
@@ -91,6 +93,22 @@ export default function CuentaDetailPage() {
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleToggleAutoAssign(enabled: boolean) {
+    if (!account) return;
+    setAccount({ ...account, autoAssignEnabled: enabled });
+    try {
+      const res = await fetch(`/api/whatsapp/accounts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoAssignEnabled: enabled }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      setAccount((prev) => prev && { ...prev, autoAssignEnabled: !enabled });
+      toastError("Error al actualizar auto-asignación");
+    }
   }
 
   if (loading) {
@@ -204,6 +222,23 @@ export default function CuentaDetailPage() {
             >
               {copied ? "Copiado" : "Copiar"}
             </Button>
+          </div>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Asignación de chats</CardTitle>
+        </CardHeader>
+        <CardBody>
+          <div className="flex items-center justify-between py-1">
+            <div>
+              <p className="text-sm font-medium text-foreground">Auto-asignación de chats nuevos</p>
+              <p className="text-xs text-muted-darker">
+                Reparte automáticamente los chats sin asignar entre los agentes con acceso a esta cuenta, según su carga actual.
+              </p>
+            </div>
+            <Switch checked={account.autoAssignEnabled} onCheckedChange={handleToggleAutoAssign} />
           </div>
         </CardBody>
       </Card>

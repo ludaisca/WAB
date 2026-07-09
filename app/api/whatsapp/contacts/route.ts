@@ -33,24 +33,32 @@ export async function GET(req: Request) {
       ];
     }
 
-    const contacts = await prisma.contact.findMany({
-      where,
-      select: {
-        id: true,
-        accountId: true,
-        remoteJid: true,
-        name: true,
-        leadStatus: true,
-        createdAt: true,
-        updatedAt: true,
-        tags: { select: { tag: { select: { id: true, name: true, color: true } } } },
-        chat: { select: { id: true, unreadCount: true, lastMessageAt: true } },
-        _count: { select: { notes: true } },
-      },
-      orderBy: { updatedAt: "desc" },
-    });
+    const page = Math.max(1, Number(searchParams.get("page")) || 1);
+    const pageSize = Math.min(Math.max(Number(searchParams.get("pageSize")) || 25, 1), 100);
 
-    return NextResponse.json(contacts);
+    const [contacts, total] = await Promise.all([
+      prisma.contact.findMany({
+        where,
+        select: {
+          id: true,
+          accountId: true,
+          remoteJid: true,
+          name: true,
+          leadStatus: true,
+          createdAt: true,
+          updatedAt: true,
+          tags: { select: { tag: { select: { id: true, name: true, color: true } } } },
+          chat: { select: { id: true, unreadCount: true, lastMessageAt: true } },
+          _count: { select: { notes: true } },
+        },
+        orderBy: { updatedAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.contact.count({ where }),
+    ]);
+
+    return NextResponse.json({ items: contacts, total, page, pageSize });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Error interno del servidor";

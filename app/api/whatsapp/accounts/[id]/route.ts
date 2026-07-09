@@ -35,6 +35,7 @@ export async function GET(
         status: true,
         errorMessage: true,
         lastActivity: true,
+        autoAssignEnabled: true,
         createdAt: true,
         updatedAt: true,
         _count: { select: { chats: true, templates: true } },
@@ -93,6 +94,10 @@ export async function PATCH(
     if (name) data.name = name;
     if (wabaId) data.wabaId = wabaId;
 
+    if (typeof body?.autoAssignEnabled === "boolean") {
+      data.autoAssignEnabled = body.autoAssignEnabled;
+    }
+
     if (accessToken) {
       if (existing.channel !== "META_CLOUD" || !existing.phoneNumberId) {
         return NextResponse.json(
@@ -129,6 +134,7 @@ export async function PATCH(
         status: true,
         errorMessage: true,
         lastActivity: true,
+        autoAssignEnabled: true,
         createdAt: true,
         updatedAt: true,
       },

@@ -9,6 +9,7 @@ import { Button } from "@/app/components/ui/button";
 import { Spinner } from "@/app/components/ui/spinner";
 import { EmptyState } from "@/app/components/ui/empty-state";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
+import { PageHeader } from "@/app/components/ui/page-header";
 import { useToast } from "@/app/components/ui/toast";
 
 interface Campaign {
@@ -77,15 +78,15 @@ export default function CampaignsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Campañas</h1>
-          <p className="mt-1 text-sm text-muted">Envía mensajes masivos usando plantillas de WhatsApp.</p>
-        </div>
-        <Link href="/whatsapp/campanas/nueva">
-          <Button icon={Plus} size="sm">Nueva campaña</Button>
-        </Link>
-      </div>
+      <PageHeader
+        title="Campañas"
+        description="Envía mensajes masivos usando plantillas de WhatsApp."
+        actions={
+          <Link href="/whatsapp/campanas/nueva">
+            <Button icon={Plus} size="sm">Nueva campaña</Button>
+          </Link>
+        }
+      />
 
       {loading ? (
         <div className="flex items-center justify-center py-16"><Spinner /></div>

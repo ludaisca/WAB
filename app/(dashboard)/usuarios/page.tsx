@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Shield, ShieldOff, Plus, UserPlus } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { Shield, ShieldOff, UserPlus, Users } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
-import { Input } from "@/app/components/ui/input";
-import { Select } from "@/app/components/ui/select";
-import { FormField } from "@/app/components/ui/form-field";
 import { Spinner } from "@/app/components/ui/spinner";
+import { PageHeader } from "@/app/components/ui/page-header";
+import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
+import { UserFormModal } from "./_form";
 
 interface UserData {
   id: string;
@@ -24,33 +24,29 @@ export default function UsersPage() {
   const { success, error: toastError } = useToast();
   const [users, setUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newEmail, setNewEmail] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [newRole, setNewRole] = useState("user");
-  const [creating, setCreating] = useState(false);
-  const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const res = await fetch("/api/usuarios");
       const data = await res.json();
       if (Array.isArray(data)) setUsers(data);
-      else if (data.error) toastError(data.error);
-    } catch {
-      toastError("Error al cargar usuarios");
+      else throw new Error(data.error ?? "Error al cargar usuarios");
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : "Error al cargar usuarios");
     } finally {
       setLoading(false);
     }
-  }, [toastError]);
+  }, []);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchUsers also used for manual refresh
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
-  async function toggleRole(userId: string, currentRole: string) {
+  const toggleRole = useCallback(async (userId: string, currentRole: string) => {
     setTogglingId(userId);
     const cycle: Record<string, string> = { user: "ejecutivo", ejecutivo: "admin", admin: "user" };
     const newRole = cycle[currentRole] ?? "user";
@@ -72,7 +68,7 @@ export default function UsersPage() {
     } finally {
       setTogglingId(null);
     }
-  }
+  }, [success, toastError]);
 
   function nextRoleLabel(role: string): string {
     const labels: Record<string, string> = { user: "Ejecutivo", ejecutivo: "Admin", admin: "Usuario" };
@@ -83,149 +79,99 @@ export default function UsersPage() {
     return role === "admin" ? ShieldOff : Shield;
   }
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    const errors: Record<string, string> = {};
-    if (!newName.trim()) errors.name = "Requerido";
-    if (!newEmail.trim()) errors.email = "Requerido";
-    if (!newPassword || newPassword.length < 6) errors.password = "Mínimo 6 caracteres";
-    setCreateErrors(errors);
-    if (Object.keys(errors).length > 0) return;
-
-    setCreating(true);
-    try {
-      const res = await fetch("/api/usuarios", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: newName.trim(),
-          email: newEmail.trim().toLowerCase(),
-          password: newPassword,
-          role: newRole,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-
-      success("Usuario creado");
-      setNewName(""); setNewEmail(""); setNewPassword(""); setNewRole("user");
-      setShowCreate(false);
-      fetchUsers();
-    } catch (err) {
-      toastError(err instanceof Error ? err.message : "Error al crear");
-    } finally {
-      setCreating(false);
-    }
-  }
+  const columns: TableColumn<UserData>[] = useMemo(() => [
+    {
+      key: "name",
+      header: "Usuario",
+      render: (u) => <span className="font-medium text-sm">{u.name ?? "—"}</span>,
+    },
+    {
+      key: "email",
+      header: "Email",
+      render: (u) => <span className="text-xs font-mono">{u.email}</span>,
+      hideBelow: "sm",
+    },
+    {
+      key: "role",
+      header: "Rol",
+      render: (u) => (
+        <Badge tone={u.role === "admin" ? "warning" : u.role === "ejecutivo" ? "info" : "neutral"} size="sm">
+          {u.role === "admin" ? "Admin" : u.role === "ejecutivo" ? "Ejecutivo" : "Usuario"}
+        </Badge>
+      ),
+    },
+    {
+      key: "waAccounts",
+      header: "Cuentas",
+      render: (u) => <span className="text-xs">{u.waAccounts.length}</span>,
+      hideBelow: "md",
+    },
+    {
+      key: "createdAt",
+      header: "Registro",
+      render: (u) => (
+        <span className="text-xs text-muted-darker">
+          {new Date(u.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}
+        </span>
+      ),
+      hideBelow: "md",
+    },
+    {
+      key: "actions",
+      header: "",
+      headerClassName: "text-right",
+      cellClassName: "text-right",
+      render: (u) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={nextRoleIcon(u.role)}
+          onClick={() => toggleRole(u.id, u.role)}
+          disabled={togglingId === u.id}
+          className={u.role === "admin" ? "text-warning" : "text-muted-darker"}
+        >
+          {togglingId === u.id ? <Spinner /> : `Hacer ${nextRoleLabel(u.role)}`}
+        </Button>
+      ),
+    },
+  ], [togglingId, toggleRole]);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Usuarios</h1>
-          <p className="mt-1 text-sm text-muted">Gestión de usuarios y roles del sistema.</p>
-        </div>
-        <Button icon={UserPlus} size="sm" onClick={() => setShowCreate(!showCreate)}>
-          Nuevo usuario
-        </Button>
-      </div>
-
-      {showCreate && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Crear usuario</CardTitle>
-          </CardHeader>
-          <CardBody>
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FormField label="Nombre" required error={createErrors.name}>
-                  {(id) => <Input id={id} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nombre completo" error={createErrors.name} />}
-                </FormField>
-                <FormField label="Email" required error={createErrors.email}>
-                  {(id) => <Input id={id} type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="usuario@email.com" error={createErrors.email} />}
-                </FormField>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FormField label="Contraseña" required error={createErrors.password}>
-                  {(id) => <Input id={id} type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Mínimo 6 caracteres" error={createErrors.password} />}
-                </FormField>
-                <FormField label="Rol">
-                  {(id) => (
-                    <Select id={id} value={newRole} onChange={(e) => setNewRole(e.target.value)}>
-                      <option value="user">Usuario</option>
-                      <option value="ejecutivo">Ejecutivo</option>
-                      <option value="admin">Admin</option>
-                    </Select>
-                  )}
-                </FormField>
-              </div>
-              <div className="flex gap-2">
-                <Button type="submit" icon={Plus} disabled={creating}>
-                  {creating ? <Spinner /> : "Crear"}
-                </Button>
-                <Button type="button" variant="secondary" onClick={() => setShowCreate(false)}>
-                  Cancelar
-                </Button>
-              </div>
-            </form>
-          </CardBody>
-        </Card>
-      )}
+      <PageHeader
+        title="Usuarios"
+        description="Gestión de usuarios y roles del sistema."
+        actions={
+          <Button icon={UserPlus} size="sm" onClick={() => setShowCreate(true)}>
+            Nuevo usuario
+          </Button>
+        }
+      />
 
       <Card>
         <CardHeader>
           <CardTitle>Todos los usuarios ({users.length})</CardTitle>
         </CardHeader>
         <CardBody>
-          {loading ? (
-            <div className="flex items-center justify-center py-8"><Spinner /></div>
-          ) : (
-            <div className="overflow-x-auto -mx-5">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-y border-border">
-                    <th className="px-5 py-2.5 text-left text-xs font-medium text-muted-darker uppercase tracking-wider">Usuario</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-darker uppercase tracking-wider">Email</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-darker uppercase tracking-wider">Rol</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-darker uppercase tracking-wider">Cuentas</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-darker uppercase tracking-wider">Registro</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-darker uppercase tracking-wider w-12" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {users.map((u) => (
-                    <tr key={u.id} className="hover:bg-surface-light/40 transition-colors">
-                      <td className="px-5 py-3 font-medium text-sm">{u.name ?? "—"}</td>
-                      <td className="px-4 py-3 text-xs font-mono">{u.email}</td>
-                      <td className="px-4 py-3">
-                        <Badge tone={u.role === "admin" ? "warning" : u.role === "ejecutivo" ? "info" : "neutral"} size="sm">
-                          {u.role === "admin" ? "Admin" : u.role === "ejecutivo" ? "Ejecutivo" : "Usuario"}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-xs">{u.waAccounts.length}</td>
-                      <td className="px-4 py-3 text-xs text-muted-darker">
-                        {new Date(u.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          icon={nextRoleIcon(u.role)}
-                          onClick={() => toggleRole(u.id, u.role)}
-                          disabled={togglingId === u.id}
-                          className={u.role === "admin" ? "text-warning" : "text-muted-darker"}
-                        >
-                          {togglingId === u.id ? <Spinner /> : `Hacer ${nextRoleLabel(u.role)}`}
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <Table
+            columns={columns}
+            rows={users}
+            rowKey={(u) => u.id}
+            loading={loading}
+            error={fetchError}
+            onRetry={fetchUsers}
+            emptyIcon={Users}
+            emptyTitle="Sin usuarios"
+            emptyDescription="No hay usuarios registrados en el sistema."
+          />
         </CardBody>
       </Card>
+
+      <UserFormModal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        onCreated={fetchUsers}
+      />
     </div>
   );
 }

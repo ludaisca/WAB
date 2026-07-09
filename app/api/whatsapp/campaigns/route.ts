@@ -42,27 +42,33 @@ export async function POST(req: Request) {
       );
     }
 
-    const campaign = await prisma.wACampaign.create({
-      data: {
-        userId: session.user.id,
-        waAccountId,
-        waTemplateId,
-        name,
-        status: scheduledAt ? "SCHEDULED" : "DRAFT",
-        scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
-        recipientCount: recipients.length,
-        recipients: {
-          create: recipients.map((r) => ({
-            phoneNumber: r.phoneNumber,
-            contactName: r.contactName ?? undefined,
-            parameters: r.parameters ?? undefined,
-          })),
+    const campaign = await prisma.$transaction(async (tx) => {
+      const created = await tx.wACampaign.create({
+        data: {
+          userId: session.user.id,
+          waAccountId,
+          waTemplateId,
+          name,
+          status: scheduledAt ? "SCHEDULED" : "DRAFT",
+          scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+          recipientCount: recipients.length,
         },
-      },
-      include: {
-        waAccount: { select: { id: true, name: true, phoneNumber: true } },
-        waTemplate: { select: { id: true, name: true } },
-      },
+        include: {
+          waAccount: { select: { id: true, name: true, phoneNumber: true } },
+          waTemplate: { select: { id: true, name: true } },
+        },
+      });
+
+      await tx.wACampaignRecipient.createMany({
+        data: recipients.map((r) => ({
+          campaignId: created.id,
+          phoneNumber: r.phoneNumber,
+          contactName: r.contactName ?? undefined,
+          parameters: r.parameters ?? undefined,
+        })),
+      });
+
+      return created;
     });
 
     return NextResponse.json(campaign, { status: 201 });

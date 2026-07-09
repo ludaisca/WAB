@@ -129,6 +129,18 @@ export const tagSchema = z.object({
   color: z.string().max(30).optional(),
 });
 
+export const cannedResponseSchema = z.object({
+  waAccountId: z.string().min(1, "La cuenta es requerida"),
+  shortcut: z
+    .string()
+    .min(1, "El atajo es requerido")
+    .max(40)
+    .regex(/^\S+$/, "El atajo no puede contener espacios")
+    .transform((v) => v.toLowerCase().replace(/^\/+/, "")),
+  content: z.string().min(1, "El contenido es requerido").max(2000),
+});
+
 export type ContactUpdateInput = z.infer<typeof contactUpdateSchema>;
 export type NoteInput = z.infer<typeof noteSchema>;
 export type TagInput = z.infer<typeof tagSchema>;
+export type CannedResponseInput = z.infer<typeof cannedResponseSchema>;

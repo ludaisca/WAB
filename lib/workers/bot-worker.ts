@@ -137,64 +137,63 @@ async function handleBotMessage(job: BotMessageJob) {
   const wamid = sendResult.wamid ?? undefined;
   const now = new Date();
 
-  await prisma.wAMessage.create({
-    data: {
-      wamid,
-      chatId: waChatId,
-      direction: "OUTBOUND",
-      messageType: "text",
-      body: result.content,
-      status: "sent",
-      timestamp: now,
-    },
-  });
-
-  await prisma.wAChat.update({
-    where: { id: waChatId },
-    data: {
-      lastMessage: result.content.slice(0, 500),
-      lastMessageAt: now,
-    },
-  });
-
-  if (result.usage) {
-    const promptTokens = result.usage.promptTokens;
-    const completionTokens = result.usage.completionTokens;
-    const totalTokens = promptTokens + completionTokens;
-    const cost = await estimateCost(bot.model, promptTokens, completionTokens, provider);
-
-    await prisma.wABotUsage.create({
+  await Promise.all([
+    prisma.wAMessage.create({
       data: {
-        botId,
-        waChatId,
-        model: bot.model,
-        promptTokens,
-        completionTokens,
-        totalTokens,
-        estimatedCost: cost,
+        wamid,
+        chatId: waChatId,
+        direction: "OUTBOUND",
+        messageType: "text",
+        body: result.content,
+        status: "sent",
+        timestamp: now,
       },
-    });
+    }),
+    prisma.wAChat.update({
+      where: { id: waChatId },
+      data: {
+        lastMessage: result.content.slice(0, 500),
+        lastMessageAt: now,
+      },
+    }),
+    prisma.wABotConversation.update({
+      where: { id: conversation.id },
+      data: {
+        messageCount: { increment: 1 },
+        lastInteraction: now,
+        ...(bot.memoryType === "SUMMARY"
+          ? {
+              summary: summarizeText(result.content, conversation.summary),
+            }
+          : {}),
+      },
+    }),
+    prisma.wAAccount.update({
+      where: { id: bot.waAccountId },
+      data: { lastActivity: now },
+    }),
+    (async () => {
+      if (!result.usage) return;
+      const promptTokens = result.usage.promptTokens;
+      const completionTokens = result.usage.completionTokens;
+      const totalTokens = promptTokens + completionTokens;
+      const cost = await estimateCost(bot.model, promptTokens, completionTokens, provider);
 
-    await checkBudgetAlert(bot.userId, now);
-  }
+      await prisma.wABotUsage.create({
+        data: {
+          botId,
+          waChatId,
+          model: bot.model,
+          promptTokens,
+          completionTokens,
+          totalTokens,
+          estimatedCost: cost,
+        },
+      });
 
-  await prisma.wABotConversation.update({
-    where: { id: conversation.id },
-    data: {
-      messageCount: { increment: 1 },
-      lastInteraction: now,
-      ...(bot.memoryType === "SUMMARY"
-        ? {
-            summary: summarizeText(result.content, conversation.summary),
-          }
-        : {}),
-    },
-  });
-
-  await prisma.wAAccount.update({
-    where: { id: bot.waAccountId },
-    data: { lastActivity: now },
-  });
+      await checkBudgetAlert(bot.userId, now);
+    })(),
+  ]);
 }
 
 async function checkBudgetAlert(userId: string, now: Date) {

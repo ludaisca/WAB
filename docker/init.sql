@@ -1,2 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS vector;
-CREATE INDEX IF NOT EXISTS idx_knowledge_embedding ON wa_bot_knowledge USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+-- El índice ivfflat de wa_bot_knowledge se crea en scripts/startup.sh
+-- (prod) y docker-compose.override.yml (dev) DESPUÉS de `prisma db push`,
+-- ver prisma/sql/ensure-vector-index.sql. No se puede crear aquí:
+-- este script corre en la inicialización de Postgres, antes de que
+-- Prisma cree la tabla.

@@ -30,6 +30,8 @@ export async function POST(
       return NextResponse.json({ error: "Chat no encontrado" }, { status: 404 });
     }
 
+    const isFirstResponse = chat.firstResponseAt === null;
+
     const body = await req.json();
     const parsed = sendMessageSchema.safeParse(body);
 
@@ -62,6 +64,7 @@ export async function POST(
         mediaId,
         mimeType,
         status: "sent",
+        senderId: session.user.id,
         timestamp: now,
       },
     });
@@ -71,6 +74,7 @@ export async function POST(
       data: {
         lastMessage: textBody ?? caption ?? `[${type}]`,
         lastMessageAt: now,
+        ...(isFirstResponse ? { firstResponseAt: now } : {}),
       },
     });
 
