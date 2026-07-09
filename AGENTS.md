@@ -57,10 +57,12 @@ Because `<Table>` (and any component using `render: (row) => JSX`) is `"use clie
 
 `lib/estadisticas/get-stats.ts` (`getEstadisticas(userId)`) is shared between `app/api/estadisticas/route.ts` and `estadisticas/page.tsx` so both consumers hit the same in-memory cache (60s TTL, keyed by `userId`) instead of duplicating ~15 queries.
 
+RSC pages should have a sibling `loading.tsx` with skeleton placeholders — Next.js streams this automatically while the async page fetches data.
+
 ## Database
 
 ### Schema
-`prisma/schema.prisma` — 21 models. Key relationships: `User → WAAccount[]`, `User → AppSettings (1:1)`, `WABot ↔ WABotKnowledge (M:N via WABotKnowledgeBot)`, `WAAccount → WAAccountShare[] → User`, `WAChat → Contact (1:1)`, `Contact ↔ Tag (M:N via ContactTag)`, `WAAccount → WABaileysSession` (1:1, only for `channel: BAILEYS`)
+`prisma/schema.prisma` — 24 models. Key relationships: `User → WAAccount[]`, `User → AppSettings (1:1)`, `WABot ↔ WABotKnowledge (M:N via WABotKnowledgeBot)`, `WAAccount → WAAccountShare[] → User`, `WAChat → Contact (1:1)`, `Contact ↔ Tag (M:N via ContactTag)`, `WAAccount → WABaileysSession` (1:1, only for `channel: BAILEYS`)
 
 ### Commands
 ```bash
@@ -210,5 +212,6 @@ Exceptions that stay as a dedicated page instead of a modal:
 - **`WABot.status` vs `isActive`** — two separate gates. `ingestInboundMessage()`'s bot lookup requires *both* `isActive: true` and `status: "ACTIVE"`. Any unhandled error in `processBotMessageJob()` sets `status: "ERROR"` (and notifies) — toggling `isActive` back on via `POST /api/whatsapp/bots/[id]/toggle` is what resets `status` back to `"ACTIVE"`; the bot won't recover just by looking "Active" in a stale UI state. The `/test` endpoint bypasses both fields entirely, so it can succeed while the real message pipeline stays silently dead.
 - **Baileys build gotcha** — `@whiskeysockets/baileys` must stay in `next.config.ts`'s `serverExternalPackages`, or Turbopack fails the production build trying to statically resolve its optional `jimp`/`sharp` dynamic imports (which are wrapped in a runtime try/catch and never actually required unless media thumbnailing is used).
 - **pgvector IVFFlat index** — see "pgvector" under Database; don't re-add the `CREATE INDEX` to `docker/init.sql`, it will silently no-op there.
+- **Never put `<Button>` inside `<Link>`** — renders invalid HTML (`<button>` inside `<a>`). Instead: `<Button onClick={() => router.push("/path")}>` or use a plain `<a>` styled as a button.
 - **`/api/whatsapp/chats` has two response shapes** — a flat array (legacy, when called with no `page` query param — still used by `dashboard/page.tsx` and `whatsapp/page.tsx`) vs. `{items, total, page, pageSize}` (when `page` is present — used by `whatsapp/chat/page.tsx`'s "cargar más"). Check which shape a new consumer needs before adding a call.
 - **Playwright browser not installed in this environment** — `mcp__plugin_playwright_playwright__*` tools fail with "Chromium distribution 'chrome' is not found" until `npx playwright install chrome` is run; don't assume visual/browser verification is available without checking first.
