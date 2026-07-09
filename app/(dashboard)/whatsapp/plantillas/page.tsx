@@ -136,7 +136,7 @@ function TemplatesContent() {
   ], []);
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6">
       <PageHeader
         title="Plantillas"
         description="Gestiona las plantillas de mensaje de tus cuentas WhatsApp."

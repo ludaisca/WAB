@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Upload, X, Database } from "lucide-react";
+import { Upload, Trash2, Database } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -9,6 +9,7 @@ import { FormField } from "@/app/components/ui/form-field";
 import { Spinner } from "@/app/components/ui/spinner";
 import { Badge } from "@/app/components/ui/badge";
 import { PageHeader } from "@/app/components/ui/page-header";
+import { Select } from "@/app/components/ui/select";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
 
@@ -166,7 +167,7 @@ export default function ConocimientoPage() {
       render: (doc) => {
         const firstBotId = bots.find((b) => doc.bots.includes(b.name))?.id;
         return firstBotId ? (
-          <Button variant="ghost" size="sm" icon={X} onClick={() => handleDelete(doc.id, firstBotId)} />
+          <Button variant="ghost" size="sm" icon={Trash2} onClick={() => handleDelete(doc.id, firstBotId)} />
         ) : null;
       },
     },
@@ -189,19 +190,18 @@ export default function ConocimientoPage() {
               </FormField>
               <FormField label="Bot destino" required>
                 {(id) => (
-                  <select
+                  <Select
                     id={id}
                     value={selectedBotId}
                     onChange={(e) => setSelectedBotId(e.target.value)}
-                    className="w-full rounded-lg border border-border bg-surface-light px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/40"
+                    placeholder="Seleccionar bot..."
                   >
-                    <option value="">Seleccionar bot...</option>
                     {bots.map((b) => (
                       <option key={b.id} value={b.id}>
                         {b.name} ({b.waAccount?.name})
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 )}
               </FormField>
             </div>

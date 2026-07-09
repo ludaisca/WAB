@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Bot, Power, PowerOff, Trash2, Settings } from "lucide-react";
 import { Card, CardBody } from "@/app/components/ui/card";
@@ -35,6 +36,7 @@ const PROVIDER_BADGE: Record<string, { label: string; tone: "accent" | "info" }>
 };
 
 export default function BotsPage() {
+  const router = useRouter();
   const { success, error: toastError } = useToast();
   const [bots, setBots] = useState<WaBot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -167,11 +169,15 @@ export default function BotsPage() {
                     </div>
 
                     <div className="flex items-center gap-1 pt-2 border-t border-border">
-                      <Link href={`/whatsapp/bots/${bot.id}`} className="flex-1">
-                        <Button variant="secondary" size="sm" className="w-full" icon={Settings}>
-                          Configurar
-                        </Button>
-                      </Link>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="flex-1"
+                        icon={Settings}
+                        onClick={() => router.push(`/whatsapp/bots/${bot.id}`)}
+                      >
+                        Configurar
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"

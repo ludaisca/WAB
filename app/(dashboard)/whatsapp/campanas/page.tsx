@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Megaphone, Trash2, Eye } from "lucide-react";
 import { Card, CardBody } from "@/app/components/ui/card";
@@ -38,6 +39,7 @@ const STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" 
 };
 
 export default function CampaignsPage() {
+  const router = useRouter();
   const { success, error: toastError } = useToast();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
@@ -138,9 +140,9 @@ export default function CampaignsPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      <Link href={`/whatsapp/campanas/${c.id}`}>
-                        <Button variant="secondary" size="sm" icon={Eye}>Detalle</Button>
-                      </Link>
+                      <Button variant="secondary" size="sm" icon={Eye} onClick={() => router.push(`/whatsapp/campanas/${c.id}`)}>
+                        Detalle
+                      </Button>
                       {c.status === "DRAFT" && (
                         <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setDeleteId(c.id)} className="text-muted-darker hover:text-danger" />
                       )}

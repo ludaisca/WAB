@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Phone, MessageCircle, Bot, Megaphone, Plus, ArrowRight } from "lucide-react";
+import { Phone, MessageCircle, Bot, Megaphone, Plus, Settings, ArrowRight } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
@@ -34,6 +34,7 @@ export default async function DashboardPage() {
     accountsTotal,
     accountsConnected,
     chatsTotal,
+    unreadAgg,
     recentChats,
     botsTotal,
     botsActive,
@@ -43,6 +44,7 @@ export default async function DashboardPage() {
     Promise.resolve(accountIds.length),
     prisma.wAAccount.count({ where: { id: { in: accountIds }, status: "CONNECTED" } }),
     prisma.wAChat.count({ where: { accountId: { in: accountIds } } }),
+    prisma.wAChat.aggregate({ where: { accountId: { in: accountIds } }, _sum: { unreadCount: true } }),
     prisma.wAChat.findMany({
       where: { accountId: { in: accountIds } },
       orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
@@ -63,17 +65,18 @@ export default async function DashboardPage() {
     prisma.wACampaign.count({ where: { userId, status: "COMPLETED" } }),
   ]);
 
-  const chats = {
-    total: chatsTotal,
-    recent: recentChats.map((c) => ({
-      id: c.id,
-      accountId: c.accountId,
-      name: c.name ?? c.remoteJid ?? "Desconocido",
-      lastMessage: c.lastMessage,
-      lastMessageAt: c.lastMessageAt,
-      accountName: c.account?.name ?? "—",
-    })),
-  };
+  const unreadCount = unreadAgg._sum.unreadCount ?? 0;
+
+  const chats = recentChats.map((c) => ({
+    id: c.id,
+    accountId: c.accountId,
+    name: c.name ?? c.remoteJid ?? "Desconocido",
+    lastMessage: c.lastMessage,
+    lastMessageAt: c.lastMessageAt,
+    accountName: c.account?.name ?? "—",
+  }));
+
+  const showAccountColumn = accountsTotal > 1;
 
   return (
     <div className="space-y-6">
@@ -82,31 +85,35 @@ export default async function DashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Cuentas"
-          value={`${accountsConnected}/${accountsTotal}`}
+          value={accountsTotal === 0 ? "0" : `${accountsConnected}/${accountsTotal}`}
           icon={Phone}
           tone="accent"
-          sublabel="conectadas"
+          sublabel={accountsTotal === 0 ? "Conecta tu primer número" : "conectadas"}
+          href="/whatsapp/cuentas"
         />
         <StatCard
           label="Chats activos"
-          value={String(chats.total)}
+          value={String(chatsTotal)}
           icon={MessageCircle}
           tone="info"
-          sublabel="conversaciones"
+          sublabel={unreadCount > 0 ? `${unreadCount} sin leer` : "conversaciones"}
+          href="/whatsapp/chat"
         />
         <StatCard
           label="Bots IA"
-          value={`${botsActive}/${botsTotal}`}
+          value={botsTotal === 0 ? "0" : `${botsActive}/${botsTotal}`}
           icon={Bot}
           tone="success"
           sublabel="activos"
+          href="/whatsapp/bots"
         />
         <StatCard
           label="Campañas"
-          value={`${campaignsCompleted}/${campaignsTotal}`}
+          value={campaignsTotal === 0 ? "0" : `${campaignsCompleted}/${campaignsTotal}`}
           icon={Megaphone}
           tone="warning"
           sublabel="completadas"
+          href="/whatsapp/campanas"
         />
       </div>
 
@@ -118,7 +125,7 @@ export default async function DashboardPage() {
                 <MessageCircle size={16} className="text-accent" />
                 <CardTitle>Chats recientes</CardTitle>
               </div>
-              {chats.total > 0 && (
+              {chatsTotal > 0 && (
                 <Link
                   href="/whatsapp/chat"
                   className="inline-flex items-center gap-1 text-xs text-accent hover:underline underline-offset-2"
@@ -128,7 +135,7 @@ export default async function DashboardPage() {
               )}
             </div>
 
-            {chats.recent.length === 0 ? (
+            {chats.length === 0 ? (
               <div className="px-5 py-8 text-center">
                 <p className="text-sm text-muted-darker">No hay conversaciones aún.</p>
                 <p className="text-xs text-muted mt-1">
@@ -142,12 +149,14 @@ export default async function DashboardPage() {
                     <tr className="bg-surface">
                       <th className="px-5 py-2.5 text-left text-xs font-medium text-muted-darker uppercase tracking-wider">Contacto</th>
                       <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-darker uppercase tracking-wider">Último mensaje</th>
-                      <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-darker uppercase tracking-wider">Cuenta</th>
+                      {showAccountColumn && (
+                        <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-darker uppercase tracking-wider">Cuenta</th>
+                      )}
                       <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-darker uppercase tracking-wider">Hora</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {chats.recent.map((chat) => (
+                    {chats.map((chat) => (
                       <tr key={chat.id} className="hover:bg-surface-light/40 transition-colors">
                         <td className="px-5 py-3">
                           <Link
@@ -160,9 +169,11 @@ export default async function DashboardPage() {
                         <td className="px-4 py-3 text-xs text-muted-darker max-w-[200px] truncate">
                           {chat.lastMessage ?? "—"}
                         </td>
-                        <td className="px-4 py-3">
-                          <Badge tone="neutral" size="sm">{chat.accountName}</Badge>
-                        </td>
+                        {showAccountColumn && (
+                          <td className="px-4 py-3">
+                            <Badge tone="neutral" size="sm">{chat.accountName}</Badge>
+                          </td>
+                        )}
                         <td className="px-4 py-3 text-xs text-muted-darker text-right">
                           {formatTime(chat.lastMessageAt)}
                         </td>
@@ -173,9 +184,9 @@ export default async function DashboardPage() {
               </div>
             )}
 
-            {chats.recent.length > 0 && (
+            {chats.length > 0 && (
               <div className="sm:hidden divide-y divide-border">
-                {chats.recent.map((chat) => (
+                {chats.map((chat) => (
                   <Link
                     key={chat.id}
                     href={`/whatsapp/chat/${chat.accountId}/${chat.id}`}
@@ -192,7 +203,9 @@ export default async function DashboardPage() {
                         <span className="text-[10px] text-muted-darker">
                           {formatTime(chat.lastMessageAt)}
                         </span>
-                        <Badge tone="neutral" size="sm">{chat.accountName}</Badge>
+                        {showAccountColumn && (
+                          <Badge tone="neutral" size="sm">{chat.accountName}</Badge>
+                        )}
                       </div>
                     </div>
                   </Link>
@@ -228,32 +241,10 @@ export default async function DashboardPage() {
           </Link>
 
           <Link
-            href="/whatsapp/bots"
-            className="flex items-center gap-3 rounded-lg border border-border bg-surface-light p-3.5 transition-all hover:border-accent/30 hover:shadow-sm"
-          >
-            <IconBox icon={Bot} size="sm" tone="success" />
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Crear bot IA</p>
-              <p className="text-xs text-muted-darker truncate">Automatizar respuestas con IA</p>
-            </div>
-          </Link>
-
-          <Link
-            href="/whatsapp/campanas/nueva"
-            className="flex items-center gap-3 rounded-lg border border-border bg-surface-light p-3.5 transition-all hover:border-accent/30 hover:shadow-sm"
-          >
-            <IconBox icon={Megaphone} size="sm" tone="warning" />
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Nueva campaña</p>
-              <p className="text-xs text-muted-darker truncate">Enviar mensajes masivos</p>
-            </div>
-          </Link>
-
-          <Link
             href="/configuracion"
             className="flex items-center gap-3 rounded-lg border border-border bg-surface-light p-3.5 transition-all hover:border-accent/30 hover:shadow-sm"
           >
-            <IconBox icon={Plus} size="sm" tone="accent" />
+            <IconBox icon={Settings} size="sm" tone="accent" />
             <div className="min-w-0">
               <p className="text-sm font-medium">Configuración</p>
               <p className="text-xs text-muted-darker truncate">Administrar perfil y ajustes IA</p>

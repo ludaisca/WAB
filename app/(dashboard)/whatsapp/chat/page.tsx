@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, Send, ArrowLeft, MessageSquare, User, StickyNote } from "lucide-react";
+import { Search, Send, ArrowLeft, MessageSquare, User, StickyNote, Check, CheckCheck } from "lucide-react";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
 import { Button } from "@/app/components/ui/button";
@@ -91,9 +91,9 @@ function MessageBubble({ msg }: { msg: Message }) {
           <span className="text-[10px]">{formatTime(msg.timestamp)}</span>
           {!isInbound && msg.status && (
             <span className="text-[10px]">
-              {msg.status === "sent" && "✓"}
-              {msg.status === "delivered" && "✓✓"}
-              {msg.status === "read" && "✓✓"}
+              {msg.status === "sent" && <Check size={10} />}
+              {msg.status === "delivered" && <CheckCheck size={10} />}
+              {msg.status === "read" && <CheckCheck size={10} className="text-blue-300" />}
             </span>
           )}
         </div>
@@ -542,17 +542,21 @@ export default function ChatPage() {
                   ))}
                 </div>
               )}
-              <input
+              <Input
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend(e as unknown as React.FormEvent);
+                  }
                   if (e.key === "Tab" && cannedSuggestions.length > 0) {
                     e.preventDefault();
                     insertCannedResponse(cannedSuggestions[0].content);
                   }
                 }}
                 placeholder="Escribe un mensaje... (usa /atajo para respuestas rápidas)"
-                className="flex-1 bg-background border border-border rounded-lg px-3 py-2.5 text-sm placeholder:text-muted-darker focus:outline-none focus:ring-2 focus:ring-accent/40 transition-colors"
+                className="flex-1"
                 disabled={sending}
               />
               <Button

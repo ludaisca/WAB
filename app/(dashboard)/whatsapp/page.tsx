@@ -35,7 +35,7 @@ export default async function WhatsAppDashboardPage() {
 
   const accountIds = await getUserAccountIds(userId);
 
-  const [accountsCount, connectedCount, recentAccounts, chatsCount] = await Promise.all([
+  const [accountsCount, connectedCount, recentAccounts, chatsCount, messagesCount] = await Promise.all([
     prisma.wAAccount.count({ where: accountsWhere }),
     prisma.wAAccount.count({ where: { ...accountsWhere, status: "CONNECTED" } }),
     prisma.wAAccount.findMany({
@@ -45,9 +45,15 @@ export default async function WhatsAppDashboardPage() {
       orderBy: { updatedAt: "desc" },
     }),
     prisma.wAChat.count({ where: { accountId: { in: accountIds } } }),
+    prisma.wAMessage.count({
+      where: {
+        OR: [
+          { chat: { account: { userId } } },
+          { chat: { account: { sharedWith: { some: { userId } } } } },
+        ],
+      },
+    }),
   ]);
-
-  const messagesCount = 0;
 
   return (
     <div className="space-y-6">
@@ -64,18 +70,21 @@ export default async function WhatsAppDashboardPage() {
           icon={Phone}
           tone="accent"
           sublabel={`${connectedCount} conectadas`}
+          href="/whatsapp/cuentas"
         />
         <StatCard
           label="Chats activos"
           value={String(chatsCount)}
           icon={Users}
           tone="info"
+          href="/whatsapp/chat"
         />
         <StatCard
           label="Mensajes totales"
           value={String(messagesCount)}
           icon={MessageCircle}
           tone="success"
+          href="/whatsapp/chat"
         />
         <StatCard
           label="Última actividad"

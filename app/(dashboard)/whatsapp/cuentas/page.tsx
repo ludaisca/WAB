@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Search, Plus, RefreshCw, Phone, Trash2, Settings2 } from "lucide-react";
 import { Card } from "@/app/components/ui/card";
@@ -37,6 +38,7 @@ const STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" 
 };
 
 export default function CuentasPage() {
+  const router = useRouter();
   const { success, error: toastError } = useToast();
   const [accounts, setAccounts] = useState<WaAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -202,7 +204,7 @@ export default function CuentasPage() {
           }
           rowActions={(a) => (
             <>
-              <DropdownItem icon={Settings2} onClick={() => window.location.href = `/whatsapp/cuentas/${a.id}`}>
+              <DropdownItem icon={Settings2} onClick={() => router.push(`/whatsapp/cuentas/${a.id}`)}>
                 Detalles
               </DropdownItem>
               <DropdownItem icon={Trash2} onClick={() => setDeleteId(a.id)}>

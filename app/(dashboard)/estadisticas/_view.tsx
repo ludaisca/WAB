@@ -1,7 +1,19 @@
 "use client";
 
 import { useMemo } from "react";
-import { BarChart3, TrendingUp, MessageCircle, Bot, Phone, DollarSign, Zap, UserCheck } from "lucide-react";
+import Link from "next/link";
+import {
+  BarChart3,
+  TrendingUp,
+  MessageCircle,
+  Bot,
+  Phone,
+  DollarSign,
+  Zap,
+  UserCheck,
+  Users,
+  Mail,
+} from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { StatCard } from "@/app/components/ui/stat-card";
 import { Badge } from "@/app/components/ui/badge";
@@ -15,12 +27,40 @@ const BOT_STATUS_BADGE: Record<string, { label: string; tone: "success" | "warni
   ERROR: { label: "Error", tone: "danger" },
 };
 
+const CHAT_STATUS_LABEL: Record<string, string> = {
+  OPEN: "Abiertos",
+  PENDING: "Pendientes",
+  RESOLVED: "Resueltos",
+};
+
+const CHAT_STATUS_BADGE: Record<string, "info" | "warning" | "success"> = {
+  OPEN: "info",
+  PENDING: "warning",
+  RESOLVED: "success",
+};
+
 type BotBreakdownRow = Estadisticas["botBreakdown"][number];
 type AgentPerformanceRow = Estadisticas["agentPerformance"][number];
 
+function formatCost(value: number): string {
+  if (value === 0) return "$0";
+  if (value < 0.01) return `$${value.toFixed(4)}`;
+  if (value < 1) return `$${value.toFixed(3)}`;
+  if (value < 100) return `$${value.toFixed(2)}`;
+  return `$${Math.round(value).toLocaleString()}`;
+}
+
 export function EstadisticasView({ stats }: { stats: Estadisticas }) {
   const botColumns: TableColumn<BotBreakdownRow>[] = useMemo(() => [
-    { key: "name", header: "Bot", render: (b) => <span className="font-medium">{b.name}</span> },
+    {
+      key: "name",
+      header: "Bot",
+      render: (b) => (
+        <Link href={`/whatsapp/bots/${b.id}`} className="font-medium hover:text-accent transition-colors">
+          {b.name}
+        </Link>
+      ),
+    },
     {
       key: "status",
       header: "Estado",
@@ -41,7 +81,7 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
       header: "Costo",
       headerClassName: "text-right",
       cellClassName: "text-right",
-      render: (b) => `$${b.totalCost.toFixed(4)}`,
+      render: (b) => <span className="font-mono text-xs">{formatCost(b.totalCost)}</span>,
     },
   ], []);
 
@@ -77,10 +117,10 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
       <PageHeader title="Estadísticas" description="Métricas globales de uso de la plataforma." />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Cuentas" value={String(stats.accounts)} icon={Phone} tone="accent" />
-        <StatCard label="Chats activos" value={String(stats.chats)} icon={MessageCircle} tone="info" />
-        <StatCard label="Mensajes" value={String(stats.messages)} icon={BarChart3} tone="success" />
-        <StatCard label="Bots IA" value={`${stats.activeBots}/${stats.bots}`} icon={Bot} tone="warning" sublabel="activos" />
+        <StatCard label="Cuentas" value={String(stats.accounts)} icon={Phone} tone="accent" href="/whatsapp/cuentas" />
+        <StatCard label="Chats activos" value={String(stats.chats)} icon={MessageCircle} tone="info" href="/whatsapp/chat" />
+        <StatCard label="Mensajes" value={String(stats.messages)} icon={Mail} tone="success" href="/whatsapp/chat" />
+        <StatCard label="Bots IA" value={`${stats.activeBots}/${stats.bots}`} icon={Bot} tone="success" sublabel="activos" href="/whatsapp/bots" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -119,19 +159,12 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
         </Card>
 
         <div className="space-y-4">
-          <Card>
-            <CardBody>
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent/10 text-accent">
-                  <DollarSign size={18} />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-darker">Costo estimado IA</p>
-                  <p className="text-xl font-bold">${stats.totalCost.toFixed(4)}</p>
-                </div>
-              </div>
-            </CardBody>
-          </Card>
+          <StatCard
+            label="Costo estimado IA"
+            value={formatCost(stats.totalCost)}
+            icon={DollarSign}
+            tone="accent"
+          />
 
           {stats.monthlyBudgetUsd != null && (
             <Card>
@@ -139,7 +172,7 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs text-muted-darker">Presupuesto del mes</p>
                   <p className="text-xs font-medium">
-                    ${stats.monthlyCost.toFixed(2)} / ${stats.monthlyBudgetUsd.toFixed(2)}
+                    {formatCost(stats.monthlyCost)} / {formatCost(stats.monthlyBudgetUsd)}
                   </p>
                 </div>
                 <div className="bg-surface rounded-full h-2 overflow-hidden">
@@ -154,33 +187,39 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
             </Card>
           )}
 
-          <Card>
-            <CardBody>
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-info-bg text-info">
-                  <Zap size={18} />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-darker">Tokens consumidos</p>
-                  <p className="text-xl font-bold">{stats.totalTokens.toLocaleString()}</p>
-                </div>
-              </div>
-            </CardBody>
-          </Card>
+          <StatCard
+            label="Tokens consumidos"
+            value={stats.totalTokens.toLocaleString()}
+            icon={Zap}
+            tone="info"
+          />
 
-          <Card>
-            <CardBody>
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success-bg text-success">
-                  <TrendingUp size={18} />
+          <StatCard
+            label="Campañas completadas"
+            value={`${stats.campaignsCompleted}/${stats.campaigns}`}
+            icon={TrendingUp}
+            tone="success"
+            href="/whatsapp/campanas"
+          />
+
+          {stats.chatStatusCounts.length > 0 && (
+            <Card>
+              <CardBody>
+                <p className="text-xs text-muted-darker mb-2">Chats por estado</p>
+                <div className="flex flex-wrap gap-2">
+                  {stats.chatStatusCounts.map((c) => (
+                    <Badge
+                      key={c.status}
+                      tone={CHAT_STATUS_BADGE[c.status] ?? "neutral"}
+                      size="sm"
+                    >
+                      {CHAT_STATUS_LABEL[c.status] ?? c.status}: {c.count}
+                    </Badge>
+                  ))}
                 </div>
-                <div>
-                  <p className="text-xs text-muted-darker">Campañas completadas</p>
-                  <p className="text-xl font-bold">{stats.campaignsCompleted}/{stats.campaigns}</p>
-                </div>
-              </div>
-            </CardBody>
-          </Card>
+              </CardBody>
+            </Card>
+          )}
         </div>
       </div>
 

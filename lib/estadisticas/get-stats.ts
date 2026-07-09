@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getUserAccountIds } from "@/lib/shared-accounts";
 
 const statsCache = new Map<string, { data: Estadisticas; expiresAt: number }>();
 const STATS_TTL_MS = 60_000;
@@ -14,6 +15,7 @@ export interface Estadisticas {
   totalTokens: number;
   totalCost: number;
   dailyMessages: Array<{ date: string; count: number }>;
+  chatStatusCounts: Array<{ status: string; count: number }>;
   botBreakdown: Array<{
     id: string;
     name: string;
@@ -46,11 +48,21 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     return cached.data;
   }
 
+  const accountIds = await getUserAccountIds(userId);
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const weekAgo = new Date(today);
-  weekAgo.setDate(weekAgo.getDate() - 13);
+  const chartStart = new Date(today);
+  chartStart.setDate(chartStart.getDate() - 13);
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  const accountWhere = { id: { in: accountIds } };
+  const chatWhere = {
+    OR: [
+      { account: { userId } },
+      { account: { sharedWith: { some: { userId } } } },
+    ],
+  };
 
   const [
     accounts,
@@ -69,16 +81,10 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     monthlyUsage,
     appSettings,
     assignedChats,
+    chatStatusCounts,
   ] = await Promise.all([
-    prisma.wAAccount.count({ where: { userId } }),
-    prisma.wAChat.count({
-      where: {
-        OR: [
-          { account: { userId } },
-          { account: { sharedWith: { some: { userId } } } },
-        ],
-      },
-    }),
+    prisma.wAAccount.count({ where: accountWhere }),
+    prisma.wAChat.count({ where: chatWhere }),
     prisma.wAMessage.count({
       where: {
         OR: [
@@ -95,7 +101,7 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     }),
     prisma.wAMessage.findMany({
       where: {
-        createdAt: { gte: weekAgo },
+        createdAt: { gte: chartStart },
         OR: [
           { chat: { account: { userId } } },
           { chat: { account: { sharedWith: { some: { userId } } } } },
@@ -118,12 +124,12 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
       _count: { _all: true },
     }),
     prisma.wAAccount.findMany({
-      where: { userId },
+      where: accountWhere,
       select: { id: true, name: true, phoneNumber: true },
     }),
     prisma.wAChat.groupBy({
       by: ["accountId"],
-      where: { account: { userId } },
+      where: { accountId: { in: accountIds } },
       _count: { _all: true },
     }),
     prisma.wABotUsage.aggregate({
@@ -147,6 +153,11 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
         firstResponseAt: true,
         resolvedAt: true,
       },
+    }),
+    prisma.wAChat.groupBy({
+      by: ["status"],
+      where: chatWhere,
+      _count: { _all: true },
     }),
   ]);
 
@@ -225,6 +236,7 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     totalTokens: usage._sum.totalTokens ?? 0,
     totalCost: Math.round((usage._sum.estimatedCost ?? 0) * 10000) / 10000,
     dailyMessages,
+    chatStatusCounts: chatStatusCounts.map((c) => ({ status: c.status, count: c._count._all })),
     botBreakdown,
     accountBreakdown,
     agentPerformance,
