@@ -1,3 +1,7 @@
+import { getOpenRouterModelPricing } from "./models";
+import type { ModelPricing } from "./models";
+import type { AIProvider } from "./types";
+
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   "google/gemini-2.5-flash":      { input: 0.15,  output: 0.60 },
   "google/gemini-2.5-pro":        { input: 1.25,  output: 5.00 },
@@ -11,12 +15,18 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   "meta-llama/llama-4-scout":     { input: 0.10,  output: 0.45 },
 };
 
-export function estimateCost(
+export async function estimateCost(
   model: string,
   promptTokens: number,
-  completionTokens: number
-): number {
-  const pricing = MODEL_PRICING[model];
+  completionTokens: number,
+  provider?: AIProvider
+): Promise<number> {
+  let pricing: ModelPricing | undefined = MODEL_PRICING[model];
+
+  if (!pricing && provider === "openrouter") {
+    pricing = (await getOpenRouterModelPricing(model)) ?? undefined;
+  }
+
   if (!pricing) return 0;
 
   const inputCost = (promptTokens / 1_000_000) * pricing.input;

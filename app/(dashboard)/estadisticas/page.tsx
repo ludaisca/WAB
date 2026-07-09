@@ -4,8 +4,32 @@ import { useState, useEffect, useCallback } from "react";
 import { BarChart3, TrendingUp, MessageCircle, Bot, Phone, DollarSign, Zap } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { StatCard } from "@/app/components/ui/stat-card";
+import { Badge } from "@/app/components/ui/badge";
 import { Spinner } from "@/app/components/ui/spinner";
 import { useToast } from "@/app/components/ui/toast";
+
+const BOT_STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" | "danger" | "neutral" }> = {
+  ACTIVE: { label: "Activo", tone: "success" },
+  PAUSED: { label: "Pausado", tone: "warning" },
+  ERROR: { label: "Error", tone: "danger" },
+};
+
+interface BotBreakdownRow {
+  id: string;
+  name: string;
+  isActive: boolean;
+  status: string;
+  interactions: number;
+  totalTokens: number;
+  totalCost: number;
+}
+
+interface AccountBreakdownRow {
+  id: string;
+  name: string;
+  phoneNumber: string | null;
+  chats: number;
+}
 
 interface Stats {
   accounts: number;
@@ -18,6 +42,10 @@ interface Stats {
   totalTokens: number;
   totalCost: number;
   dailyMessages: Array<{ date: string; count: number }>;
+  botBreakdown: BotBreakdownRow[];
+  accountBreakdown: AccountBreakdownRow[];
+  monthlyCost: number;
+  monthlyBudgetUsd: number | null;
 }
 
 export default function EstadisticasPage() {
@@ -114,6 +142,27 @@ export default function EstadisticasPage() {
             </CardBody>
           </Card>
 
+          {stats.monthlyBudgetUsd != null && (
+            <Card>
+              <CardBody>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-muted-darker">Presupuesto del mes</p>
+                  <p className="text-xs font-medium">
+                    ${stats.monthlyCost.toFixed(2)} / ${stats.monthlyBudgetUsd.toFixed(2)}
+                  </p>
+                </div>
+                <div className="bg-surface rounded-full h-2 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      stats.monthlyCost >= stats.monthlyBudgetUsd ? "bg-danger" : "bg-accent"
+                    }`}
+                    style={{ width: `${Math.min(100, (stats.monthlyCost / stats.monthlyBudgetUsd) * 100)}%` }}
+                  />
+                </div>
+              </CardBody>
+            </Card>
+          )}
+
           <Card>
             <CardBody>
               <div className="flex items-center gap-3">
@@ -142,6 +191,83 @@ export default function EstadisticasPage() {
             </CardBody>
           </Card>
         </div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Bot size={16} className="text-accent" />
+              <CardTitle>Uso por bot</CardTitle>
+            </div>
+          </CardHeader>
+          <CardBody>
+            {stats.botBreakdown.length === 0 ? (
+              <p className="text-sm text-muted py-4 text-center">Sin bots todavía</p>
+            ) : (
+              <div className="overflow-x-auto -mx-5">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-y border-border">
+                      <th className="px-5 py-2 text-left text-xs font-medium text-muted-darker uppercase tracking-wider">Bot</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-darker uppercase tracking-wider">Estado</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-muted-darker uppercase tracking-wider">Interacciones</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-muted-darker uppercase tracking-wider">Costo</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {stats.botBreakdown.map((b) => {
+                      const badge = BOT_STATUS_BADGE[b.status] ?? { label: b.status, tone: "neutral" as const };
+                      return (
+                        <tr key={b.id}>
+                          <td className="px-5 py-2.5 font-medium">{b.name}</td>
+                          <td className="px-3 py-2.5"><Badge tone={badge.tone} size="sm">{badge.label}</Badge></td>
+                          <td className="px-3 py-2.5 text-right">{b.interactions}</td>
+                          <td className="px-3 py-2.5 text-right">${b.totalCost.toFixed(4)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Phone size={16} className="text-accent" />
+              <CardTitle>Chats por número</CardTitle>
+            </div>
+          </CardHeader>
+          <CardBody>
+            {stats.accountBreakdown.length === 0 ? (
+              <p className="text-sm text-muted py-4 text-center">Sin cuentas todavía</p>
+            ) : (
+              <div className="space-y-3">
+                {stats.accountBreakdown.map((a) => {
+                  const maxChats = Math.max(...stats.accountBreakdown.map((x) => x.chats), 1);
+                  return (
+                    <div key={a.id} className="flex items-center gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{a.name}</p>
+                        {a.phoneNumber && <p className="text-xs text-muted-darker truncate">{a.phoneNumber}</p>}
+                      </div>
+                      <div className="w-32 shrink-0 bg-surface rounded-full h-2 overflow-hidden">
+                        <div
+                          className="h-full bg-accent rounded-full transition-all"
+                          style={{ width: `${(a.chats / maxChats) * 100}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-darker w-8 text-right shrink-0">{a.chats}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardBody>
+        </Card>
       </div>
     </div>
   );

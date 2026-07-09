@@ -82,6 +82,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
     }
 
+    if (account.channel !== "META_CLOUD" || !account.phoneNumberId || !account.accessToken) {
+      return NextResponse.json(
+        { error: "Sincronizar plantillas solo aplica a cuentas de Meta Cloud API" },
+        { status: 400 }
+      );
+    }
+
     const accessToken = decrypt(account.accessToken);
     const metaTemplates = await syncTemplatesFromMeta(
       account.phoneNumberId,

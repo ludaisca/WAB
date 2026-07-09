@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendMessageSchema } from "@/lib/validations";
-import { decrypt } from "@/lib/crypto";
-import { sendMessage } from "@/lib/whatsapp";
+import { sendWhatsAppMessage } from "@/lib/whatsapp/send";
 import { getUserAccountIds } from "@/lib/shared-accounts";
 
 export async function POST(
@@ -41,9 +40,7 @@ export async function POST(
 
     const { type, body: textBody, mediaId, caption, mimeType } = parsed.data;
 
-    const accessToken = decrypt(chat.account.accessToken);
-
-    const result = await sendMessage(chat.account.phoneNumberId, accessToken, {
+    const result = await sendWhatsAppMessage(chat.account, {
       to: chat.remoteJid,
       type,
       body: textBody,
@@ -52,7 +49,7 @@ export async function POST(
       mimeType,
     });
 
-    const wamid = result.messages[0]?.id;
+    const wamid = result.wamid ?? undefined;
     const now = new Date();
 
     const newMessage = await prisma.wAMessage.create({

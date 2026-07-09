@@ -148,6 +148,11 @@ export default function BotsPage() {
                       <Badge tone={bot.isActive ? "success" : "neutral"} size="sm">
                         {bot.isActive ? "Activo" : "Inactivo"}
                       </Badge>
+                      {bot.status === "ERROR" && (
+                        <Badge tone="danger" size="sm">
+                          Error — reactivar para reintentar
+                        </Badge>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1 text-xs text-muted-darker">

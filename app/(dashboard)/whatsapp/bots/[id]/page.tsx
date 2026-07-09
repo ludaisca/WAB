@@ -193,6 +193,11 @@ export default function BotDetailPage() {
       <Link href="/whatsapp/bots" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground transition-colors mb-3">
         <ArrowLeft size={14} /> Volver a bots
       </Link>
+      {bot.status === "ERROR" && (
+        <Banner tone="danger" title="Este bot dejó de responder por un error">
+          Quedó marcado en estado de error tras un fallo (API key inválida, error del proveedor, etc.) y no procesará mensajes nuevos aunque esté &quot;Activo&quot;. Pausa y vuelve a activarlo para reintentar.
+        </Banner>
+      )}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{bot.name}</h1>

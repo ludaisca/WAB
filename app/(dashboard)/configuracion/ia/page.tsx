@@ -32,6 +32,7 @@ interface AISettings {
   googleApiKey: string | null;
   defaultProvider: string;
   defaultModel: string;
+  monthlyBudgetUsd: number | null;
 }
 
 export default function IASettingsPage() {
@@ -43,6 +44,7 @@ export default function IASettingsPage() {
   const [googleKey, setGoogleKey] = useState("");
   const [defaultProvider, setDefaultProvider] = useState("openrouter");
   const [defaultModel, setDefaultModel] = useState("google/gemini-2.5-flash");
+  const [monthlyBudget, setMonthlyBudget] = useState("");
   const [showOpenrouter, setShowOpenrouter] = useState(false);
   const [showGoogle, setShowGoogle] = useState(false);
   const [models, setModels] = useState<ModelOption[]>(FALLBACK_MODELS.openrouter);
@@ -78,6 +80,7 @@ export default function IASettingsPage() {
           setSettings(d);
           setDefaultProvider(d.defaultProvider || "openrouter");
           setDefaultModel(d.defaultModel || "google/gemini-2.5-flash");
+          setMonthlyBudget(d.monthlyBudgetUsd != null ? String(d.monthlyBudgetUsd) : "");
         }
       })
       .catch(() => toastError("Error al cargar configuración"))
@@ -88,9 +91,10 @@ export default function IASettingsPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const body: Record<string, string> = { defaultProvider, defaultModel };
+      const body: Record<string, string | number | null> = { defaultProvider, defaultModel };
       if (openrouterKey.trim()) body.openrouterApiKey = openrouterKey.trim();
       if (googleKey.trim()) body.googleApiKey = googleKey.trim();
+      body.monthlyBudgetUsd = monthlyBudget.trim() ? Number(monthlyBudget) : null;
 
       const res = await fetch("/api/configuracion/ia", {
         method: "PATCH",
@@ -203,6 +207,20 @@ export default function IASettingsPage() {
                   )}
                 </FormField>
               </div>
+
+              <FormField label="Presupuesto mensual de IA (USD)" hint="Opcional. Recibirás una notificación cuando el costo estimado del mes supere este monto.">
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={monthlyBudget}
+                    onChange={(e) => setMonthlyBudget(e.target.value)}
+                    placeholder="Sin límite"
+                  />
+                )}
+              </FormField>
             </div>
           </CardBody>
           <CardFooter>

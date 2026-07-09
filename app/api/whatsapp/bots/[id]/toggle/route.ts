@@ -22,9 +22,15 @@ export async function POST(
       return NextResponse.json({ error: "Bot no encontrado" }, { status: 404 });
     }
 
+    const nextActive = !bot.isActive;
+
     const updated = await prisma.wABot.update({
       where: { id },
-      data: { isActive: !bot.isActive },
+      // Re-activating clears a stuck ERROR status (e.g. from a past API key or
+      // provider failure) so the bot actually resumes receiving messages —
+      // isActive alone isn't enough, the message pipeline also requires
+      // status: "ACTIVE".
+      data: nextActive ? { isActive: true, status: "ACTIVE" } : { isActive: false },
       select: {
         id: true,
         name: true,

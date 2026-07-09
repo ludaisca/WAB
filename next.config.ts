@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Baileys' optional media-thumbnail deps (jimp/sharp) use dynamic imports
+  // wrapped in try/catch that only resolve at runtime; keeping the package
+  // external avoids Turbopack failing to statically resolve them at build time.
+  serverExternalPackages: ["@whiskeysockets/baileys"],
   async headers() {
     return [
       {

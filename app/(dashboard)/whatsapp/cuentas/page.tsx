@@ -17,8 +17,9 @@ import { useToast } from "@/app/components/ui/toast";
 interface WaAccount {
   id: string;
   name: string;
+  channel: string;
   phoneNumber: string | null;
-  phoneNumberId: string;
+  phoneNumberId: string | null;
   wabaId: string | null;
   status: string;
   errorMessage: string | null;
@@ -168,7 +169,12 @@ export default function CuentasPage() {
                           {account.phoneNumber ?? "—"}
                         </td>
                         <td className="px-4 py-3">
-                          <Badge tone={badge.tone} size="sm">{badge.label}</Badge>
+                          <div className="flex flex-wrap items-center gap-1">
+                            <Badge tone={badge.tone} size="sm">{badge.label}</Badge>
+                            {account.channel === "BAILEYS" && (
+                              <Badge tone="warning" size="sm">WhatsApp Web</Badge>
+                            )}
+                          </div>
                           {account.status === "ERROR" && account.errorMessage && (
                             <p className="text-xs text-danger mt-1 max-w-[160px] truncate" title={account.errorMessage}>
                               {account.errorMessage}

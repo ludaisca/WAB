@@ -28,6 +28,7 @@ export async function GET(
       select: {
         id: true,
         name: true,
+        channel: true,
         phoneNumber: true,
         phoneNumberId: true,
         wabaId: true,
@@ -93,8 +94,13 @@ export async function PATCH(
     if (wabaId) data.wabaId = wabaId;
 
     if (accessToken) {
-      const phoneId = existing.phoneNumberId;
-      await validateToken(phoneId, accessToken);
+      if (existing.channel !== "META_CLOUD" || !existing.phoneNumberId) {
+        return NextResponse.json(
+          { error: "El token de acceso solo aplica a cuentas de Meta Cloud API" },
+          { status: 400 }
+        );
+      }
+      await validateToken(existing.phoneNumberId, accessToken);
       data.accessToken = encrypt(accessToken);
     }
 
@@ -116,6 +122,7 @@ export async function PATCH(
       select: {
         id: true,
         name: true,
+        channel: true,
         phoneNumber: true,
         phoneNumberId: true,
         wabaId: true,
@@ -157,6 +164,11 @@ export async function DELETE(
         { error: "Cuenta no encontrada" },
         { status: 404 }
       );
+    }
+
+    if (existing.channel === "BAILEYS") {
+      const { stopBaileysConnection } = await import("@/lib/whatsapp-baileys/connection-manager");
+      await stopBaileysConnection(id);
     }
 
     await prisma.wAAccount.delete({ where: { id } });

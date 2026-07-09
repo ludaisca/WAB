@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { decrypt } from "@/lib/crypto";
-import { sendMessage } from "@/lib/whatsapp";
+import { sendWhatsAppMessage } from "@/lib/whatsapp/send";
 import { getAIProvider } from "@/lib/ai/factory";
 import { searchKnowledge } from "@/lib/ai/rag";
 import { getUserApiKey } from "@/lib/ai/settings";
@@ -122,7 +121,6 @@ async function handleBotMessage(job: BotMessageJob) {
     maxTokens: bot.maxTokens,
   });
 
-  const accessToken = decrypt(bot.waAccount.accessToken);
   const chat = await prisma.wAChat.findUnique({
     where: { id: waChatId },
     select: { remoteJid: true },
@@ -130,13 +128,13 @@ async function handleBotMessage(job: BotMessageJob) {
 
   if (!chat) return;
 
-  const sendResult = await sendMessage(bot.waAccount.phoneNumberId, accessToken, {
+  const sendResult = await sendWhatsAppMessage(bot.waAccount, {
     to: chat.remoteJid,
     type: "text",
     body: result.content,
   });
 
-  const wamid = sendResult.messages[0]?.id;
+  const wamid = sendResult.wamid ?? undefined;
   const now = new Date();
 
   await prisma.wAMessage.create({
@@ -163,7 +161,7 @@ async function handleBotMessage(job: BotMessageJob) {
     const promptTokens = result.usage.promptTokens;
     const completionTokens = result.usage.completionTokens;
     const totalTokens = promptTokens + completionTokens;
-    const cost = estimateCost(bot.model, promptTokens, completionTokens);
+    const cost = await estimateCost(bot.model, promptTokens, completionTokens, provider);
 
     await prisma.wABotUsage.create({
       data: {
@@ -176,6 +174,8 @@ async function handleBotMessage(job: BotMessageJob) {
         estimatedCost: cost,
       },
     });
+
+    await checkBudgetAlert(bot.userId, now);
   }
 
   await prisma.wABotConversation.update({
@@ -194,6 +194,38 @@ async function handleBotMessage(job: BotMessageJob) {
   await prisma.wAAccount.update({
     where: { id: bot.waAccountId },
     data: { lastActivity: now },
+  });
+}
+
+async function checkBudgetAlert(userId: string, now: Date) {
+  const settings = await prisma.appSettings.findUnique({ where: { userId } });
+  if (!settings?.monthlyBudgetUsd) return;
+
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  if (settings.budgetAlertMonth === monthKey) return;
+
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthlyUsage = await prisma.wABotUsage.aggregate({
+    where: { bot: { userId }, createdAt: { gte: monthStart } },
+    _sum: { estimatedCost: true },
+  });
+  const monthlyCost = monthlyUsage._sum.estimatedCost ?? 0;
+
+  if (monthlyCost < settings.monthlyBudgetUsd) return;
+
+  await prisma.appSettings.update({
+    where: { userId },
+    data: { budgetAlertMonth: monthKey },
+  });
+
+  await prisma.notification.create({
+    data: {
+      userId,
+      type: "BUDGET_EXCEEDED",
+      title: "Presupuesto mensual de IA superado",
+      body: `Costo estimado este mes: $${monthlyCost.toFixed(2)} (límite: $${settings.monthlyBudgetUsd.toFixed(2)})`,
+      link: "/configuracion/ia",
+    },
   });
 }
 

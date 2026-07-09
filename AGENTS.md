@@ -6,6 +6,7 @@
 - **Prisma 5** (PostgreSQL + pgvector)
 - **Redis 7** + **BullMQ** (job queues for async processing)
 - React 19, lucide-react, zod, bcryptjs, next-themes, openai, @google/generative-ai, ioredis
+- `@whiskeysockets/baileys` (WhatsApp Web protocol, dev/testing channel — see "WhatsApp channels" below), `qrcode`
 
 ## Development
 
@@ -51,7 +52,7 @@ Three roles with different UIs and access:
 ## Database
 
 ### Schema
-`prisma/schema.prisma` — 15 models. Key relationships: `User → WAAccount[]`, `User → AppSettings (1:1)`, `WABot ↔ WABotKnowledge (M:N via WABotKnowledgeBot)`, `WAAccount → WAAccountShare[] → User`
+`prisma/schema.prisma` — 21 models. Key relationships: `User → WAAccount[]`, `User → AppSettings (1:1)`, `WABot ↔ WABotKnowledge (M:N via WABotKnowledgeBot)`, `WAAccount → WAAccountShare[] → User`, `WAChat → Contact (1:1)`, `Contact ↔ Tag (M:N via ContactTag)`, `WAAccount → WABaileysSession` (1:1, only for `channel: BAILEYS`)
 
 ### Commands
 ```bash
@@ -75,7 +76,7 @@ Uses `prisma.$transaction()` for atomic `count() + create()` — prevents race c
 
 | Queue | Concurrency | Timeout | Trigger |
 |---|---|---|---|
-| `bot-messages` | 3 | 60s | Webhook detects active bot → enqueues |
+| `bot-messages` | 3 | 60s | `ingestInboundMessage()` detects active bot → enqueues (both Meta webhook and Baileys) |
 | `campaign-send` | 1 | 60s | Admin clicks "Enviar" on campaign |
 | `rag-index` | 2 | 60s | User uploads knowledge document |
 
@@ -94,7 +95,9 @@ Provider clients in `lib/ai/providers/`. Factory in `lib/ai/factory.ts`.
 
 - **Embedding dimension**: 768 for both providers (OpenRouter uses `dimensions: 768` param; Google `text-embedding-004` natively outputs 768).
 - **Google usage**: `usageMetadata` on `response` object provides `promptTokenCount`, `candidatesTokenCount`. Must be returned in `AICompletionResponse.usage`.
-- Model pricing in `lib/ai/pricing.ts` (USD per 1M tokens). Usage logged per interaction in `WABotUsage`.
+- **Google `systemInstruction` gotcha**: must be passed to `genAI.getGenerativeModel({ model, systemInstruction })`, never to `.startChat({ systemInstruction })`. The SDK (`@google/generative-ai`) only runs its string→`Content` formatting on the value passed to `getGenerativeModel`; passing it to `startChat` instead silently overrides the formatted value with the raw unformatted one and the REST API rejects it with a 400 on `system_instruction`.
+- Model pricing in `lib/ai/pricing.ts` (USD per 1M tokens). `estimateCost()` is async — falls back to live OpenRouter pricing (`lib/ai/models.ts:getOpenRouterModelPricing()`, cached in-process) when a model isn't in the static table. Usage logged per interaction in `WABotUsage`.
+- Model lists are fetched live from each provider (`lib/ai/models.ts`, exposed via `GET /api/configuracion/ia/models?provider=`) rather than hardcoded — provider catalogs change (e.g. `anthropic/claude-3.5-sonnet` was removed from OpenRouter). Bot creation and default-model settings both use this with a small static fallback list if the fetch fails.
 - RAG: documents chunked → embeddings generated → stored in pgvector → searched with cosine similarity (`<=>` operator).
 
 ### Creating templates for Meta
@@ -110,10 +113,28 @@ Fields encrypted at rest: `WAAccount.accessToken`, `WAAccount.appSecret`, `AppSe
 
 `POST /api/whatsapp/webhook` handles Meta webhook. Key behaviors:
 - **Always** validates `X-Hub-Signature-256` — rejects if signature invalid regardless of `appSecret` presence. `appSecret` is required for signature validation; if missing, webhook rejects all POSTs.
-- Batch-deduplicates: collects all `wamid`s from the message batch, does a single `findMany({ where: { wamid: { in: [...] } } })`, uses a Set for O(1) lookup.
-- Reuses upserted `chat` variable instead of re-querying in the bot loop.
+- Per-message logic (Contact upsert, chat upsert, `WAMessage` create, notification, bot enqueue) lives in `lib/whatsapp/ingest-message.ts:ingestInboundMessage()` — shared with the Baileys channel (see below). The webhook route itself just parses Meta's payload shape and calls it per message.
 - Maps all 4 Meta statuses to `WACampaignRecipient`: `sent → SENT`, `delivered → DELIVERED`, `read → READ`, `failed → FAILED`.
 - Detects groups: `remoteJid.includes("@g.us")` → `isGroup = true`.
+
+## WhatsApp channels (Meta Cloud API vs. Baileys)
+
+`WAAccount.channel` (`META_CLOUD` | `BAILEYS`) distinguishes the two supported connection types.
+
+- **`META_CLOUD`** (default, production) — official WhatsApp Cloud API. Uses `phoneNumberId`/`accessToken`/`verifyTokenHash`/`appSecret`, driven by `app/api/whatsapp/webhook/route.ts` and `lib/whatsapp.ts`.
+- **`BAILEYS`** (dev/testing only) — connects via `@whiskeysockets/baileys` (unofficial WhatsApp Web multi-device protocol) after scanning a QR, so no public webhook URL is needed. **Only use with disposable test numbers — WhatsApp can ban/limit accounts using this protocol.**
+  - `lib/whatsapp-baileys/connection-manager.ts` keeps a `Map<accountId, socket>` in memory, started from `instrumentation.ts` on boot (reconnects all `CONNECTED` Baileys accounts) and from `POST /api/whatsapp/accounts/baileys` (new pairing).
+  - Session (Signal protocol creds/keys) persists in Postgres via `WABaileysSession.authState` (`lib/whatsapp-baileys/auth-store.ts`), not the filesystem — survives container recreation without a dedicated volume.
+  - Outbound sends go through `lib/whatsapp/send.ts:sendWhatsAppMessage(account, params)`, which branches on `account.channel` — always use this wrapper, never call `lib/whatsapp.ts:sendMessage()` directly, or Baileys accounts will break.
+  - **Not supported for Baileys accounts**: message templates and bulk campaigns (Meta-only concepts — account selectors in `campanas/nueva` and `plantillas` filter these accounts out), and outbound media (text only in v1).
+  - Fields `phoneNumberId`/`accessToken`/`verifyTokenHash` are nullable on `WAAccount` — any code reading them must check `account.channel === "META_CLOUD"` first (see `templates/route.ts`, `templates/create/route.ts`, `campaign-worker.ts` for the pattern).
+
+## CRM & team collaboration
+
+- `Contact` (tags via `Tag`/`ContactTag`, `leadStatus`, notes via `WANote`) is auto-upserted per remote JID inside `ingestInboundMessage()` — one per `(accountId, remoteJid)`, 1:1 with `WAChat` via `WAChat.contactId`. Surfaced through `ContactDrawer` (`app/components/whatsapp/contact-drawer.tsx`) from both chat views and `/whatsapp/contactos`.
+- Chat assignment: `WAChat.assignedToId` restricted to the account owner + `WAAccountShare` grantees (`lib/chat-assignees.ts:getEligibleAssignees()`). Assigning triggers no side effect by itself; a `CHAT_MESSAGE` notification fires on the *next* inbound message if the chat is already assigned.
+- `Notification` model + polling bell (`app/components/ui/notification-bell.tsx`, polls `GET /api/whatsapp/notifications` every 25s). Types: `CHAT_MESSAGE`, `CAMPAIGN_COMPLETED`, `CAMPAIGN_FAILED`, `BOT_ERROR`, `BUDGET_EXCEEDED`. No websockets in this app — polling is the established pattern for anything "live."
+- Monthly AI budget: `AppSettings.monthlyBudgetUsd` (optional) + `budgetAlertMonth` (guards against re-notifying within the same month). Checked in `bot-worker.ts` after every logged `WABotUsage` row.
 
 ## Design system
 
@@ -148,3 +169,6 @@ Toast: `const { success, error } = useToast()` → `success("text")`
 - **`cn()`** — simple join, no tailwind-merge (avoids Docker dep issues)
 - **`login` page** — uses `Suspense` boundary for `useSearchParams("callbackUrl")`
 - **Startup script** — uses `migrate deploy` when `prisma/migrations/` exists, falls back to `db push`
+- **Dev container needs a restart after `prisma db push`** — the running `npm run dev` process keeps the pre-regeneration Prisma Client in memory; `npx prisma generate` writes new files to `node_modules` but the live process won't pick them up without `docker compose restart app` (or a full `down -v && up --build`). Queries against newly-added models/fields will 500 until restarted.
+- **`WABot.status` vs `isActive`** — two separate gates. `ingestInboundMessage()`'s bot lookup requires *both* `isActive: true` and `status: "ACTIVE"`. Any unhandled error in `processBotMessageJob()` sets `status: "ERROR"` (and notifies) — toggling `isActive` back on via `POST /api/whatsapp/bots/[id]/toggle` is what resets `status` back to `"ACTIVE"`; the bot won't recover just by looking "Active" in a stale UI state. The `/test` endpoint bypasses both fields entirely, so it can succeed while the real message pipeline stays silently dead.
+- **Baileys build gotcha** — `@whiskeysockets/baileys` must stay in `next.config.ts`'s `serverExternalPackages`, or Turbopack fails the production build trying to statically resolve its optional `jimp`/`sharp` dynamic imports (which are wrapped in a runtime try/catch and never actually required unless media thumbnailing is used).

@@ -12,7 +12,7 @@ import { EmptyState } from "@/app/components/ui/empty-state";
 import { useToast } from "@/app/components/ui/toast";
 import { TemplateFormModal } from "./_form";
 
-interface Account { id: string; name: string; wabaId: string | null; status: string; }
+interface Account { id: string; name: string; channel: string; wabaId: string | null; status: string; }
 
 interface Template {
   id: string;
@@ -52,7 +52,7 @@ function TemplatesContent() {
       .then((r) => r.json())
       .then((d) => {
         if (Array.isArray(d)) {
-          setAccounts(d);
+          setAccounts(d.filter((a: Account) => a.channel === "META_CLOUD"));
           if (preselectedId) setSelectedAccountId(preselectedId);
         }
       })

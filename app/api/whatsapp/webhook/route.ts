@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHmac, createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { botQueue } from "@/lib/queue";
+import { ingestInboundMessage } from "@/lib/whatsapp/ingest-message";
 
 interface WebhookMessage {
   from: string;
@@ -151,118 +151,22 @@ export async function POST(req: Request) {
         });
 
         if (value.messages && value.contacts) {
-          const allWamids = value.messages.map((m) => m.id).filter(Boolean);
-
-          const existingMessages = allWamids.length > 0
-            ? await prisma.wAMessage.findMany({
-                where: { wamid: { in: allWamids } },
-                select: { wamid: true },
-              })
-            : [];
-
-          const existingSet = new Set(existingMessages.map((m) => m.wamid));
-
           for (const msg of value.messages) {
-            if (msg.id && existingSet.has(msg.id)) continue;
-
             const contact = value.contacts.find((c) => c.wa_id === msg.from);
             const contactName = contact?.profile?.name ?? msg.from;
-            const isGroup = msg.from.includes("@g.us");
-
             const { mediaId, mimeType } = getMediaInfo(msg);
-            const messageBody = getMessageBody(msg);
-            const msgTimestamp = new Date(Number(msg.timestamp) * 1000);
 
-            const contactRecord = await prisma.contact.upsert({
-              where: { accountId_remoteJid: { accountId: account.id, remoteJid: msg.from } },
-              create: { accountId: account.id, remoteJid: msg.from, name: contactName },
-              update: { name: contactName },
+            await ingestInboundMessage(account.id, {
+              remoteJid: msg.from,
+              wamid: msg.id ?? null,
+              timestamp: new Date(Number(msg.timestamp) * 1000),
+              type: msg.type,
+              body: getMessageBody(msg),
+              contactName,
+              isGroup: msg.from.includes("@g.us"),
+              mediaId,
+              mimeType,
             });
-
-            const chat = await prisma.wAChat.upsert({
-              where: {
-                accountId_remoteJid: {
-                  accountId: account.id,
-                  remoteJid: msg.from,
-                },
-              },
-              create: {
-                accountId: account.id,
-                remoteJid: msg.from,
-                name: contactName,
-                isGroup,
-                lastMessage: messageBody.slice(0, 500),
-                lastMessageAt: msgTimestamp,
-                unreadCount: 1,
-                contactId: contactRecord.id,
-              },
-              update: {
-                name: contactName,
-                isGroup,
-                lastMessage: messageBody.slice(0, 500),
-                lastMessageAt: msgTimestamp,
-                unreadCount: { increment: 1 },
-                contactId: contactRecord.id,
-              },
-            });
-
-            await prisma.wAMessage.create({
-              data: {
-                wamid: msg.id,
-                chatId: chat.id,
-                direction: "INBOUND",
-                messageType: msg.type,
-                body: messageBody,
-                mediaId,
-                mimeType,
-                timestamp: msgTimestamp,
-              },
-            });
-
-            if (chat.assignedToId) {
-              await prisma.notification.create({
-                data: {
-                  userId: chat.assignedToId,
-                  type: "CHAT_MESSAGE",
-                  title: contactName,
-                  body: messageBody.slice(0, 200),
-                  link: `/whatsapp/chat/${account.id}/${chat.id}`,
-                },
-              });
-            }
-          }
-
-          const chatIds = new Map<string, string>();
-
-          const activeBots = await prisma.wABot.findMany({
-            where: { waAccountId: account.id, isActive: true, status: "ACTIVE" },
-            select: { id: true },
-          });
-
-          if (activeBots.length > 0) {
-            const allRemoteJids = value.messages.map((m) => m.from);
-            const relatedChats = await prisma.wAChat.findMany({
-              where: {
-                accountId: account.id,
-                remoteJid: { in: allRemoteJids },
-              },
-              select: { id: true, remoteJid: true },
-            });
-            for (const c of relatedChats) {
-              chatIds.set(c.remoteJid, c.id);
-            }
-          }
-
-          for (const msg of value.messages) {
-            const waChatId = chatIds.get(msg.from);
-            if (!waChatId) continue;
-            for (const bot of activeBots) {
-              await botQueue.add("process-message", {
-                botId: bot.id,
-                waChatId,
-                incomingMessage: getMessageBody(msg),
-              });
-            }
           }
         }
 

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Save, Info } from "lucide-react";
+import QRCode from "qrcode";
+import { ArrowLeft, Save, Info, QrCode, AlertTriangle } from "lucide-react";
 import { Card, CardBody, CardFooter } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -13,9 +14,122 @@ import { Banner } from "@/app/components/ui/banner";
 import { Spinner } from "@/app/components/ui/spinner";
 import { useToast } from "@/app/components/ui/toast";
 
+function BaileysPairing() {
+  const router = useRouter();
+  const { success, error: toastError } = useToast();
+  const [name, setName] = useState("");
+  const [accountId, setAccountId] = useState<string | null>(null);
+  const [qrImage, setQrImage] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+
+  const pollStatus = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(`/api/whatsapp/accounts/baileys/${id}/status`);
+      const data = await res.json();
+      setStatus(data.status);
+      if (data.qr) {
+        const dataUrl = await QRCode.toDataURL(data.qr, { width: 280 });
+        setQrImage(dataUrl);
+      } else {
+        setQrImage(null);
+      }
+      if (data.status === "CONNECTED") {
+        success("Cuenta conectada exitosamente");
+        router.push("/whatsapp/cuentas");
+      } else if (data.status === "DISCONNECTED") {
+        toastError(data.errorMessage ?? "La conexión falló");
+      }
+    } catch {
+      // silent — polling retries on the next tick
+    }
+  }, [router, success, toastError]);
+
+  useEffect(() => {
+    if (!accountId || status === "CONNECTED") return;
+    const interval = setInterval(() => pollStatus(accountId), 2000);
+    return () => clearInterval(interval);
+  }, [accountId, status, pollStatus]);
+
+  async function handleStart() {
+    if (!name.trim()) {
+      toastError("El nombre es requerido");
+      return;
+    }
+    setStarting(true);
+    try {
+      const res = await fetch("/api/whatsapp/accounts/baileys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Error al iniciar la conexión");
+      setAccountId(data.id);
+      setStatus(data.status);
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al iniciar la conexión");
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardBody>
+        <div className="space-y-5">
+          <Banner tone="warning" title="Solo para pruebas de desarrollo">
+            WhatsApp Web (Baileys) reimplementa el protocolo de forma no oficial — WhatsApp puede
+            banear o limitar el número usado. Úsalo únicamente con un número desechable, nunca con
+            el número de producción de un cliente.
+          </Banner>
+
+          {!accountId ? (
+            <FormField label="Nombre de la cuenta" required hint="Un nombre descriptivo para identificar esta conexión de prueba">
+              {(id) => (
+                <Input id={id} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Prueba local" />
+              )}
+            </FormField>
+          ) : (
+            <div className="flex flex-col items-center gap-4 py-4">
+              {qrImage ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- local data: URL generated client-side, not a remote image next/image can optimize */}
+                  <img src={qrImage} alt="Código QR de WhatsApp Web" className="rounded-lg border border-border" />
+                  <p className="text-sm text-muted-darker text-center">
+                    Abre WhatsApp en tu teléfono de prueba → Dispositivos vinculados → Vincular un dispositivo, y escanea este código.
+                  </p>
+                </>
+              ) : (
+                <div className="flex flex-col items-center gap-3 py-8">
+                  <Spinner />
+                  <p className="text-sm text-muted-darker">
+                    {status === "DISCONNECTED" ? "La conexión falló. Vuelve a intentar." : "Generando código QR..."}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </CardBody>
+      <CardFooter>
+        {!accountId && (
+          <Button icon={starting ? undefined : QrCode} onClick={handleStart} disabled={starting}>
+            {starting ? <Spinner /> : "Generar código QR"}
+          </Button>
+        )}
+        <Link href="/whatsapp/cuentas">
+          <Button type="button" variant="secondary">Cancelar</Button>
+        </Link>
+      </CardFooter>
+    </Card>
+  );
+}
+
 export default function NuevaCuentaPage() {
   const router = useRouter();
   const { success, error: toastError } = useToast();
+  const [channel, setChannel] = useState<"META_CLOUD" | "BAILEYS">("META_CLOUD");
 
   const [name, setName] = useState("");
   const [phoneNumberId, setPhoneNumberId] = useState("");
@@ -84,18 +198,42 @@ export default function NuevaCuentaPage() {
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">Agregar número</h1>
         <p className="mt-1 text-sm text-muted">
-          Conecta un número de WhatsApp Business API usando tus credenciales de Meta.
+          Conecta un número de WhatsApp usando la API de Meta o, solo para pruebas, WhatsApp Web.
         </p>
       </div>
 
-      {apiError && (
-        <Banner tone="danger" title="Error de conexión" onClose={() => setApiError("")}>
-          {apiError}
-        </Banner>
-      )}
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={channel === "META_CLOUD" ? "primary" : "secondary"}
+          onClick={() => setChannel("META_CLOUD")}
+        >
+          Meta Cloud API
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={channel === "BAILEYS" ? "primary" : "secondary"}
+          icon={AlertTriangle}
+          onClick={() => setChannel("BAILEYS")}
+        >
+          WhatsApp Web (solo pruebas)
+        </Button>
+      </div>
 
-      <Card>
-        <form onSubmit={handleSubmit}>
+      {channel === "BAILEYS" ? (
+        <BaileysPairing />
+      ) : (
+        <>
+          {apiError && (
+            <Banner tone="danger" title="Error de conexión" onClose={() => setApiError("")}>
+              {apiError}
+            </Banner>
+          )}
+
+          <Card>
+            <form onSubmit={handleSubmit}>
           <CardBody>
             <div className="space-y-5">
               <FormField label="Nombre de la cuenta" required error={errors.name} hint="Un nombre descriptivo para identificar este número">
@@ -198,8 +336,10 @@ export default function NuevaCuentaPage() {
               </Button>
             </Link>
           </CardFooter>
-        </form>
-      </Card>
+            </form>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

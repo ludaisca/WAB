@@ -19,6 +19,18 @@ export async function processCampaignJob(job: CampaignJob) {
 
   if (!campaign || campaign.status !== "SENDING") return;
 
+  if (
+    campaign.waAccount.channel !== "META_CLOUD" ||
+    !campaign.waAccount.accessToken ||
+    !campaign.waAccount.phoneNumberId
+  ) {
+    await prisma.wACampaign.update({
+      where: { id: campaignId },
+      data: { status: "FAILED", completedAt: new Date() },
+    });
+    return;
+  }
+
   const accessToken = decrypt(campaign.waAccount.accessToken);
   const templateName = campaign.waTemplate.name;
   const language = campaign.waTemplate.language;

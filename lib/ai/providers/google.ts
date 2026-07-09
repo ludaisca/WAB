@@ -5,9 +5,17 @@ export function createGoogleClient(apiKey: string) {
   const genAI = new GoogleGenerativeAI(apiKey);
 
   async function complete(params: AICompletionParams): Promise<AICompletionResponse> {
-    const model = genAI.getGenerativeModel({ model: params.model });
-
     const systemMsg = params.messages.find((m) => m.role === "system");
+
+    // systemInstruction must be set here, on getGenerativeModel(). The SDK only
+    // runs its string->Content formatting on this value; if passed to
+    // startChat() instead it silently overrides the formatted value with the
+    // raw, unformatted one and the REST API rejects it.
+    const model = genAI.getGenerativeModel({
+      model: params.model,
+      systemInstruction: systemMsg?.content,
+    });
+
     const history = params.messages
       .filter((m) => m.role !== "system")
       .map((m) => ({
@@ -16,7 +24,6 @@ export function createGoogleClient(apiKey: string) {
       }));
 
     const chat = model.startChat({
-      systemInstruction: systemMsg?.content,
       history: history.slice(0, -1),
       generationConfig: {
         temperature: params.temperature ?? 0.7,

@@ -26,6 +26,7 @@ export async function GET() {
       googleApiKey: settings.googleApiKey ? "••••••••" : null,
       defaultProvider: settings.defaultProvider,
       defaultModel: settings.defaultModel,
+      monthlyBudgetUsd: settings.monthlyBudgetUsd,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error interno";
@@ -45,6 +46,7 @@ export async function PATCH(req: Request) {
       googleApiKey?: string;
       defaultProvider?: string;
       defaultModel?: string;
+      monthlyBudgetUsd?: number | null;
     };
 
     const data: Record<string, unknown> = {};
@@ -67,6 +69,12 @@ export async function PATCH(req: Request) {
 
     if (body.defaultProvider) data.defaultProvider = body.defaultProvider;
     if (body.defaultModel) data.defaultModel = body.defaultModel;
+    if (body.monthlyBudgetUsd !== undefined) {
+      data.monthlyBudgetUsd = body.monthlyBudgetUsd === null || Number.isNaN(body.monthlyBudgetUsd)
+        ? null
+        : Math.max(0, body.monthlyBudgetUsd);
+      data.budgetAlertMonth = null;
+    }
 
     const settings = await prisma.appSettings.upsert({
       where: { userId: session.user.id },
@@ -80,6 +88,7 @@ export async function PATCH(req: Request) {
       googleApiKey: settings.googleApiKey ? "••••••••" : null,
       defaultProvider: settings.defaultProvider,
       defaultModel: settings.defaultModel,
+      monthlyBudgetUsd: settings.monthlyBudgetUsd,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error interno";

@@ -13,7 +13,7 @@ import { DatePicker } from "@/app/components/ui/date-picker";
 import { Spinner } from "@/app/components/ui/spinner";
 import { useToast } from "@/app/components/ui/toast";
 
-interface Account { id: string; name: string; }
+interface Account { id: string; name: string; channel: string; }
 interface Template { id: string; name: string; language: string; category: string; status: string; }
 
 export default function NewCampaignPage() {
@@ -40,7 +40,7 @@ export default function NewCampaignPage() {
 
   useEffect(() => {
     fetch("/api/whatsapp/accounts").then(r => r.json()).then(d => {
-      if (Array.isArray(d)) setAccounts(d);
+      if (Array.isArray(d)) setAccounts(d.filter((a: Account) => a.channel === "META_CLOUD"));
     }).catch(() => toastError("Error al cargar cuentas"));
   }, [toastError]);
 

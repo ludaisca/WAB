@@ -32,7 +32,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
     }
 
-    if (!account.wabaId) {
+    if (account.channel !== "META_CLOUD" || !account.wabaId || !account.accessToken) {
       return NextResponse.json(
         { error: "Esta cuenta no tiene WABA ID configurado. Configúralo antes de crear plantillas." },
         { status: 400 }
