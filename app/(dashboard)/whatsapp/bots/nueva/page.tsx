@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, Save, RefreshCw } from "lucide-react";
 import { Card, CardBody, CardFooter } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -13,6 +13,21 @@ import { FormField } from "@/app/components/ui/form-field";
 import { Switch } from "@/app/components/ui/switch";
 import { Spinner } from "@/app/components/ui/spinner";
 import { useToast } from "@/app/components/ui/toast";
+
+interface ModelOption { id: string; name: string; }
+
+const FALLBACK_MODELS: Record<string, ModelOption[]> = {
+  openrouter: [
+    { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+    { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+    { id: "openai/gpt-4o", name: "GPT-4o" },
+    { id: "openai/gpt-4o-mini", name: "GPT-4o Mini" },
+  ],
+  google: [
+    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+  ],
+};
 
 export default function BotFormPage() {
   const router = useRouter();
@@ -35,6 +50,8 @@ export default function BotFormPage() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string }>>([]);
+  const [models, setModels] = useState<ModelOption[]>(FALLBACK_MODELS.openrouter);
+  const [loadingModels, setLoadingModels] = useState(false);
 
   useEffect(() => {
     fetch("/api/whatsapp/accounts")
@@ -44,6 +61,38 @@ export default function BotFormPage() {
       })
       .catch(() => toastError("Error al cargar cuentas"));
   }, [toastError]);
+
+  const fetchModels = useCallback(async (p: string) => {
+    setLoadingModels(true);
+    try {
+      const res = await fetch(`/api/configuracion/ia/models?provider=${p}`);
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        setModels(data);
+      } else {
+        setModels(FALLBACK_MODELS[p] ?? []);
+        toastError(data.error ?? "No se pudo obtener la lista de modelos del proveedor, mostrando lista de respaldo");
+      }
+    } catch {
+      setModels(FALLBACK_MODELS[p] ?? []);
+      toastError("No se pudo obtener la lista de modelos del proveedor, mostrando lista de respaldo");
+    } finally {
+      setLoadingModels(false);
+    }
+  }, [toastError]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/provider-change; fetchModels also used for manual refresh
+    fetchModels(provider);
+  }, [provider, fetchModels]);
+
+  useEffect(() => {
+    if (models.length === 0) return;
+    if (!models.some((m) => m.id === model)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- snap to a valid model when the fetched list no longer contains the current one
+      setModel(models[0].id);
+    }
+  }, [models, model]);
 
   useEffect(() => {
     if (!editId) return;
@@ -68,11 +117,6 @@ export default function BotFormPage() {
       .catch(() => toastError("Error al cargar bot"))
       .finally(() => setLoading(false));
   }, [editId, toastError]);
-
-  function updateModelForProvider(p: string) {
-    setProvider(p);
-    setModel(p === "google" ? "gemini-2.5-flash" : "google/gemini-2.5-flash");
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -153,7 +197,7 @@ export default function BotFormPage() {
               <div className="grid gap-5 sm:grid-cols-2">
                 <FormField label="Proveedor IA" required>
                   {(id) => (
-                    <Select id={id} value={provider} onChange={(e) => updateModelForProvider(e.target.value)}>
+                    <Select id={id} value={provider} onChange={(e) => setProvider(e.target.value)}>
                       <option value="openrouter">OpenRouter</option>
                       <option value="google">Google Gemini</option>
                     </Select>
@@ -161,22 +205,22 @@ export default function BotFormPage() {
                 </FormField>
                 <FormField label="Modelo" required>
                   {(id) => (
-                    <Select id={id} value={model} onChange={(e) => setModel(e.target.value)}>
-                      {provider === "openrouter" ? (
-                        <>
-                          <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-                          <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
-                          <option value="openai/gpt-4o">GPT-4o</option>
-                          <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-                          <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-                        </>
-                      ) : (
-                        <>
-                          <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-                          <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                        </>
-                      )}
-                    </Select>
+                    <div className="space-y-1">
+                      <Select id={id} value={model} onChange={(e) => setModel(e.target.value)} disabled={loadingModels}>
+                        {models.map((m) => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </Select>
+                      <button
+                        type="button"
+                        onClick={() => fetchModels(provider)}
+                        disabled={loadingModels}
+                        className="inline-flex items-center gap-1 text-xs text-accent hover:underline disabled:opacity-50"
+                      >
+                        <RefreshCw size={11} className={loadingModels ? "animate-spin" : ""} />
+                        Actualizar lista desde {provider === "google" ? "Google" : "OpenRouter"}
+                      </button>
+                    </div>
                   )}
                 </FormField>
               </div>

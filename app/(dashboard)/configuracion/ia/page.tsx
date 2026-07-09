@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, Save, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, Save, Eye, EyeOff, RefreshCw } from "lucide-react";
 import { Card, CardBody, CardFooter } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -10,6 +10,21 @@ import { Select } from "@/app/components/ui/select";
 import { FormField } from "@/app/components/ui/form-field";
 import { Spinner } from "@/app/components/ui/spinner";
 import { useToast } from "@/app/components/ui/toast";
+
+interface ModelOption { id: string; name: string; }
+
+const FALLBACK_MODELS: Record<string, ModelOption[]> = {
+  openrouter: [
+    { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+    { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+    { id: "openai/gpt-4o", name: "GPT-4o" },
+    { id: "openai/gpt-4o-mini", name: "GPT-4o Mini" },
+  ],
+  google: [
+    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+  ],
+};
 
 interface AISettings {
   id: string;
@@ -30,6 +45,30 @@ export default function IASettingsPage() {
   const [defaultModel, setDefaultModel] = useState("google/gemini-2.5-flash");
   const [showOpenrouter, setShowOpenrouter] = useState(false);
   const [showGoogle, setShowGoogle] = useState(false);
+  const [models, setModels] = useState<ModelOption[]>(FALLBACK_MODELS.openrouter);
+  const [loadingModels, setLoadingModels] = useState(false);
+
+  const fetchModels = useCallback(async (p: string) => {
+    setLoadingModels(true);
+    try {
+      const res = await fetch(`/api/configuracion/ia/models?provider=${p}`);
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        setModels(data);
+      } else {
+        setModels(FALLBACK_MODELS[p] ?? []);
+      }
+    } catch {
+      setModels(FALLBACK_MODELS[p] ?? []);
+    } finally {
+      setLoadingModels(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/provider-change; fetchModels also used for manual refresh
+    fetchModels(defaultProvider);
+  }, [defaultProvider, fetchModels]);
 
   useEffect(() => {
     fetch("/api/configuracion/ia")
@@ -142,13 +181,25 @@ export default function IASettingsPage() {
                 </FormField>
                 <FormField label="Modelo por defecto">
                   {(id) => (
-                    <Select id={id} value={defaultModel} onChange={(e) => setDefaultModel(e.target.value)}>
-                      <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-                      <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
-                      <option value="openai/gpt-4o">GPT-4o</option>
-                      <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-                      <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-                    </Select>
+                    <div className="space-y-1">
+                      <Select id={id} value={defaultModel} onChange={(e) => setDefaultModel(e.target.value)} disabled={loadingModels}>
+                        {!models.some((m) => m.id === defaultModel) && (
+                          <option value={defaultModel}>{defaultModel}</option>
+                        )}
+                        {models.map((m) => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </Select>
+                      <button
+                        type="button"
+                        onClick={() => fetchModels(defaultProvider)}
+                        disabled={loadingModels}
+                        className="inline-flex items-center gap-1 text-xs text-accent hover:underline disabled:opacity-50"
+                      >
+                        <RefreshCw size={11} className={loadingModels ? "animate-spin" : ""} />
+                        Actualizar lista desde {defaultProvider === "google" ? "Google" : "OpenRouter"}
+                      </button>
+                    </div>
                   )}
                 </FormField>
               </div>
