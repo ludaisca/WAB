@@ -173,6 +173,12 @@ export async function POST(req: Request) {
             const messageBody = getMessageBody(msg);
             const msgTimestamp = new Date(Number(msg.timestamp) * 1000);
 
+            const contactRecord = await prisma.contact.upsert({
+              where: { accountId_remoteJid: { accountId: account.id, remoteJid: msg.from } },
+              create: { accountId: account.id, remoteJid: msg.from, name: contactName },
+              update: { name: contactName },
+            });
+
             const chat = await prisma.wAChat.upsert({
               where: {
                 accountId_remoteJid: {
@@ -188,6 +194,7 @@ export async function POST(req: Request) {
                 lastMessage: messageBody.slice(0, 500),
                 lastMessageAt: msgTimestamp,
                 unreadCount: 1,
+                contactId: contactRecord.id,
               },
               update: {
                 name: contactName,
@@ -195,6 +202,7 @@ export async function POST(req: Request) {
                 lastMessage: messageBody.slice(0, 500),
                 lastMessageAt: msgTimestamp,
                 unreadCount: { increment: 1 },
+                contactId: contactRecord.id,
               },
             });
 
@@ -210,6 +218,18 @@ export async function POST(req: Request) {
                 timestamp: msgTimestamp,
               },
             });
+
+            if (chat.assignedToId) {
+              await prisma.notification.create({
+                data: {
+                  userId: chat.assignedToId,
+                  type: "CHAT_MESSAGE",
+                  title: contactName,
+                  body: messageBody.slice(0, 200),
+                  link: `/whatsapp/chat/${account.id}/${chat.id}`,
+                },
+              });
+            }
           }
 
           const chatIds = new Map<string, string>();

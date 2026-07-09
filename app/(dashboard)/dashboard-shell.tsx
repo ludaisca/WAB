@@ -11,8 +11,10 @@ import {
   BarChart3,
   Database,
   FileText,
+  Contact,
 } from "lucide-react";
 import { AppShell, type NavItem } from "@/app/components/ui/app-shell";
+import { NotificationBell } from "@/app/components/ui/notification-bell";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
@@ -23,12 +25,14 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const NAV: NavItem[] = isEjecutivo
     ? [
         { href: "/whatsapp/chat",    label: "Chats",           icon: MessageSquare },
+        { href: "/whatsapp/contactos", label: "Contactos",     icon: Contact },
         { href: "/configuracion",    label: "Configuración",   icon: Settings, exact: true },
       ]
     : [
         { href: "/dashboard",               label: "Panel",            icon: LayoutDashboard, exact: true },
         { href: "/estadisticas",            label: "Estadísticas",     icon: BarChart3, exact: true },
         { href: "/whatsapp",                label: "WhatsApp",         icon: MessageSquare },
+        { href: "/whatsapp/contactos",      label: "Contactos",       icon: Contact },
         { href: "/whatsapp/bots",           label: "Bots IA",          icon: Bot },
         { href: "/whatsapp/conocimiento",   label: "Conocimiento",     icon: Database },
         { href: "/whatsapp/plantillas",     label: "Plantillas",       icon: FileText },
@@ -40,7 +44,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       ];
 
   return (
-    <AppShell nav={NAV} accent="accent" collapsible>
+    <AppShell nav={NAV} accent="accent" collapsible headerRight={<NotificationBell />}>
       {children}
     </AppShell>
   );

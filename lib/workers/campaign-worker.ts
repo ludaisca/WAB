@@ -134,4 +134,14 @@ export async function processCampaignJob(job: CampaignJob) {
       completedAt: new Date(),
     },
   });
+
+  await prisma.notification.create({
+    data: {
+      userId: campaign.userId,
+      type: finalStatus === "COMPLETED" ? "CAMPAIGN_COMPLETED" : "CAMPAIGN_FAILED",
+      title: `Campaña "${campaign.name}"`,
+      body: `${totalSuccess} enviados, ${totalFailed} fallidos`,
+      link: `/whatsapp/campanas/${campaignId}`,
+    },
+  });
 }

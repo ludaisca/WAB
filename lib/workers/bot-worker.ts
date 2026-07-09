@@ -18,6 +18,20 @@ export async function processBotMessageJob(job: BotMessageJob) {
     await handleBotMessage(job);
   } catch (err) {
     console.error("[bot-worker] Error processing job:", err instanceof Error ? err.message : err);
+    const bot = await prisma.wABot
+      .update({ where: { id: job.botId }, data: { status: "ERROR" } })
+      .catch(() => null);
+    if (bot) {
+      await prisma.notification.create({
+        data: {
+          userId: bot.userId,
+          type: "BOT_ERROR",
+          title: `Bot "${bot.name}" con error`,
+          body: err instanceof Error ? err.message.slice(0, 200) : "Error desconocido",
+          link: `/whatsapp/bots/${bot.id}`,
+        },
+      });
+    }
   }
 }
 
@@ -38,6 +52,15 @@ async function handleBotMessage(job: BotMessageJob) {
     await prisma.wABot.update({
       where: { id: botId },
       data: { status: "ERROR" },
+    });
+    await prisma.notification.create({
+      data: {
+        userId: bot.userId,
+        type: "BOT_ERROR",
+        title: `Bot "${bot.name}" sin API key`,
+        body: "Configura la clave del proveedor de IA en Configuración.",
+        link: `/whatsapp/bots/${botId}`,
+      },
     });
     return;
   }

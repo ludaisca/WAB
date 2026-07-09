@@ -114,3 +114,21 @@ export const templateCreateSchema = z.object({
 });
 
 export type TemplateCreateInput = z.infer<typeof templateCreateSchema>;
+
+export const contactUpdateSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  leadStatus: z.enum(["NEW", "CONTACTED", "QUALIFIED", "CUSTOMER", "LOST"]).optional(),
+});
+
+export const noteSchema = z.object({
+  body: z.string().min(1, "La nota no puede estar vacía").max(2000, "Máximo 2000 caracteres"),
+});
+
+export const tagSchema = z.object({
+  name: z.string().min(1, "El nombre es requerido").max(50),
+  color: z.string().max(30).optional(),
+});
+
+export type ContactUpdateInput = z.infer<typeof contactUpdateSchema>;
+export type NoteInput = z.infer<typeof noteSchema>;
+export type TagInput = z.infer<typeof tagSchema>;

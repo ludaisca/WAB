@@ -3,11 +3,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Send, MessageSquare } from "lucide-react";
+import { ArrowLeft, Send, MessageSquare, User } from "lucide-react";
 import { Button } from "@/app/components/ui/button";
 import { Spinner } from "@/app/components/ui/spinner";
 import { EmptyState } from "@/app/components/ui/empty-state";
 import { useToast } from "@/app/components/ui/toast";
+import { ContactDrawer } from "@/app/components/whatsapp/contact-drawer";
+import { ChatAssigneePicker } from "@/app/components/whatsapp/chat-assignee-picker";
 
 interface ChatItem {
   id: string;
@@ -18,6 +20,9 @@ interface ChatItem {
   lastMessage: string | null;
   lastMessageAt: string | null;
   unreadCount: number;
+  contactId: string | null;
+  assignedToId: string | null;
+  assignedTo: { id: string; name: string | null } | null;
   account: { id: string; name: string; phoneNumber: string | null };
 }
 
@@ -81,6 +86,7 @@ export default function ChatDetailPage() {
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
+  const [contactDrawerOpen, setContactDrawerOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -175,6 +181,24 @@ export default function ChatDetailPage() {
             </p>
           )}
         </div>
+        {chat && (
+          <ChatAssigneePicker
+            chatId={chat.id}
+            assignedTo={chat.assignedTo}
+            onAssigned={(assignee) =>
+              setChat((prev) => prev && ({ ...prev, assignedTo: assignee, assignedToId: assignee?.id ?? null }))
+            }
+          />
+        )}
+        {chat?.contactId && (
+          <button
+            onClick={() => setContactDrawerOpen(true)}
+            className="text-muted-darker hover:text-foreground transition-colors"
+            title="Ver contacto"
+          >
+            <User size={18} />
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
@@ -211,6 +235,14 @@ export default function ChatDetailPage() {
           {sending ? <Spinner /> : ""}
         </Button>
       </form>
+
+      {contactDrawerOpen && chat?.contactId && (
+        <ContactDrawer
+          contactId={chat.contactId}
+          onClose={() => setContactDrawerOpen(false)}
+          onUpdated={fetchChat}
+        />
+      )}
     </div>
   );
 }

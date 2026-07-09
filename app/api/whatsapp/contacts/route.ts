@@ -14,39 +14,43 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const accountId = searchParams.get("accountId");
-
-    if (accountId && !accountIds.includes(accountId)) {
-      return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
-    }
+    const leadStatus = searchParams.get("leadStatus");
+    const tagId = searchParams.get("tagId");
+    const search = searchParams.get("search");
 
     const where: Record<string, unknown> = {
       accountId: accountId ? accountId : { in: accountIds },
     };
+    if (accountId && !accountIds.includes(accountId)) {
+      return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
+    }
+    if (leadStatus) where.leadStatus = leadStatus;
+    if (tagId) where.tags = { some: { tagId } };
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { remoteJid: { contains: search, mode: "insensitive" } },
+      ];
+    }
 
-    const chats = await prisma.wAChat.findMany({
+    const contacts = await prisma.contact.findMany({
       where,
       select: {
         id: true,
         accountId: true,
         remoteJid: true,
         name: true,
-        isGroup: true,
-        lastMessage: true,
-        lastMessageAt: true,
-        unreadCount: true,
-        contactId: true,
-        assignedToId: true,
-        assignedTo: { select: { id: true, name: true } },
+        leadStatus: true,
         createdAt: true,
         updatedAt: true,
-        account: {
-          select: { id: true, name: true, phoneNumber: true },
-        },
+        tags: { select: { tag: { select: { id: true, name: true, color: true } } } },
+        chat: { select: { id: true, unreadCount: true, lastMessageAt: true } },
+        _count: { select: { notes: true } },
       },
-      orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
+      orderBy: { updatedAt: "desc" },
     });
 
-    return NextResponse.json(chats);
+    return NextResponse.json(contacts);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Error interno del servidor";

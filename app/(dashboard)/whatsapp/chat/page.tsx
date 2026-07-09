@@ -1,12 +1,16 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, Send, ArrowLeft, MessageSquare } from "lucide-react";
+import { Search, Send, ArrowLeft, MessageSquare, User } from "lucide-react";
 import { Input } from "@/app/components/ui/input";
+import { Select } from "@/app/components/ui/select";
 import { Button } from "@/app/components/ui/button";
+import { Badge } from "@/app/components/ui/badge";
 import { Spinner } from "@/app/components/ui/spinner";
 import { EmptyState } from "@/app/components/ui/empty-state";
 import { useToast } from "@/app/components/ui/toast";
+import { ContactDrawer } from "@/app/components/whatsapp/contact-drawer";
+import { ChatAssigneePicker } from "@/app/components/whatsapp/chat-assignee-picker";
 
 interface ChatItem {
   id: string;
@@ -17,6 +21,9 @@ interface ChatItem {
   lastMessage: string | null;
   lastMessageAt: string | null;
   unreadCount: number;
+  contactId: string | null;
+  assignedToId: string | null;
+  assignedTo: { id: string; name: string | null } | null;
   account: { id: string; name: string; phoneNumber: string | null };
 }
 
@@ -81,6 +88,8 @@ export default function ChatPage() {
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [search, setSearch] = useState("");
+  const [accountFilter, setAccountFilter] = useState("");
+  const [contactDrawerOpen, setContactDrawerOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -163,7 +172,12 @@ export default function ChatPage() {
     }
   }
 
+  const accountOptions = Array.from(
+    new Map(chats.map((c) => [c.account.id, c.account])).values()
+  );
+
   const filteredChats = chats.filter((c) => {
+    if (accountFilter && c.accountId !== accountFilter) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -185,8 +199,21 @@ export default function ChatPage() {
   return (
     <div className="flex h-[calc(100vh-9rem)] -m-4 md:-m-6 lg:-m-8">
       <div className={`${selectedChatId ? "hidden md:flex" : "flex"} md:flex flex-col w-full md:w-80 lg:w-96 border-r border-border shrink-0`}>
-        <div className="p-4 border-b border-border">
-          <h1 className="text-lg font-bold tracking-tight mb-3">Chats</h1>
+        <div className="p-4 border-b border-border space-y-2">
+          <h1 className="text-lg font-bold tracking-tight mb-1">Chats</h1>
+          {accountOptions.length > 1 && (
+            <Select
+              value={accountFilter}
+              onChange={(e) => setAccountFilter(e.target.value)}
+            >
+              <option value="">Todos los números</option>
+              {accountOptions.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name}{acc.phoneNumber ? ` · ${acc.phoneNumber}` : ""}
+                </option>
+              ))}
+            </Select>
+          )}
           <Input
             icon={Search}
             value={search}
@@ -230,6 +257,11 @@ export default function ChatPage() {
                           <p className="text-xs text-muted-darker truncate mt-0.5">
                             {chat.lastMessage ?? "Sin mensajes"}
                           </p>
+                          {chat.assignedTo && (
+                            <Badge tone="info" size="sm" className="mt-1">
+                              {chat.assignedTo.name ?? "Asignado"}
+                            </Badge>
+                          )}
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
                           {chat.lastMessageAt && (
@@ -281,6 +313,24 @@ export default function ChatPage() {
                   </p>
                 )}
               </div>
+              {selectedChat && (
+                <ChatAssigneePicker
+                  chatId={selectedChat.id}
+                  assignedTo={selectedChat.assignedTo}
+                  onAssigned={(assignee) =>
+                    setSelectedChat((prev) => prev && ({ ...prev, assignedTo: assignee, assignedToId: assignee?.id ?? null }))
+                  }
+                />
+              )}
+              {selectedChat?.contactId && (
+                <button
+                  onClick={() => setContactDrawerOpen(true)}
+                  className="text-muted-darker hover:text-foreground transition-colors"
+                  title="Ver contacto"
+                >
+                  <User size={18} />
+                </button>
+              )}
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
@@ -320,6 +370,14 @@ export default function ChatPage() {
           </>
         )}
       </div>
+
+      {contactDrawerOpen && selectedChat?.contactId && (
+        <ContactDrawer
+          contactId={selectedChat.contactId}
+          onClose={() => setContactDrawerOpen(false)}
+          onUpdated={fetchChats}
+        />
+      )}
     </div>
   );
 }
