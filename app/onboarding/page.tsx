@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { OnboardingForm } from "./_form";
 
+export const dynamic = "force-dynamic";
+
 // Only reachable on a fresh deploy (0 users). Once the first admin exists,
 // this route is dead — new accounts go through /register instead.
 export default async function OnboardingPage() {
