@@ -29,10 +29,10 @@ interface BotDetail {
   ragEnabled: boolean;
   isActive: boolean;
   status: string;
-  waAccountId: string;
+  waAccountId: string | null;
   createdAt: string;
   updatedAt: string;
-  waAccount: { id: string; name: string; phoneNumber: string | null };
+  waAccount: { id: string; name: string; phoneNumber: string | null } | null;
   _count: { conversations: number; knowledgeBots: number };
 }
 
@@ -231,7 +231,7 @@ export default function BotDetailPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{bot.name}</h1>
           <p className="text-sm text-muted-darker mt-1">
-            {bot.waAccount.name} · {bot.provider === "openrouter" ? "OpenRouter" : "Gemini"} · {bot.model}
+            {bot.waAccount?.name ?? "Sin cuenta (solo pruebas)"} · {bot.provider === "openrouter" ? "OpenRouter" : "Gemini"} · {bot.model}
           </p>
         </div>
         <div className="flex gap-2">

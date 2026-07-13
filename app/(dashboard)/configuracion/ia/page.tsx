@@ -50,6 +50,8 @@ export default function IASettingsPage() {
   const [showGoogle, setShowGoogle] = useState(false);
   const [models, setModels] = useState<ModelOption[]>(FALLBACK_MODELS.openrouter);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [modelsProvider, setModelsProvider] = useState("openrouter");
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   const fetchModels = useCallback(async (p: string) => {
     setLoadingModels(true);
@@ -60,13 +62,16 @@ export default function IASettingsPage() {
         setModels(data);
       } else {
         setModels(FALLBACK_MODELS[p] ?? []);
+        toastError(data.error ?? "No se pudo obtener la lista de modelos del proveedor, mostrando lista de respaldo");
       }
     } catch {
       setModels(FALLBACK_MODELS[p] ?? []);
+      toastError("No se pudo obtener la lista de modelos del proveedor, mostrando lista de respaldo");
     } finally {
+      setModelsProvider(p);
       setLoadingModels(false);
     }
-  }, []);
+  }, [toastError]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/provider-change; fetchModels also used for manual refresh
@@ -85,8 +90,18 @@ export default function IASettingsPage() {
         }
       })
       .catch(() => toastError("Error al cargar configuración"))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setSettingsLoaded(true); });
   }, [toastError]);
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    if (modelsProvider !== defaultProvider) return;
+    if (models.length === 0) return;
+    if (!models.some((m) => m.id === defaultModel)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- snap to a valid model when the fetched list no longer contains the current one
+      setDefaultModel(models[0].id);
+    }
+  }, [models, modelsProvider, defaultProvider, defaultModel, settingsLoaded]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();

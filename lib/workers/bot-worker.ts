@@ -50,7 +50,7 @@ async function handleBotMessage(job: BotMessageJob) {
     include: { waAccount: true },
   });
 
-  if (!bot || !bot.isActive || bot.status !== "ACTIVE") return;
+  if (!bot || !bot.isActive || bot.status !== "ACTIVE" || !bot.waAccount) return;
 
   const provider = bot.provider as AIProvider;
   const apiKey = await getUserApiKey(bot.userId, provider);
@@ -199,7 +199,7 @@ async function handleBotMessage(job: BotMessageJob) {
       },
     }),
     prisma.wAAccount.update({
-      where: { id: bot.waAccountId },
+      where: { id: bot.waAccount.id },
       data: { lastActivity: now },
     }),
     (async () => {

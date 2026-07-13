@@ -299,8 +299,8 @@ model WABot {
   id           String        @id @default(cuid())
   userId       String
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  waAccountId  String
-  waAccount    WAAccount     @relation(fields: [waAccountId], references: [id], onDelete: Cascade)
+  waAccountId  String?
+  waAccount    WAAccount?    @relation(fields: [waAccountId], references: [id], onDelete: SetNull)
   name         String
   provider     String
   model        String

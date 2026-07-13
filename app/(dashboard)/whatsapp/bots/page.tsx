@@ -21,12 +21,12 @@ interface WaBot {
   model: string;
   isActive: boolean;
   status: string;
-  waAccountId: string;
+  waAccountId: string | null;
   memoryType: string;
   ragEnabled: boolean;
   createdAt: string;
   updatedAt: string;
-  waAccount: { id: string; name: string; phoneNumber: string | null };
+  waAccount: { id: string; name: string; phoneNumber: string | null } | null;
   _count: { conversations: number; knowledgeBots: number };
 }
 
@@ -126,7 +126,7 @@ export default function BotsPage() {
                           {bot.name}
                         </Link>
                         <p className="text-xs text-muted-darker mt-0.5">
-                          {bot.waAccount.name} · {bot.model}
+                          {bot.waAccount?.name ?? "Sin cuenta (solo pruebas)"} · {bot.model}
                         </p>
                       </div>
                       <button

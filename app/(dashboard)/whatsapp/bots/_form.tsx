@@ -56,6 +56,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string }>>([]);
   const [models, setModels] = useState<ModelOption[]>(FALLBACK_MODELS.openrouter);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [modelsProvider, setModelsProvider] = useState("openrouter");
 
   const resetForm = useCallback(() => {
     setName("");
@@ -97,6 +98,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
       setModels(FALLBACK_MODELS[p] ?? []);
       toastError("No se pudo obtener la lista de modelos del proveedor, mostrando lista de respaldo");
     } finally {
+      setModelsProvider(p);
       setLoadingModels(false);
     }
   }, [toastError]);
@@ -108,12 +110,13 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
   }, [open, provider, fetchModels]);
 
   useEffect(() => {
+    if (modelsProvider !== provider) return;
     if (models.length === 0) return;
     if (!models.some((m) => m.id === model)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- snap to a valid model when the fetched list no longer contains the current one
       setModel(models[0].id);
     }
-  }, [models, model]);
+  }, [models, model, provider, modelsProvider]);
 
   useEffect(() => {
     if (!open || !editId) return;
@@ -124,7 +127,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
       .then((d) => {
         if (d.name) {
           setName(d.name);
-          setWaAccountId(d.waAccountId);
+          setWaAccountId(d.waAccountId ?? "");
           setProvider(d.provider);
           setModel(d.model);
           setSystemPrompt(d.systemPrompt);
@@ -147,7 +150,6 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
   async function handleSubmit() {
     const newErrors: Record<string, string> = {};
     if (!name.trim()) newErrors.name = "Requerido";
-    if (!waAccountId) newErrors.waAccountId = "Selecciona una cuenta";
     if (!systemPrompt.trim()) newErrors.systemPrompt = "Requerido";
     setErrors(newErrors);
     if (Object.keys(newErrors).length > 0) return;
@@ -157,7 +159,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
     try {
       const body = {
         name: name.trim(),
-        waAccountId,
+        waAccountId: waAccountId || null,
         provider,
         model,
         systemPrompt: systemPrompt.trim(),
@@ -215,9 +217,10 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
                 <Input id={id} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Soporte IA" error={errors.name} />
               )}
             </FormField>
-            <FormField label="Cuenta WhatsApp" required error={errors.waAccountId}>
+            <FormField label="Cuenta WhatsApp" hint="Opcional — sin cuenta el bot solo se puede usar en la pestaña «Probar», no responderá mensajes reales.">
               {(id) => (
-                <Select id={id} value={waAccountId} onChange={(e) => setWaAccountId(e.target.value)} placeholder="Seleccionar cuenta" error={errors.waAccountId}>
+                <Select id={id} value={waAccountId} onChange={(e) => setWaAccountId(e.target.value)}>
+                  <option value="">Sin cuenta (solo pruebas)</option>
                   {accounts.map((a) => (
                     <option key={a.id} value={a.id}>{a.name}</option>
                   ))}

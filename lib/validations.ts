@@ -69,7 +69,7 @@ export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 
 export const botSchema = z.object({
   name: z.string().min(1, "El nombre es requerido").max(100),
-  waAccountId: z.string().min(1, "La cuenta es requerida"),
+  waAccountId: z.string().min(1).optional().nullable(),
   provider: z.enum(["openrouter", "google"], { message: "Proveedor inválido" }),
   model: z.string().min(1, "El modelo es requerido"),
   systemPrompt: z.string().min(1, "El prompt del sistema es requerido"),

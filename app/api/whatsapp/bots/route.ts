@@ -33,12 +33,14 @@ export async function POST(req: Request) {
       ragEnabled,
     } = parsed.data;
 
-    const account = await prisma.wAAccount.findFirst({
-      where: { id: waAccountId, userId: session.user.id },
-    });
+    if (waAccountId) {
+      const account = await prisma.wAAccount.findFirst({
+        where: { id: waAccountId, userId: session.user.id },
+      });
 
-    if (!account) {
-      return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
+      if (!account) {
+        return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
+      }
     }
 
     await prisma.appSettings.upsert({
@@ -50,7 +52,7 @@ export async function POST(req: Request) {
     const bot = await prisma.wABot.create({
       data: {
         userId: session.user.id,
-        waAccountId,
+        waAccountId: waAccountId ?? null,
         name,
         provider,
         model,
