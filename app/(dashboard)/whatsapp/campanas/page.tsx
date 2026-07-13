@@ -84,9 +84,7 @@ export default function CampaignsPage() {
         title="Campañas"
         description="Envía mensajes masivos usando plantillas de WhatsApp."
         actions={
-          <Link href="/whatsapp/campanas/nueva">
-            <Button icon={Plus} size="sm">Nueva campaña</Button>
-          </Link>
+          <Button href="/whatsapp/campanas/nueva" icon={Plus} size="sm">Nueva campaña</Button>
         }
       />
 

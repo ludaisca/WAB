@@ -2,6 +2,7 @@ import { Worker } from "bullmq";
 import { processBotMessageJob } from "./bot-worker";
 import { processCampaignJob } from "./campaign-worker";
 import { processRagJob } from "./rag-worker";
+import { processMediaDownloadJob } from "./media-worker";
 
 const connection = {
   url: process.env.REDIS_URL || "redis://redis:6379",
@@ -26,7 +27,11 @@ export function startWorkers() {
     await processRagJob(job.data);
   }, { connection, concurrency: 2 });
 
-  workers.push(botWorker, campaignWorker, ragWorker);
+  const mediaWorker = new Worker("media-download", async (job) => {
+    await processMediaDownloadJob(job.data);
+  }, { connection, concurrency: 5 });
+
+  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker);
 
   console.log("[workers] BullMQ workers started");
 }

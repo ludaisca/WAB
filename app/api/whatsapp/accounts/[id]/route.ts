@@ -172,10 +172,6 @@ export async function DELETE(
       );
     }
 
-    if (existing.channel === "BAILEYS") {
-      const { stopBaileysConnection } = await import("@/lib/whatsapp-baileys/connection-manager");
-      await stopBaileysConnection(id);
-    }
 
     await prisma.wAAccount.delete({ where: { id } });
 

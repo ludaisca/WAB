@@ -34,6 +34,7 @@ model User {
 model SystemConfig {
   id                 String   @id @default("default")
   allowRegistration  Boolean  @default(true)
+  businessName       String?
   updatedAt          DateTime @updatedAt @map("updated_at")
 
   @@map("system_config")
@@ -79,7 +80,7 @@ model WAAccount {
   bots            WABot[]
   sharedWith      WAAccountShare[]
   contacts        Contact[]
-  baileysSession  WABaileysSession?
+
   cannedResponses CannedResponse[]
 
   @@index([phoneNumberId])
@@ -103,17 +104,6 @@ model CannedResponse {
 
 enum WAChannel {
   META_CLOUD
-  BAILEYS
-}
-
-model WABaileysSession {
-  id          String    @id @default(cuid())
-  waAccountId String    @unique
-  waAccount   WAAccount @relation(fields: [waAccountId], references: [id], onDelete: Cascade)
-  authState   Json
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-
-  @@map("wa_baileys_sessions")
 }
 
 model WAAccountShare {
@@ -181,9 +171,15 @@ model WAMessage {
   direction   MessageDirection
   messageType String
   body        String?
+  caption     String?
   mediaId     String?
   mediaUrl    String?
   mimeType    String?
+  filename    String?
+  width       Int?
+  height      Int?
+  duration    Int?
+  bytesSize   Int?
   status      String?
   senderId    String?
   sender      User?            @relation(fields: [senderId], references: [id], onDelete: SetNull)

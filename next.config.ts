@@ -1,10 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Baileys' optional media-thumbnail deps (jimp/sharp) use dynamic imports
-  // wrapped in try/catch that only resolve at runtime; keeping the package
-  // external avoids Turbopack failing to statically resolve them at build time.
-  serverExternalPackages: ["@whiskeysockets/baileys"],
+  // Next dev blocks cross-origin requests to dev resources (HMR websocket, RSC
+  // payloads) by default. Needed while testing through an ngrok tunnel for the
+  // Meta webhook — without this, HMR silently fails and forces hard reloads.
+  allowedDevOrigins: ["*.ngrok-free.dev", "*.ngrok-free.app", "*.ngrok.io"],
   async headers() {
     return [
       {

@@ -8,15 +8,19 @@ const LABELS: Record<string, string> = {
   dashboard: "Panel",
   estadisticas: "Estadísticas",
   whatsapp: "WhatsApp",
-  bots: "Bots",
+  bots: "Bots IA",
   campanas: "Campañas",
   chat: "Chats",
   cuentas: "Cuentas",
-  conocimiento: "Conocimiento",
+  conocimiento: "Base de Conocimiento",
   plantillas: "Plantillas",
   usuarios: "Usuarios",
   configuracion: "Configuración",
-  ia: "IA",
+  ia: "Inteligencia Artificial",
+  contactos: "Contactos",
+  "respuestas-rapidas": "Respuestas Rápidas",
+  nueva: "Nueva",
+  nuevo: "Nuevo",
 };
 
 export function Breadcrumb() {

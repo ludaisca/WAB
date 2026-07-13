@@ -7,6 +7,7 @@
 - **Redis 7** + **BullMQ** (job queues for async processing)
 - React 19, lucide-react, zod, bcryptjs, next-themes, openai, @google/generative-ai, ioredis
 - `@whiskeysockets/baileys` (WhatsApp Web protocol, dev/testing channel — see "WhatsApp channels" below), `qrcode`
+- WhatsApp **multimodal** (image/audio/video/document/sticker) inbound on both channels + outbound on Meta — see "Media handling" below
 
 ## Development
 
@@ -23,6 +24,7 @@ npx prisma generate         # after schema changes
 - **docker-compose.yml** is production (used by Coolify). **docker-compose.override.yml** adds dev overrides (volumes, hot reload, env_file). Docker Compose merges both locally.
 - `tailwindcss` and `@tailwindcss/postcss` are in `dependencies` (not devDependencies) — required at build time even with `NODE_ENV=production`.
 - `public/` must contain `.gitkeep` — Docker BuildKit fails on `COPY` of empty directories.
+- Named volume `media_data` mounted at `/app/media` (in both compose files) stores downloaded WhatsApp media binaries. `MEDIA_ROOT` env var defaults to `/app/media`; helpers in `lib/whatsapp/media-store.ts` resolve paths thoroughfully. `media/.gitkeep` exists on host for git tracking.
 - Production `app` service uses `expose: 5000` (no fixed host port bind). Coolify's own proxy (Traefik) routes to it via the FQDN/domain configured in the Coolify UI. Do **not** add a hardcoded `ports:` mapping back to `docker-compose.yml` — a fixed host port causes `port is already allocated` failures on redeploy if a stale container from a previous deploy attempt (or another app) still holds that port on the server.
 
 ## Architecture: roles
@@ -46,8 +48,9 @@ Three roles with different UIs and access:
 - `proxy.ts` IS the middleware — Next.js 16 convention. Not `middleware.ts`
 - `params` in page/layout props is `Promise<>` — must `await` before destructuring
 - Server Components **cannot** pass Lucide/React components to Client Components as props. Error: "Functions cannot be passed directly to Client Components". Fix: convert the page to `"use client"` or render icons inside the client boundary. This includes `<Button icon={SomeIcon}>` written directly inside a Server Component — extract it into a small `"use client"` wrapper (e.g. `whatsapp/_add-account-button.tsx`) instead.
-- `rm -rf .next` after adding/removing routes (stale Turbopack cache causes 404s/500s). If files are owned by Docker use `docker compose down -v && docker compose up --build` instead
+- `rm -rf .next` after adding/removing routes (stale Turbopack cache causes 404s/500s). If files are owned by Docker use `docker compose exec -u root app sh -c "rm -rf .next"` then `docker compose restart app`. **After a container recreate (e.g. adding a new volume), Turbopack's server-side chunk cache may not invalidate the client chunk unless you also do a hard refresh in the browser with DevTools "Disable cache" enabled** — HMR cannot bridge that gap; the client keeps loading the stale on-disk chunk with HTTP 200 (from disk cache) instead of asking for a fresh one.
 - Pages using `useSearchParams()` must be wrapped in `<Suspense>`. See `app/(auth)/login/page.tsx` for pattern.
+- Media URLs in chat UI are **server-proxied**, never raw Meta URLs. Always render `<img src=\`/api/whatsapp/messages/${msg.id}/media\`>` (or `<audio>`/`<video>`/download link). The endpoint authenticates via `getUserAccountIds` and streams bytes from `/app/media`. Never expose Meta's short-lived download URLs to the browser.
 
 ### Server Components for top-level pages
 
@@ -62,7 +65,7 @@ RSC pages should have a sibling `loading.tsx` with skeleton placeholders — Nex
 ## Database
 
 ### Schema
-`prisma/schema.prisma` — 24 models. Key relationships: `User → WAAccount[]`, `User → AppSettings (1:1)`, `WABot ↔ WABotKnowledge (M:N via WABotKnowledgeBot)`, `WAAccount → WAAccountShare[] → User`, `WAChat → Contact (1:1)`, `Contact ↔ Tag (M:N via ContactTag)`, `WAAccount → WABaileysSession` (1:1, only for `channel: BAILEYS`)
+`prisma/schema.prisma` — 24 models. Key relationships: `User → WAAccount[]`, `User → AppSettings (1:1)`, `WABot ↔ WABotKnowledge (M:N via WABotKnowledgeBot)`, `WAAccount → WAAccountShare[] → User`, `WAChat → Contact (1:1)`, `Contact ↔ Tag (M:N via ContactTag)`, `WAAccount → WABaileysSession` (1:1, only for `channel: BAILEYS`). `WAMessage` carries all media metadata: `messageType` (`text`/`image`/`audio`/`video`/`document`/`sticker`), `caption`, `mediaId` (Meta id), `mediaUrl` (relative path under `MEDIA_ROOT`), `mimeType`, `filename`, `width`/`height`/`duration`/`bytesSize`. `body` is reused for both text and caption-derived text; `caption` is the dedicated caption field.
 
 ### Commands
 ```bash
@@ -84,13 +87,14 @@ Uses `prisma.$transaction()` for atomic `count() + create()` — prevents race c
 
 ## Redis + BullMQ
 
-3 queues, auto-started via `instrumentation.ts`:
+4 queues, auto-started via `instrumentation.ts`:
 
 | Queue | Concurrency | Timeout | Trigger |
 |---|---|---|---|
 | `bot-messages` | 3 | 60s | `ingestInboundMessage()` detects active bot → enqueues (both Meta webhook and Baileys) |
 | `campaign-send` | 1 | 60s | Admin clicks "Enviar" on campaign |
 | `rag-index` | 2 | 60s | User uploads knowledge document |
+| `media-download` | 5 | 90s, 5 attempts | `ingestInboundMessage()` with Meta `mediaId` → downloads binary bytes async (Baileys downloads inline, doesn't use this queue) |
 
 - Workers live in `lib/workers/`. Queue definitions in `lib/queue.ts`.
 - `REDIS_URL` env var required.
@@ -105,12 +109,15 @@ Two providers: `openrouter` (OpenAI-compatible SDK, baseURL override) and `googl
 
 Provider clients in `lib/ai/providers/`. Factory in `lib/ai/factory.ts`.
 
+- **Multimodal in/out**: `AIMessage.content` is `string | ContentPart[]` where `ContentPart` is `{type:"text",text}` or `{type:"image_url",image_url:{url}}` (OpenAI shape). Both providers forward arrays natively. The Google provider maps `image_url` with a `data:` URI base64 into `inlineData: {mimeType, data}`; plain URLs (non-data-URI) are NOT supported inside inlineData — bot-worker always builds data-URI from local bytes. Bot reply stays text-only in v1 (vision input, no media output).
 - **Embedding dimension**: 768 for both providers (OpenRouter uses `dimensions: 768` param; Google `text-embedding-004` natively outputs 768).
 - **Google usage**: `usageMetadata` on `response` object provides `promptTokenCount`, `candidatesTokenCount`. Must be returned in `AICompletionResponse.usage`.
-- **Google `systemInstruction` gotcha**: must be passed to `genAI.getGenerativeModel({ model, systemInstruction })`, never to `.startChat({ systemInstruction })`. The SDK (`@google/generative-ai`) only runs its string→`Content` formatting on the value passed to `getGenerativeModel`; passing it to `startChat` instead silently overrides the formatted value with the raw unformatted one and the REST API rejects it with a 400 on `system_instruction`.
+- **Google `systemInstruction` gotcha**: must be passed to `genAI.getGenerativeModel({ model, systemInstruction })`, never to `.startChat({ systemInstruction })`. The SDK (`@google/generative-ai`) only runs its string→`Content` formatting on the value passed to `getGenerativeModel`; passing it to `startChat` instead silently overrides the formatted value with the raw unformatted one and the REST API rejects it with a 400 on `system_instruction`. **Caveat**: only a `string` `systemInstruction` is supported by the v1 SDK path — if you pass it parts/array, the formatter will mangle it. Always send a plain string for the system prompt even when the rest of the conversation is multimodal.
 - Model pricing in `lib/ai/pricing.ts` (USD per 1M tokens). `estimateCost()` is async — falls back to live OpenRouter pricing (`lib/ai/models.ts:getOpenRouterModelPricing()`, cached in-process) when a model isn't in the static table. Usage logged per interaction in `WABotUsage`.
 - Model lists are fetched live from each provider (`lib/ai/models.ts`, exposed via `GET /api/configuracion/ia/models?provider=`) rather than hardcoded — provider catalogs change (e.g. `anthropic/claude-3.5-sonnet` was removed from OpenRouter). Bot creation and default-model settings both use this with a small static fallback list if the fetch fails.
 - RAG: documents chunked → embeddings generated → stored in pgvector → searched with cosine similarity (`<=>` operator).
+- **Vision model cost**: each image in context ≈ +800-1500 tokens. Bot history is text-only (no past images forwarded); only the *current* user image becomes an `image_url` part in the `user` turn. The worker re-reads `WAMessage.mediaUrl` from DB if the Meta download job hasn't finished populating the local path yet.
+- **Vision capability check**: there's no enforced gate on per-model vision capability — if a model isn't vision-capable it will error on the multimodal turn, which the bot-worker catch sets `WABot.status: "ERROR"` (same as any other AI failure). Currently known vision-capable models: Gemini 1.5/2.0 Flash/Pro, OpenRouter `openai/gpt-4o`, `anthropic/claude-3.5-sonnet`, `google/gemini-2.0-flash-*`.
 
 ### Creating templates for Meta
 `lib/whatsapp/templates.ts` — `createTemplate(wabaId, accessToken, input)` calls `POST /{waba_id}/message_templates`. Constructs the payload from Zod-validated input. API route at `app/api/whatsapp/templates/create/route.ts`.
@@ -125,9 +132,22 @@ Fields encrypted at rest: `WAAccount.accessToken`, `WAAccount.appSecret`, `AppSe
 
 `POST /api/whatsapp/webhook` handles Meta webhook. Key behaviors:
 - **Always** validates `X-Hub-Signature-256` — rejects if signature invalid regardless of `appSecret` presence. `appSecret` is required for signature validation; if missing, webhook rejects all POSTs.
-- Per-message logic (Contact upsert, chat upsert, `WAMessage` create, notification, bot enqueue) lives in `lib/whatsapp/ingest-message.ts:ingestInboundMessage()` — shared with the Baileys channel (see below). The webhook route itself just parses Meta's payload shape and calls it per message.
+- Per-message logic (Contact upsert, chat upsert, `WAMessage` create, notification, bot enqueue, media-download enqueue) lives in `lib/whatsapp/ingest-message.ts:ingestInboundMessage()` — shared with the Baileys channel (see below). The webhook route itself just parses Meta's payload shape and calls it per message. `ingestInboundMessage()` returns `{messageId, chatId} | null` (null = deduplicated by wamid).
 - Maps all 4 Meta statuses to `WACampaignRecipient`: `sent → SENT`, `delivered → DELIVERED`, `read → READ`, `failed → FAILED`.
 - Detects groups: `remoteJid.includes("@g.us")` → `isGroup = true`.
+- For inbound media with `mediaId` and no `localMediaPath` (Meta path only — Baileys passes `localMediaPath` already), the webhook enqueues a `media-download` job (see Redis queues).
+
+## Media handling
+
+WhatsApp media is **binary-byte persisted locally on disk** (not just Meta URL references), so chat UI and bot vision can stream/read it without depending on Meta's short-lived (≈minutes) download URLs.
+
+- **Storage**: `lib/whatsapp/media-store.ts` — `saveMediaFromMeta(accountId, mediaId, encryptedAccessToken)` (Meta fetch), `saveMediaFromBuffer(accountId, buffer, mimeType)` (Baileys raw bytes), `mediaReadStream(relativePath)` (fs stream), `resolveAbsolutePath(relativePath)` (with `..` traversal guard), `mediaEndpointFor(messageId)` (returns the proxy URL the UI must use).
+- **Path scheme**: `mediaUrl` stored on `WAMessage` is a path *relative* to `MEDIA_ROOT` (e.g. `<accountId>/<uuid>.<ext>`). All helpers accept/return relative paths; resolve to absolute only at the boundary.
+- **Proxied serving**: `GET /api/whatsapp/messages/[messageId]/media` looks up the `WAMessage`, verifies `chat.accountId ∈ getUserAccountIds(session.user.id)`, streams bytes with `Content-Type: mimeType` and `Content-Disposition` (inline for image/audio/video, attachment for documents). Auth check is mandatory — without it any authenticated user could fetch any media by `messageId`.
+- **Outbound upload (Meta only)**: `POST /api/whatsapp/media` accepts multipart `file` + `accountId`, validates ownership + that the account is `META_CLOUD`, calls `uploadMedia(phoneNumberId, accessToken, file, name, mime)` (`lib/whatsapp.ts`, `POST /{phone_number_id}/media` Graph endpoint) which returns a Meta `mediaId`, then also persists a local copy for the outbound history. Rate-limited via `rateLimit()`. Returns `{ mediaId, mimeType, filename, localMediaPath, bytesSize }` to be passed to the send route as-is.
+- **Chat composer** (`whatsapp/chat/[accountId]/[chatId]/page.tsx`) has a clip 📎 button (`Paperclip` icon, accent-color, left of the text input) that opens a hidden `<input type="file">` accepting `image/*,audio/*,video/*,application/pdf,text/plain`, max 20MB. Caption goes in the text input. The send flow is: upload → `/api/whatsapp/chats/[chatId]/send` with `{type, mediaId, mimeType, filename, localMediaPath, bytesSize, caption}`.
+- **UI rendering**: `MessageBubble` switches on `messageType` (`image`/`audio`/`video`/`document`/`sticker`) and renders the appropriate tag pointing at `/api/whatsapp/messages/[id]/media`. While `mediaUrl` is null (async download still queued), shows a placeholder (`[imagen recibida]` etc.) — the 5s polling in the chat page picks up the populated row once the worker finishes.
+- **Bot vision input**: `lib/workers/bot-worker.ts:buildUserContent()` reads the inbound image's local bytes from disk → base64 → `ContentPart[] = [{type:"text",text:caption?}, {type:"image_url",image_url:{url:`data:${mime};base64,...`}}]`. Images in history turns are NOT forwarded (text-only) to bound token cost. `bot-worker` re-checks Prisma for `mediaUrl` if the enqueue payload's `localMediaPath` is empty (situation: bot job fired before `media-download` worker finished).
 
 ## WhatsApp channels (Meta Cloud API vs. Baileys)
 
@@ -138,7 +158,8 @@ Fields encrypted at rest: `WAAccount.accessToken`, `WAAccount.appSecret`, `AppSe
   - `lib/whatsapp-baileys/connection-manager.ts` keeps a `Map<accountId, socket>` in memory, started from `instrumentation.ts` on boot (reconnects all `CONNECTED` Baileys accounts) and from `POST /api/whatsapp/accounts/baileys` (new pairing).
   - Session (Signal protocol creds/keys) persists in Postgres via `WABaileysSession.authState` (`lib/whatsapp-baileys/auth-store.ts`), not the filesystem — survives container recreation without a dedicated volume.
   - Outbound sends go through `lib/whatsapp/send.ts:sendWhatsAppMessage(account, params)`, which branches on `account.channel` — always use this wrapper, never call `lib/whatsapp.ts:sendMessage()` directly, or Baileys accounts will break.
-  - **Not supported for Baileys accounts**: message templates and bulk campaigns (Meta-only concepts — account selectors in `campanas/nueva` and `plantillas` filter these accounts out), and outbound media (text only in v1).
+  - **Inbound media**: `messages.upsert` handler detects `imageMessage`/`videoMessage`/`audioMessage`/`documentMessage`/`stickerMessage` and downloads the binary inline via `downloadContentFromMessage()` (Baileys export), persists it via `saveMediaFromBuffer()`, and passes `localMediaPath` to `ingestInboundMessage()` — so Baileys media is available immediately, **without** the async `media-download` queue (Meta-only).
+  - **Not supported for Baileys accounts**: message templates and bulk campaigns (Meta-only concepts — account selectors in `campanas/nueva` and `plantillas` filter these accounts out), and outbound media (text only in v1 — `send.ts` throws `"El envío de multimedia todavía no está soportado en cuentas de WhatsApp Web (Baileys)"` for `type !== "text"`). The chat composer clip button is not yet gated to Meta accounts — if you add that gate, check `account.channel === "META_CLOUD"` before showing it.
   - Fields `phoneNumberId`/`accessToken`/`verifyTokenHash` are nullable on `WAAccount` — any code reading them must check `account.channel === "META_CLOUD"` first (see `templates/route.ts`, `templates/create/route.ts`, `campaign-worker.ts` for the pattern).
 
 ## CRM & team collaboration

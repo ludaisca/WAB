@@ -40,7 +40,7 @@ export async function POST(
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
-    const { type, body: textBody, mediaId, caption, mimeType } = parsed.data;
+    const { type, body: textBody, mediaId, caption, mimeType, filename, localMediaPath, bytesSize } = parsed.data;
 
     const result = await sendWhatsAppMessage(chat.account, {
       to: chat.remoteJid,
@@ -49,6 +49,8 @@ export async function POST(
       mediaId,
       caption,
       mimeType,
+      filename,
+      localMediaPath,
     });
 
     const wamid = result.wamid ?? undefined;
@@ -61,8 +63,12 @@ export async function POST(
         direction: "OUTBOUND",
         messageType: type,
         body: textBody ?? null,
+        caption: caption ?? null,
         mediaId,
+        mediaUrl: localMediaPath ?? null,
         mimeType,
+        filename,
+        bytesSize,
         status: "sent",
         senderId: session.user.id,
         timestamp: now,

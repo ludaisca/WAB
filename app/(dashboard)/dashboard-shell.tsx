@@ -12,39 +12,82 @@ import {
   Database,
   FileText,
   Contact,
+  Phone,
 } from "lucide-react";
-import { AppShell, type NavItem } from "@/app/components/ui/app-shell";
+import { AppShell, type NavItem, type NavGroup } from "@/app/components/ui/app-shell";
 import { NotificationBell } from "@/app/components/ui/notification-bell";
 
-export function DashboardShell({ children }: { children: React.ReactNode }) {
+export function DashboardShell({
+  children,
+  businessName,
+}: {
+  children: React.ReactNode;
+  businessName?: string | null;
+}) {
   const { data: session } = useSession();
   const role = session?.user?.role;
   const isAdmin = role === "admin";
   const isEjecutivo = role === "ejecutivo";
 
-  const NAV: NavItem[] = isEjecutivo
+  const NAV: (NavItem | NavGroup)[] = isEjecutivo
     ? [
-        { href: "/whatsapp/chat",    label: "Chats",           icon: MessageSquare },
-        { href: "/whatsapp/contactos", label: "Contactos",     icon: Contact },
-        { href: "/configuracion",    label: "Configuración",   icon: Settings, exact: true },
+        {
+          title: "Mensajería",
+          items: [
+            { href: "/whatsapp/chat",      label: "Chats",           icon: MessageSquare },
+            { href: "/whatsapp/contactos", label: "Contactos",       icon: Contact },
+          ],
+        },
+        {
+          title: "Ajustes",
+          items: [
+            { href: "/configuracion",      label: "Configuración",   icon: Settings, exact: true },
+          ],
+        },
       ]
     : [
-        { href: "/dashboard",               label: "Panel",            icon: LayoutDashboard, exact: true },
-        { href: "/estadisticas",            label: "Estadísticas",     icon: BarChart3, exact: true },
-        { href: "/whatsapp",                label: "WhatsApp",         icon: MessageSquare },
-        { href: "/whatsapp/contactos",      label: "Contactos",       icon: Contact },
-        { href: "/whatsapp/bots",           label: "Bots IA",          icon: Bot },
-        { href: "/whatsapp/conocimiento",   label: "Conocimiento",     icon: Database },
-        { href: "/whatsapp/plantillas",     label: "Plantillas",       icon: FileText },
-        { href: "/whatsapp/campanas",       label: "Campañas",         icon: Megaphone },
-        ...(isAdmin
-          ? [{ href: "/usuarios" as const, label: "Usuarios", icon: Users as React.ElementType, exact: true }]
-          : []),
-        { href: "/configuracion",           label: "Configuración",    icon: Settings, exact: true },
+        {
+          title: "Análisis",
+          items: [
+            { href: "/dashboard",               label: "Panel",            icon: LayoutDashboard, exact: true },
+            { href: "/estadisticas",            label: "Estadísticas",     icon: BarChart3, exact: true },
+          ],
+        },
+        {
+          title: "Mensajería",
+          items: [
+            { href: "/whatsapp/chat",           label: "Bandeja de Chats", icon: MessageSquare },
+            { href: "/whatsapp/contactos",      label: "Contactos",        icon: Contact },
+          ],
+        },
+        {
+          title: "Automatización",
+          items: [
+            { href: "/whatsapp/bots",           label: "Bots IA",          icon: Bot },
+            { href: "/whatsapp/conocimiento",   label: "Base de Conocimiento", icon: Database },
+          ],
+        },
+        {
+          title: "Difusión y Canales",
+          items: [
+            { href: "/whatsapp",                label: "Cuentas WhatsApp", icon: Phone },
+            { href: "/whatsapp/plantillas",     label: "Plantillas",       icon: FileText },
+            { href: "/whatsapp/campanas",       label: "Campañas Masivas", icon: Megaphone },
+          ],
+        },
+        {
+          title: "Ajustes",
+          items: [
+            ...(isAdmin
+              ? [{ href: "/usuarios" as const,  label: "Usuarios",         icon: Users as React.ElementType, exact: true }]
+              : []),
+            { href: "/configuracion",           label: "Configuración",    icon: Settings, exact: true },
+          ],
+        },
       ];
 
   return (
-    <AppShell nav={NAV} accent="accent" collapsible headerRight={<NotificationBell />}>
+    <AppShell nav={NAV} accent="accent" collapsible brand={businessName || undefined} headerRight={<NotificationBell />}>
       {children}
     </AppShell>
   );

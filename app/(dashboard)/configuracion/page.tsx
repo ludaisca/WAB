@@ -229,11 +229,9 @@ export default function SettingsPage() {
           <p className="text-sm text-muted-darker mb-4">
             Configura las API keys de OpenRouter y Google Gemini para usar los bots IA, RAG y embeddings.
           </p>
-          <Link href="/configuracion/ia">
-            <Button variant="secondary" size="sm" icon={Brain}>
-              Configurar IA
-            </Button>
-          </Link>
+          <Button href="/configuracion/ia" variant="secondary" size="sm" icon={Brain}>
+            Configurar IA
+          </Button>
         </CardBody>
       </Card>
 
@@ -246,11 +244,9 @@ export default function SettingsPage() {
           <p className="text-sm text-muted-darker mb-4">
             Atajos de texto (/atajo) para responder más rápido en los chats de WhatsApp.
           </p>
-          <Link href="/configuracion/respuestas-rapidas">
-            <Button variant="secondary" size="sm" icon={MessageSquareDashed}>
-              Gestionar respuestas
-            </Button>
-          </Link>
+          <Button href="/configuracion/respuestas-rapidas" variant="secondary" size="sm" icon={MessageSquareDashed}>
+            Gestionar respuestas
+          </Button>
         </CardBody>
       </Card>
 

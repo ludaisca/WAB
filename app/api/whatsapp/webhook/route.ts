@@ -57,12 +57,34 @@ function getMessageBody(msg: WebhookMessage): string {
 function getMediaInfo(msg: WebhookMessage): {
   mediaId: string | null;
   mimeType: string | null;
+  filename: string | null;
+  caption: string | null;
 } {
-  if (msg.image) return { mediaId: msg.image.id, mimeType: msg.image.mime_type ?? null };
-  if (msg.video) return { mediaId: msg.video.id, mimeType: msg.video.mime_type ?? null };
-  if (msg.audio) return { mediaId: msg.audio.id, mimeType: msg.audio.mime_type ?? null };
-  if (msg.document) return { mediaId: msg.document.id, mimeType: msg.document.mime_type ?? null };
-  return { mediaId: null, mimeType: null };
+  if (msg.image) return {
+    mediaId: msg.image.id,
+    mimeType: msg.image.mime_type ?? null,
+    filename: null,
+    caption: msg.image.caption ?? null,
+  };
+  if (msg.video) return {
+    mediaId: msg.video.id,
+    mimeType: msg.video.mime_type ?? null,
+    filename: null,
+    caption: msg.video.caption ?? null,
+  };
+  if (msg.audio) return {
+    mediaId: msg.audio.id,
+    mimeType: msg.audio.mime_type ?? null,
+    filename: null,
+    caption: null,
+  };
+  if (msg.document) return {
+    mediaId: msg.document.id,
+    mimeType: msg.document.mime_type ?? null,
+    filename: msg.document.filename ?? null,
+    caption: msg.document.caption ?? null,
+  };
+  return { mediaId: null, mimeType: null, filename: null, caption: null };
 }
 
 async function validateSignature(
@@ -193,7 +215,7 @@ export async function POST(req: Request) {
               for (const msg of msgs) {
                 const contact = value.contacts!.find((c) => c.wa_id === msg.from);
                 const contactName = contact?.profile?.name ?? msg.from;
-                const { mediaId, mimeType } = getMediaInfo(msg);
+                const { mediaId, mimeType, filename, caption } = getMediaInfo(msg);
 
                 await ingestInboundMessage(account.id, {
                   remoteJid: msg.from,
@@ -205,6 +227,8 @@ export async function POST(req: Request) {
                   isGroup: msg.from.includes("@g.us"),
                   mediaId,
                   mimeType,
+                  filename,
+                  caption,
                 });
               }
             })

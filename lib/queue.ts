@@ -12,6 +12,18 @@ const defaultJobOptions = {
   timeout: 60_000,
 };
 
+const mediaDownloadJobOptions = {
+  removeOnComplete: { count: 100 },
+  removeOnFail: { count: 50 },
+  attempts: 5,
+  backoff: { type: "exponential" as const, delay: 2000 },
+  timeout: 90_000,
+};
+
 export const botQueue = new Queue("bot-messages", { connection, defaultJobOptions });
 export const campaignQueue = new Queue("campaign-send", { connection, defaultJobOptions });
 export const ragQueue = new Queue("rag-index", { connection, defaultJobOptions });
+export const mediaDownloadQueue = new Queue("media-download", {
+  connection,
+  defaultJobOptions: mediaDownloadJobOptions,
+});

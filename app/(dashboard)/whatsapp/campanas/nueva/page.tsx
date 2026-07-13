@@ -16,6 +16,14 @@ import { useToast } from "@/app/components/ui/toast";
 interface Account { id: string; name: string; channel: string; }
 interface Template { id: string; name: string; language: string; category: string; status: string; }
 
+const TEMPLATE_STATUS_LABEL: Record<string, string> = {
+  PENDING: "En revisión",
+  APPROVED: "Aprobada",
+  REJECTED: "Rechazada",
+  PAUSED: "Pausada",
+  DISABLED: "Deshabilitada",
+};
+
 export default function NewCampaignPage() {
   const router = useRouter();
   const { success, error: toastError } = useToast();
@@ -146,11 +154,18 @@ export default function NewCampaignPage() {
                     </Select>
                   )}
                 </FormField>
-                <FormField label="Plantilla" required error={errors.waTemplateId}>
+                <FormField
+                  label="Plantilla"
+                  required
+                  error={errors.waTemplateId}
+                  hint="Solo las plantillas aprobadas por Meta pueden usarse en una campaña."
+                >
                   {(id) => (
                     <Select id={id} value={waTemplateId} onChange={e => setWaTemplateId(e.target.value)} placeholder={loadingTemplates ? "Cargando..." : "Seleccionar"} error={errors.waTemplateId} disabled={!waAccountId || loadingTemplates}>
-                      {templates.filter(t => t.status === "APPROVED").map(t => (
-                        <option key={t.id} value={t.id}>{t.name} ({t.language})</option>
+                      {templates.map(t => (
+                        <option key={t.id} value={t.id} disabled={t.status !== "APPROVED"}>
+                          {t.name} ({t.language}) — {TEMPLATE_STATUS_LABEL[t.status] ?? t.status}
+                        </option>
                       ))}
                     </Select>
                   )}
@@ -222,9 +237,7 @@ export default function NewCampaignPage() {
             <Button type="submit" icon={saving ? undefined : Save} disabled={saving}>
               {saving ? <Spinner /> : sendNow ? "Crear y enviar" : "Programar campaña"}
             </Button>
-            <Link href="/whatsapp/campanas">
-              <Button type="button" variant="secondary">Cancelar</Button>
-            </Link>
+            <Button href="/whatsapp/campanas" type="button" variant="secondary">Cancelar</Button>
           </CardFooter>
         </form>
       </Card>

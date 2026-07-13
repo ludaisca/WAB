@@ -109,3 +109,41 @@ export async function getMediaUrl(
 
   return res.json() as Promise<{ url: string; mimeType: string }>;
 }
+
+export interface UploadedMedia {
+  id: string;
+}
+
+export async function uploadMedia(
+  phoneNumberId: string,
+  accessToken: string,
+  file: File | Buffer,
+  filename: string,
+  mimeType: string
+): Promise<UploadedMedia> {
+  const url = `${BASE_URL}/${API_VERSION}/${phoneNumberId}/media`;
+
+  const formData = new FormData();
+  if (file instanceof File) {
+    formData.append("file", file, filename);
+  } else {
+    const blob = new Blob([new Uint8Array(file)], { type: mimeType });
+    formData.append("file", blob, filename);
+  }
+  formData.append("messaging_product", "whatsapp");
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      body?.error?.message ?? `Upload media failed (HTTP ${res.status})`
+    );
+  }
+
+  return res.json() as Promise<UploadedMedia>;
+}

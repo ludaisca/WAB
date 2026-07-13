@@ -11,6 +11,13 @@ export const registerSchema = z.object({
   password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres"),
 });
 
+export const onboardingSchema = z.object({
+  name: z.string().min(2, "El nombre debe tener al menos 2 caracteres"),
+  email: z.string().email("Email inválido"),
+  password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres"),
+  businessName: z.string().min(2, "El nombre del negocio debe tener al menos 2 caracteres"),
+});
+
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, "Contraseña actual requerida"),
   newPassword: z.string().min(8, "Mínimo 8 caracteres"),
@@ -22,6 +29,7 @@ export const changePasswordSchema = z.object({
 
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
+export type OnboardingInput = z.infer<typeof onboardingSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
 export const waAccountSchema = z.object({
@@ -44,12 +52,15 @@ export const waAccountUpdateSchema = z.object({
 export const sendMessageSchema = z.object({
   type: z.enum(["text", "image", "audio", "video", "document"]),
   body: z.string().optional(),
-  mediaId: z.string().optional(),
+  mediaId: z.string().nullable().optional(),
   caption: z.string().optional(),
   mimeType: z.string().optional(),
+  filename: z.string().optional(),
+  localMediaPath: z.string().nullable().optional(),
+  bytesSize: z.number().optional(),
 }).refine(
-  (d) => d.type === "text" ? !!d.body : true,
-  { message: "El cuerpo del mensaje es requerido para texto", path: ["body"] }
+  (d) => d.type === "text" ? !!d.body : !!d.mediaId || !!d.localMediaPath,
+  { message: "Se requiere body para texto, o mediaId/localMediaPath para medios", path: ["body"] }
 );
 
 export type WaAccountInput = z.infer<typeof waAccountSchema>;

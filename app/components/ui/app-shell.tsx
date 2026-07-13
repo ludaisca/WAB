@@ -18,11 +18,17 @@ export interface NavItem {
   exact?: boolean;
 }
 
+export interface NavGroup {
+  title?: string;
+  items: NavItem[];
+}
+
 export interface AppShellProps {
-  nav: NavItem[];
+  nav: (NavItem | NavGroup)[];
   accent?: "accent" | "danger";
   bottomActions?: React.ReactNode;
   logoArea?: React.ReactNode;
+  brand?: string;
   headerRight?: React.ReactNode;
   hideUserDropdown?: boolean;
   collapsible?: boolean;
@@ -31,8 +37,8 @@ export interface AppShellProps {
 
 function activeClass(accent: "accent" | "danger") {
   return accent === "accent"
-    ? "bg-accent/10 text-accent"
-    : "bg-danger-bg text-danger";
+    ? "bg-accent/10 text-accent font-semibold"
+    : "bg-danger-bg text-danger font-semibold";
 }
 
 function SidebarContent({
@@ -40,14 +46,50 @@ function SidebarContent({
   accent = "accent",
   bottomActions,
   logoArea,
+  brand = "WAB",
   collapsed,
   onClose,
-}: Pick<AppShellProps, "nav" | "accent" | "bottomActions"> & {
+}: Pick<AppShellProps, "nav" | "accent" | "bottomActions" | "brand"> & {
   logoArea?: React.ReactNode;
   collapsed?: boolean;
   onClose?: () => void;
 }) {
   const pathname = usePathname();
+
+  const renderLink = (item: NavItem) => {
+    const Icon = item.icon;
+    const active = item.exact
+      ? pathname === item.href
+      : pathname === item.href || pathname.startsWith(item.href + "/");
+
+    return (
+      <li key={item.href} className="relative w-full">
+        {active && (
+          <span
+            className={cn(
+              "absolute left-0 top-2 bottom-2 w-1 rounded-r-md",
+              accent === "accent" ? "bg-accent" : "bg-danger"
+            )}
+          />
+        )}
+        <Link
+          href={item.href}
+          onClick={onClose}
+          title={collapsed ? item.label : undefined}
+          className={cn(
+            "flex items-center rounded-lg text-sm font-medium transition-all duration-150",
+            collapsed ? "justify-center w-10 h-10 mx-auto" : "gap-3 px-3 py-2.5",
+            active
+              ? activeClass(accent ?? "accent")
+              : "text-muted hover:bg-surface-light hover:text-foreground"
+          )}
+        >
+          <Icon size={18} className="shrink-0" />
+          {!collapsed && item.label}
+        </Link>
+      </li>
+    );
+  };
 
   return (
     <div className={cn("flex flex-col h-full transition-all", collapsed ? "items-center px-2" : "")}>
@@ -55,49 +97,50 @@ function SidebarContent({
         {logoArea ?? (
           <Link href="/dashboard" onClick={onClose} className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-on-accent font-bold text-sm shrink-0">
-              W
+              {brand.charAt(0).toUpperCase()}
             </div>
             {!collapsed && (
-              <span className="text-base font-semibold tracking-tight whitespace-nowrap">
-                WAB
+              <span className="text-base font-semibold tracking-tight whitespace-nowrap truncate">
+                {brand}
               </span>
             )}
           </Link>
         )}
       </div>
 
-      <nav className={cn("flex-1 overflow-y-auto", collapsed ? "px-1" : "px-3")}>
-        <ul className="flex flex-col gap-0.5">
-          {nav.map((item) => {
-            const Icon = item.icon;
-            const active = item.exact
-              ? pathname === item.href
-              : pathname === item.href || pathname.startsWith(item.href + "/");
-            return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  onClick={onClose}
-                  title={collapsed ? item.label : undefined}
-                  className={cn(
-                    "flex items-center rounded-lg text-sm font-medium transition-colors",
-                    collapsed ? "justify-center w-10 h-10" : "gap-3 px-3 py-2.5",
-                    active
-                      ? activeClass(accent ?? "accent")
-                      : "text-muted hover:bg-surface-light hover:text-foreground"
+      <nav className={cn("flex-1 overflow-y-auto w-full", collapsed ? "px-1" : "px-3")}>
+        <div className="flex flex-col gap-5 w-full">
+          {nav.map((groupOrItem, index) => {
+            const isGroup = "items" in groupOrItem;
+            if (isGroup) {
+              const group = groupOrItem as NavGroup;
+              if (group.items.length === 0) return null;
+              return (
+                <div key={group.title || index} className="flex flex-col gap-1 w-full">
+                  {!collapsed && group.title && (
+                    <div className="px-3 text-[10px] font-bold text-muted-darker tracking-wider uppercase mb-1">
+                      {group.title}
+                    </div>
                   )}
-                >
-                  <Icon size={18} className="shrink-0" />
-                  {!collapsed && item.label}
-                </Link>
-              </li>
-            );
+                  <ul className="flex flex-col gap-0.5 w-full">
+                    {group.items.map(renderLink)}
+                  </ul>
+                </div>
+              );
+            } else {
+              const item = groupOrItem as NavItem;
+              return (
+                <ul key={item.href} className="flex flex-col gap-0.5 w-full">
+                  {renderLink(item)}
+                </ul>
+              );
+            }
           })}
-        </ul>
+        </div>
       </nav>
 
       <div className={cn(
-        "shrink-0 border-t border-border transition-all",
+        "shrink-0 border-t border-border transition-all w-full",
         collapsed ? "px-1 pt-3 mt-1 pb-4" : "px-3 pt-3 mt-1 pb-4"
       )}>
         {!collapsed && bottomActions}
@@ -106,7 +149,7 @@ function SidebarContent({
           title={collapsed ? "Cerrar sesión" : undefined}
           className={cn(
             "flex items-center text-sm font-medium text-muted transition-colors hover:bg-surface-light hover:text-danger rounded-lg",
-            collapsed ? "justify-center w-10 h-10" : "gap-3 w-full px-3 py-2.5"
+            collapsed ? "justify-center w-10 h-10 mx-auto" : "gap-3 w-full px-3 py-2.5"
           )}
         >
           <LogOut size={18} />
@@ -122,6 +165,7 @@ export function AppShell({
   accent = "accent",
   bottomActions,
   logoArea,
+  brand,
   headerRight,
   hideUserDropdown = false,
   collapsible = false,
@@ -161,6 +205,7 @@ export function AppShell({
           accent={accent}
           bottomActions={bottomActions}
           logoArea={logoArea}
+          brand={brand}
           collapsed={collapsed}
         />
       </aside>
@@ -171,6 +216,7 @@ export function AppShell({
           accent={accent}
           bottomActions={bottomActions}
           logoArea={logoArea}
+          brand={brand}
           onClose={() => setDrawerOpen(false)}
         />
       </Drawer>

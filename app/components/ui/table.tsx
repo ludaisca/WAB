@@ -164,8 +164,31 @@ export function Table<T>({
 
       <div className="sm:hidden divide-y divide-border -mx-5">
         {rows.map((row) => (
-          <div key={rowKey(row)} className="px-5 py-4">
-            {mobileCard ? mobileCard(row) : <DefaultMobileCard row={row} columns={columns} />}
+          <div
+            key={rowKey(row)}
+            className={cn(
+              "px-5 py-4 flex items-start justify-between gap-3 hover:bg-surface-light/20 transition-colors",
+              onRowClick && "cursor-pointer"
+            )}
+            onClick={onRowClick ? () => onRowClick(row) : undefined}
+          >
+            <div className="min-w-0 flex-1">
+              {mobileCard ? mobileCard(row) : <DefaultMobileCard row={row} columns={columns} />}
+            </div>
+            {rowActions && (
+              <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                <Dropdown
+                  align="right"
+                  trigger={
+                    <button className="p-1.5 rounded-md border border-border bg-surface hover:bg-surface-light text-muted-darker hover:text-foreground transition-colors">
+                      <MoreVertical size={14} />
+                    </button>
+                  }
+                >
+                  {rowActions(row)}
+                </Dropdown>
+              </div>
+            )}
           </div>
         ))}
       </div>

@@ -117,7 +117,6 @@ export default function CuentasPage() {
           <div>
             <div className="flex flex-wrap items-center gap-1">
               <Badge tone={badge.tone} size="sm">{badge.label}</Badge>
-              {a.channel === "BAILEYS" && <Badge tone="warning" size="sm">WhatsApp Web</Badge>}
             </div>
             {a.status === "ERROR" && a.errorMessage && (
               <p className="text-xs text-danger mt-1 max-w-[160px] truncate" title={a.errorMessage}>

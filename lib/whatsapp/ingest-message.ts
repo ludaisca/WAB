@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { botQueue } from "@/lib/queue";
+import { botQueue, mediaDownloadQueue } from "@/lib/queue";
 import { autoAssignChat } from "@/lib/whatsapp/auto-assign";
 
 export interface NormalizedInboundMessage {
@@ -10,21 +10,39 @@ export interface NormalizedInboundMessage {
   body: string;
   contactName: string;
   isGroup: boolean;
+  // Meta Cloud media id (resolved later to a downloadable URL).
   mediaId?: string | null;
+  // If the channel already produced local bytes (Baileys), the relative path
+  // under MEDIA_ROOT is passed here so we skip the async download queue.
+  localMediaPath?: string | null;
   mimeType?: string | null;
+  filename?: string | null;
+  caption?: string | null;
+  bytesSize?: number | null;
+  width?: number | null;
+  height?: number | null;
+  duration?: number | null;
+}
+
+export interface IngestResult {
+  messageId: string;
+  chatId: string;
 }
 
 // Shared by both the Meta Cloud webhook and the Baileys connection listener
 // so the CRM (Contact upsert), chat threading, notifications, and bot
 // triggering behave identically regardless of which WhatsApp channel a
 // message came in on.
-export async function ingestInboundMessage(accountId: string, msg: NormalizedInboundMessage) {
+export async function ingestInboundMessage(
+  accountId: string,
+  msg: NormalizedInboundMessage
+): Promise<IngestResult | null> {
   if (msg.wamid) {
     const existing = await prisma.wAMessage.findFirst({
       where: { wamid: msg.wamid },
       select: { id: true },
     });
-    if (existing) return;
+    if (existing) return null;
   }
 
   const contactRecord = await prisma.contact.upsert({
@@ -55,18 +73,38 @@ export async function ingestInboundMessage(accountId: string, msg: NormalizedInb
     },
   });
 
-  await prisma.wAMessage.create({
+  const createdMessage = await prisma.wAMessage.create({
     data: {
       wamid: msg.wamid,
       chatId: chat.id,
       direction: "INBOUND",
       messageType: msg.type,
       body: msg.body,
+      caption: msg.caption ?? null,
       mediaId: msg.mediaId ?? null,
+      mediaUrl: msg.localMediaPath ?? null,
       mimeType: msg.mimeType ?? null,
+      filename: msg.filename ?? null,
+      bytesSize: msg.bytesSize ?? null,
+      width: msg.width ?? null,
+      height: msg.height ?? null,
+      duration: msg.duration ?? null,
       timestamp: msg.timestamp,
     },
   });
+
+  // Only Meta needs the async download (Baileys already produced bytes inline).
+  if (msg.mediaId && !msg.localMediaPath && msg.type !== "text") {
+    await mediaDownloadQueue
+      .add("download-media", {
+        messageId: createdMessage.id,
+        accountId,
+        mediaId: msg.mediaId,
+      })
+      .catch((err) => {
+        console.error("[ingest] media-download enqueue failed:", err);
+      });
+  }
 
   let assignedToId = chat.assignedToId;
   if (!assignedToId) {
@@ -100,6 +138,14 @@ export async function ingestInboundMessage(accountId: string, msg: NormalizedInb
       botId: bot.id,
       waChatId: chat.id,
       incomingMessage: msg.body,
+      messageId: createdMessage.id,
+      messageType: msg.type,
+      mediaId: msg.mediaId ?? null,
+      localMediaPath: msg.localMediaPath ?? null,
+      mimeType: msg.mimeType ?? null,
+      caption: msg.caption ?? null,
     });
   }
+
+  return { messageId: createdMessage.id, chatId: chat.id };
 }

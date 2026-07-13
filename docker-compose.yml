@@ -54,7 +54,10 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+    volumes:
+      - media_data:/app/media
     restart: unless-stopped
 
 volumes:
   pgdata:
+  media_data:

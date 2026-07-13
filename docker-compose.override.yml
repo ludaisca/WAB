@@ -7,8 +7,12 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
+      - media_data:/app/media
     env_file: .env
     environment:
       NODE_ENV: development
     command: >
-      sh -c "npx prisma generate && npx prisma db push && npx prisma db execute --file prisma/sql/ensure-vector-index.sql --schema prisma/schema.prisma && npm run dev"
+      sh -c "npx prisma generate && npx prisma db push && npx prisma db execute --file prisma/sql/ensure-vector-index.sql --schema prisma/schema.prisma && mkdir -p /app/media && npm run dev"
+
+volumes:
+  media_data:

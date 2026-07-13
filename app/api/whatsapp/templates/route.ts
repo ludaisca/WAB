@@ -4,8 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/crypto";
 import { getUserAccountIds } from "@/lib/shared-accounts";
 
-async function syncTemplatesFromMeta(phoneNumberId: string, accessToken: string) {
-  const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/message_templates`;
+async function syncTemplatesFromMeta(wabaId: string, accessToken: string) {
+  const url = `https://graph.facebook.com/v21.0/${wabaId}/message_templates`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -82,16 +82,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
     }
 
-    if (account.channel !== "META_CLOUD" || !account.phoneNumberId || !account.accessToken) {
+    if (account.channel !== "META_CLOUD" || !account.wabaId || !account.accessToken) {
       return NextResponse.json(
-        { error: "Sincronizar plantillas solo aplica a cuentas de Meta Cloud API" },
+        { error: "Sincronizar plantillas solo aplica a cuentas de Meta Cloud API con WABA ID configurado" },
         { status: 400 }
       );
     }
 
     const accessToken = decrypt(account.accessToken);
     const metaTemplates = await syncTemplatesFromMeta(
-      account.phoneNumberId,
+      account.wabaId,
       accessToken
     );
 

@@ -1,5 +1,10 @@
 import OpenAI from "openai";
-import type { AICompletionParams, AICompletionResponse, AIEmbeddingParams, AIEmbeddingResponse } from "../types";
+import type {
+  AICompletionParams,
+  AICompletionResponse,
+  AIEmbeddingParams,
+  AIEmbeddingResponse,
+} from "../types";
 
 const BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -10,9 +15,9 @@ export function createOpenRouterClient(apiKey: string) {
     const res = await client.chat.completions.create({
       model: params.model,
       messages: params.messages.map((m) => ({
-        role: m.role as "system" | "user" | "assistant",
+        role: m.role,
         content: m.content,
-      })),
+      })) as never,
       temperature: params.temperature ?? 0.7,
       max_tokens: params.maxTokens ?? 1024,
     });
