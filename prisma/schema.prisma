@@ -20,6 +20,7 @@ model User {
   waAccounts     WAAccount[]
   waCampaigns    WACampaign[]
   waBots         WABot[]
+  leadScorerBots WALeadScorerBot[]
   appSettings    AppSettings?
   sharedAccounts WAAccountShare[]
   notes          WANote[]
@@ -155,7 +156,7 @@ model WAChat {
   botConversations WABotConversation[]
   chatTags         ChatTag[]
   chatNotes        WAChatNote[]
-  leadScore        WALeadScore?
+  leadScores       WALeadScore[]
 
   @@unique([accountId, remoteJid])
   @@index([assignedToId])
@@ -164,18 +165,39 @@ model WAChat {
   @@map("wa_chats")
 }
 
+model WALeadScorerBot {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  provider     String
+  model        String
+  systemPrompt String   @db.Text
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  scores WALeadScore[]
+
+  @@unique([userId, name])
+  @@map("wa_lead_scorer_bots")
+}
+
 model WALeadScore {
-  id        String   @id @default(cuid())
-  chatId    String   @unique
-  chat      WAChat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  id        String          @id @default(cuid())
+  chatId    String
+  chat      WAChat          @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  scorerId  String
+  scorer    WALeadScorerBot @relation(fields: [scorerId], references: [id], onDelete: Cascade)
   score     Int
   label     String
   summary   String
   reasons   String
   model     String
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
 
+  @@unique([chatId, scorerId])
   @@map("wa_lead_scores")
 }
 

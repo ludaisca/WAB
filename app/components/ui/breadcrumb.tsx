@@ -13,6 +13,7 @@ const LABELS: Record<string, string> = {
   chat: "Chats",
   cuentas: "Cuentas",
   conocimiento: "Base de Conocimiento",
+  calificadores: "Calificadores de Leads",
   plantillas: "Plantillas",
   usuarios: "Usuarios",
   configuracion: "Configuración",

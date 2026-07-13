@@ -13,6 +13,7 @@ import {
   FileText,
   Contact,
   Phone,
+  Target,
 } from "lucide-react";
 import { AppShell, type NavItem, type NavGroup } from "@/app/components/ui/app-shell";
 import { NotificationBell } from "@/app/components/ui/notification-bell";
@@ -64,6 +65,7 @@ export function DashboardShell({
           title: "Automatización",
           items: [
             { href: "/whatsapp/bots",           label: "Bots IA",          icon: Bot },
+            { href: "/whatsapp/calificadores",  label: "Calificadores de Leads", icon: Target },
             { href: "/whatsapp/conocimiento",   label: "Base de Conocimiento", icon: Database },
           ],
         },

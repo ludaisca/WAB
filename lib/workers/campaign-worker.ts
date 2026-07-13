@@ -36,6 +36,14 @@ export async function processCampaignJob(job: CampaignJob) {
   const language = campaign.waTemplate.language;
   const phoneNumberId = campaign.waAccount.phoneNumberId;
 
+  // Attribution tag applied to every Contact/WAChat this campaign actually
+  // reaches, so agents can tell which campaign brought a lead in.
+  const campaignTag = await prisma.tag.upsert({
+    where: { name: `Campaña: ${campaign.name}` },
+    create: { name: `Campaña: ${campaign.name}` },
+    update: {},
+  });
+
   let totalSuccess = 0;
   let totalFailed = 0;
 
@@ -98,11 +106,67 @@ export async function processCampaignJob(job: CampaignJob) {
           messages?: Array<{ id: string }>;
         };
         const wamid = responseData?.messages?.[0]?.id;
+        const sentAt = new Date();
 
         await prisma.wACampaignRecipient.update({
           where: { id: recipient.id },
-          data: { status: "SENT", sentAt: new Date(), wamid: wamid ?? null },
+          data: { status: "SENT", sentAt, wamid: wamid ?? null },
         });
+
+        // Only attribute Contact/WAChat/WAMessage on an actual successful
+        // send — a recipient that never got a message shouldn't leave a
+        // phantom contact behind.
+        const remoteJid = recipient.phoneNumber;
+        const contactName = recipient.contactName ?? recipient.phoneNumber;
+        const messageBody = recipient.parameters
+          ? `Plantilla: ${templateName} — ${Object.values(recipient.parameters as Record<string, string>).join(", ")}`
+          : `Plantilla: ${templateName}`;
+
+        const contact = await prisma.contact.upsert({
+          where: { accountId_remoteJid: { accountId: campaign.waAccountId, remoteJid } },
+          create: { accountId: campaign.waAccountId, remoteJid, name: contactName },
+          update: {},
+        });
+
+        const chat = await prisma.wAChat.upsert({
+          where: { accountId_remoteJid: { accountId: campaign.waAccountId, remoteJid } },
+          create: {
+            accountId: campaign.waAccountId,
+            remoteJid,
+            name: contactName,
+            contactId: contact.id,
+            lastMessage: messageBody.slice(0, 500),
+            lastMessageAt: sentAt,
+          },
+          update: {
+            lastMessage: messageBody.slice(0, 500),
+            lastMessageAt: sentAt,
+          },
+        });
+
+        await prisma.wAMessage.create({
+          data: {
+            wamid: wamid ?? null,
+            chatId: chat.id,
+            direction: "OUTBOUND",
+            messageType: "template",
+            body: messageBody,
+            status: "sent",
+            timestamp: sentAt,
+          },
+        });
+
+        await prisma.contactTag.upsert({
+          where: { contactId_tagId: { contactId: contact.id, tagId: campaignTag.id } },
+          create: { contactId: contact.id, tagId: campaignTag.id },
+          update: {},
+        });
+        await prisma.chatTag.upsert({
+          where: { chatId_tagId: { chatId: chat.id, tagId: campaignTag.id } },
+          create: { chatId: chat.id, tagId: campaignTag.id },
+          update: {},
+        });
+
         totalSuccess++;
       } else {
         const errorBody = await res.json().catch(() => ({}));

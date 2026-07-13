@@ -82,6 +82,16 @@ export const botSchema = z.object({
 
 export const botUpdateSchema = botSchema.partial();
 
+export const leadScorerBotSchema = z.object({
+  name: z.string().min(1, "El nombre es requerido").max(100),
+  provider: z.enum(["openrouter", "google"], { message: "Proveedor inválido" }),
+  model: z.string().min(1, "El modelo es requerido"),
+  systemPrompt: z.string().min(1, "El prompt es requerido"),
+  isActive: z.boolean().optional(),
+});
+
+export const leadScorerBotUpdateSchema = leadScorerBotSchema.partial();
+
 export const campaignSchema = z.object({
   name: z.string().min(1, "El nombre es requerido").max(200),
   waAccountId: z.string().min(1, "La cuenta es requerida"),
@@ -96,6 +106,8 @@ export const campaignSchema = z.object({
 
 export type BotInput = z.infer<typeof botSchema>;
 export type BotUpdateInput = z.infer<typeof botUpdateSchema>;
+export type LeadScorerBotInput = z.infer<typeof leadScorerBotSchema>;
+export type LeadScorerBotUpdateInput = z.infer<typeof leadScorerBotUpdateSchema>;
 export type CampaignInput = z.infer<typeof campaignSchema>;
 
 const headerFormatEnum = z.enum(["TEXT", "IMAGE", "VIDEO", "DOCUMENT"]);

@@ -8,6 +8,11 @@ import type { AIProvider } from "@/lib/ai/types";
 
 const VALID_LABELS = ["frio", "tibio", "caliente"] as const;
 
+const JSON_CONTRACT =
+  "Responde ÚNICAMENTE con JSON válido, sin markdown ni texto adicional, con esta forma exacta: " +
+  '{"score": number (0-100), "label": "frio"|"tibio"|"caliente", "summary": string, "reasons": string[]}. ' +
+  "summary es un resumen de 1-2 frases de la conversación. reasons son 2-4 motivos breves de la calificación.";
+
 async function getOwnedChat(userId: string, chatId: string) {
   const accountIds = await getUserAccountIds(userId);
   return prisma.wAChat.findFirst({
@@ -32,8 +37,13 @@ export async function GET(
       return NextResponse.json({ error: "Chat no encontrado" }, { status: 404 });
     }
 
-    const score = await prisma.wALeadScore.findUnique({ where: { chatId } });
-    return NextResponse.json(score);
+    const scores = await prisma.wALeadScore.findMany({
+      where: { chatId },
+      include: { scorer: { select: { id: true, name: true } } },
+      orderBy: { updatedAt: "desc" },
+    });
+
+    return NextResponse.json(scores);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -41,7 +51,7 @@ export async function GET(
 }
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ chatId: string }> }
 ) {
   try {
@@ -56,6 +66,19 @@ export async function POST(
       return NextResponse.json({ error: "Chat no encontrado" }, { status: 404 });
     }
 
+    const body = await req.json().catch(() => ({}));
+    const scorerId = typeof body?.scorerId === "string" ? body.scorerId : null;
+    if (!scorerId) {
+      return NextResponse.json({ error: "scorerId es requerido" }, { status: 400 });
+    }
+
+    const scorer = await prisma.wALeadScorerBot.findFirst({
+      where: { id: scorerId, userId: chat.account.userId },
+    });
+    if (!scorer) {
+      return NextResponse.json({ error: "Calificador no encontrado" }, { status: 404 });
+    }
+
     const messages = await prisma.wAMessage.findMany({
       where: { chatId },
       orderBy: { timestamp: "asc" },
@@ -67,12 +90,7 @@ export async function POST(
       return NextResponse.json({ error: "La conversación no tiene mensajes" }, { status: 400 });
     }
 
-    const settings = await prisma.appSettings.findUnique({ where: { userId: chat.account.userId } });
-    if (!settings) {
-      return NextResponse.json({ error: "El dueño de la cuenta no tiene configuración de IA" }, { status: 400 });
-    }
-
-    const provider = settings.defaultProvider as AIProvider;
+    const provider = scorer.provider as AIProvider;
     const apiKey = await getUserApiKey(chat.account.userId, provider);
     if (!apiKey) {
       return NextResponse.json({ error: "Falta configurar la clave del proveedor de IA" }, { status: 400 });
@@ -87,19 +105,12 @@ export async function POST(
 
     const client = getAIProvider(provider, apiKey);
     const result = await client.complete({
-      model: settings.defaultModel,
+      model: scorer.model,
       temperature: 0.2,
       maxTokens: 600,
       messages: [
-        {
-          role: "system",
-          content:
-            "Eres un analista de ventas que califica conversaciones de WhatsApp entre un lead y un bot/agente. " +
-            "Responde ÚNICAMENTE con JSON válido, sin markdown, con esta forma exacta: " +
-            '{"score": number (0-100), "label": "frio"|"tibio"|"caliente", "summary": string, "reasons": string[]}. ' +
-            "score y label deben reflejar qué tan calificado está el lead para comprar (interés, presupuesto, urgencia, datos de contacto). " +
-            "summary es un resumen de 1-2 frases de la conversación. reasons son 2-4 motivos breves de la calificación.",
-        },
+        { role: "system", content: scorer.systemPrompt },
+        { role: "system", content: JSON_CONTRACT },
         { role: "user", content: transcript.slice(0, 12000) },
       ],
     });
@@ -110,22 +121,24 @@ export async function POST(
     }
 
     const leadScore = await prisma.wALeadScore.upsert({
-      where: { chatId },
+      where: { chatId_scorerId: { chatId, scorerId } },
       create: {
         chatId,
+        scorerId,
         score: parsed.score,
         label: parsed.label,
         summary: parsed.summary,
         reasons: JSON.stringify(parsed.reasons),
-        model: settings.defaultModel,
+        model: scorer.model,
       },
       update: {
         score: parsed.score,
         label: parsed.label,
         summary: parsed.summary,
         reasons: JSON.stringify(parsed.reasons),
-        model: settings.defaultModel,
+        model: scorer.model,
       },
+      include: { scorer: { select: { id: true, name: true } } },
     });
 
     return NextResponse.json(leadScore);
