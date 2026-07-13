@@ -68,9 +68,14 @@ export function DashboardShell({
           ],
         },
         {
-          title: "Difusión y Canales",
+          title: "Canales",
           items: [
-            { href: "/whatsapp",                label: "Cuentas WhatsApp", icon: Phone },
+            { href: "/whatsapp",                label: "Cuentas WhatsApp", icon: Phone, exact: true },
+          ],
+        },
+        {
+          title: "Difusión",
+          items: [
             { href: "/whatsapp/plantillas",     label: "Plantillas",       icon: FileText },
             { href: "/whatsapp/campanas",       label: "Campañas Masivas", icon: Megaphone },
           ],

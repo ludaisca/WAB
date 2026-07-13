@@ -27,3 +27,4 @@ export const mediaDownloadQueue = new Queue("media-download", {
   connection,
   defaultJobOptions: mediaDownloadJobOptions,
 });
+export const mediaCleanupQueue = new Queue("media-cleanup", { connection, defaultJobOptions });

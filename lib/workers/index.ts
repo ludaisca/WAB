@@ -3,6 +3,8 @@ import { processBotMessageJob } from "./bot-worker";
 import { processCampaignJob } from "./campaign-worker";
 import { processRagJob } from "./rag-worker";
 import { processMediaDownloadJob } from "./media-worker";
+import { processMediaCleanupJob } from "./media-cleanup-worker";
+import { mediaCleanupQueue } from "@/lib/queue";
 
 const connection = {
   url: process.env.REDIS_URL || "redis://redis:6379",
@@ -31,7 +33,19 @@ export function startWorkers() {
     await processMediaDownloadJob(job.data);
   }, { connection, concurrency: 5 });
 
-  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker);
+  const mediaCleanupWorker = new Worker("media-cleanup", async () => {
+    await processMediaCleanupJob();
+  }, { connection, concurrency: 1 });
+
+  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker);
+
+  mediaCleanupQueue
+    .add(
+      "purge",
+      {},
+      { jobId: "media-cleanup-daily", repeat: { pattern: "0 3 * * *" } }
+    )
+    .catch((err) => console.error("[workers] No se pudo programar media-cleanup:", err));
 
   console.log("[workers] BullMQ workers started");
 }

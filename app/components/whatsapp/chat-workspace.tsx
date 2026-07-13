@@ -28,6 +28,7 @@ import { useToast } from "@/app/components/ui/toast";
 import { ContactDrawer } from "@/app/components/whatsapp/contact-drawer";
 import { ChatAssigneePicker } from "@/app/components/whatsapp/chat-assignee-picker";
 import { ChatTagPicker } from "@/app/components/whatsapp/chat-tag-picker";
+import { LeadScoreBadge } from "@/app/components/whatsapp/lead-score-badge";
 import { ChatNotesDrawer } from "@/app/components/whatsapp/chat-notes-drawer";
 
 const CHATS_PAGE_SIZE = 30;
@@ -686,6 +687,7 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
                 </select>
               )}
               {selectedChat && <ChatTagPicker key={selectedChat.id} chatId={selectedChat.id} />}
+              {selectedChat && <LeadScoreBadge key={`score-${selectedChat.id}`} chatId={selectedChat.id} />}
               {selectedChat && (
                 <ChatAssigneePicker
                   chatId={selectedChat.id}

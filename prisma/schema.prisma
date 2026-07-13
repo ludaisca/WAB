@@ -155,12 +155,28 @@ model WAChat {
   botConversations WABotConversation[]
   chatTags         ChatTag[]
   chatNotes        WAChatNote[]
+  leadScore        WALeadScore?
 
   @@unique([accountId, remoteJid])
   @@index([assignedToId])
   @@index([accountId, lastMessageAt])
   @@index([accountId, status])
   @@map("wa_chats")
+}
+
+model WALeadScore {
+  id        String   @id @default(cuid())
+  chatId    String   @unique
+  chat      WAChat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  score     Int
+  label     String
+  summary   String
+  reasons   String
+  model     String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("wa_lead_scores")
 }
 
 model WAMessage {
