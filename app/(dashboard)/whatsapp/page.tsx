@@ -106,7 +106,7 @@ export default async function WhatsAppDashboardPage() {
             {recentAccounts.length === 0 ? (
               <p className="text-sm text-muted py-4 text-center">
                 No hay cuentas configuradas.{" "}
-                <Link href="/whatsapp/cuentas/nueva" className="text-accent hover:underline">
+                <Link href="/whatsapp/cuentas?nueva=1" className="text-accent hover:underline">
                   Agregar la primera
                 </Link>
               </p>
@@ -145,7 +145,7 @@ export default async function WhatsAppDashboardPage() {
           <CardBody>
             <div className="space-y-2">
               <Link
-                href="/whatsapp/cuentas/nueva"
+                href="/whatsapp/cuentas?nueva=1"
                 className="flex items-center gap-3 p-3 rounded-lg hover:bg-surface-light transition-colors"
               >
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent/10 text-accent">

@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -26,7 +27,8 @@ export async function POST(req: Request) {
     const validateResult = await validateToken(phoneNumberId, accessToken);
 
     const encryptedToken = encrypt(accessToken);
-    const verifyHash = hashToken(verifyToken);
+    const resolvedVerifyToken = verifyToken || randomBytes(24).toString("hex");
+    const verifyHash = hashToken(resolvedVerifyToken);
 
     const account = await prisma.wAAccount.create({
       data: {
@@ -53,7 +55,9 @@ export async function POST(req: Request) {
       },
     });
 
-    return NextResponse.json(account, { status: 201 });
+    // verifyToken is only ever stored hashed — this is the one response where the
+    // caller can see the plaintext value, since it must be copied into Meta's webhook config.
+    return NextResponse.json({ ...account, verifyToken: resolvedVerifyToken }, { status: 201 });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Error interno del servidor";

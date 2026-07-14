@@ -37,7 +37,7 @@ export const waAccountSchema = z.object({
   phoneNumberId: z.string().min(1, "El Phone Number ID es requerido").regex(/^\d+$/, "Debe ser un ID numérico"),
   accessToken: z.string().min(1, "El token de acceso es requerido"),
   wabaId: z.string().regex(/^\d+$/, "Debe ser un ID numérico").optional().or(z.literal("")),
-  verifyToken: z.string().min(6, "El verify token debe tener al menos 6 caracteres"),
+  verifyToken: z.string().min(6, "El verify token debe tener al menos 6 caracteres").optional().or(z.literal("")),
   appSecret: z.string().optional().or(z.literal("")),
 });
 

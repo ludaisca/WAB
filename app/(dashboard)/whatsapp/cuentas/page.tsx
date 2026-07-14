@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Search, Plus, RefreshCw, Phone, Trash2, Settings2 } from "lucide-react";
 import { Card } from "@/app/components/ui/card";
@@ -14,6 +14,7 @@ import { DropdownItem } from "@/app/components/ui/dropdown";
 import { PageHeader } from "@/app/components/ui/page-header";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
+import { CuentaFormModal } from "./_form";
 
 interface WaAccount {
   id: string;
@@ -38,7 +39,16 @@ const STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" 
 };
 
 export default function CuentasPage() {
+  return (
+    <Suspense fallback={null}>
+      <CuentasView />
+    </Suspense>
+  );
+}
+
+function CuentasView() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { success, error: toastError } = useToast();
   const [accounts, setAccounts] = useState<WaAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,6 +56,7 @@ export default function CuentasPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(searchParams.get("nueva") === "1");
 
   const fetchAccounts = useCallback(async () => {
     setLoading(true);
@@ -157,9 +168,7 @@ export default function CuentasPage() {
             <Button variant="secondary" size="sm" icon={RefreshCw} onClick={fetchAccounts}>
               Actualizar
             </Button>
-            <Link href="/whatsapp/cuentas/nueva">
-              <Button icon={Plus} size="sm">Agregar número</Button>
-            </Link>
+            <Button icon={Plus} size="sm" onClick={() => setFormOpen(true)}>Agregar número</Button>
           </>
         }
       />
@@ -244,6 +253,15 @@ export default function CuentasPage() {
         confirmLabel="Eliminar"
         tone="danger"
         onConfirm={handleDelete}
+      />
+
+      <CuentaFormModal
+        open={formOpen}
+        onClose={() => {
+          setFormOpen(false);
+          if (searchParams.get("nueva")) router.replace("/whatsapp/cuentas");
+        }}
+        onCreated={fetchAccounts}
       />
     </div>
   );

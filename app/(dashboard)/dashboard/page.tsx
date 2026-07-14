@@ -219,7 +219,7 @@ export default async function DashboardPage() {
           <CardTitle className="mb-1">Acceso rápido</CardTitle>
 
           <Link
-            href="/whatsapp/cuentas/nueva"
+            href="/whatsapp/cuentas?nueva=1"
             className="flex items-center gap-3 rounded-lg border border-border bg-surface-light p-3.5 transition-all hover:border-accent/30 hover:shadow-sm"
           >
             <IconBox icon={Plus} size="sm" tone="accent" />
