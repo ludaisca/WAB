@@ -264,6 +264,11 @@ model WACampaign {
   waTemplate      WATemplate           @relation(fields: [waTemplateId], references: [id], onDelete: Cascade)
   name            String
   status          CampaignStatus       @default(DRAFT)
+  // Global values applied to every recipient — unlike body parameters (per-recipient,
+  // see WACampaignRecipient.parameters), header text/media and button URL suffixes are
+  // the same for the whole campaign in WhatsApp's template model.
+  headerParam     String?
+  buttonParam     String?
   scheduledAt     DateTime?
   sentAt          DateTime?
   completedAt     DateTime?

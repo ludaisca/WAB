@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/crypto";
+import { getTemplateVariables } from "@/lib/whatsapp/template-variables";
 
 interface CampaignJob {
   campaignId: string;
@@ -35,6 +36,7 @@ export async function processCampaignJob(job: CampaignJob) {
   const templateName = campaign.waTemplate.name;
   const language = campaign.waTemplate.language;
   const phoneNumberId = campaign.waAccount.phoneNumberId;
+  const templateVars = getTemplateVariables(campaign.waTemplate.components);
 
   // Attribution tag applied to every Contact/WAChat this campaign actually
   // reaches, so agents can tell which campaign brought a lead in.
@@ -60,17 +62,47 @@ export async function processCampaignJob(job: CampaignJob) {
         },
       };
 
+      const templateComponents: Record<string, unknown>[] = [];
+
       if (recipient.parameters) {
         const params = recipient.parameters as Record<string, string>;
-        (body.template as Record<string, unknown>).components = [
-          {
-            type: "body",
-            parameters: Object.entries(params).map(([, value]) => ({
-              type: "text",
-              text: value,
-            })),
-          },
-        ];
+        templateComponents.push({
+          type: "body",
+          parameters: Object.entries(params).map(([, value]) => ({
+            type: "text",
+            text: value,
+          })),
+        });
+      }
+
+      if (campaign.headerParam && templateVars.header.format) {
+        if (templateVars.header.format === "TEXT") {
+          templateComponents.push({
+            type: "header",
+            parameters: [{ type: "text", text: campaign.headerParam }],
+          });
+        } else {
+          // headerParam holds a Meta media ID (uploaded via /api/whatsapp/media at
+          // campaign creation), not a public URL — templates require binary media.
+          const mediaType = templateVars.header.format.toLowerCase();
+          templateComponents.push({
+            type: "header",
+            parameters: [{ type: mediaType, [mediaType]: { id: campaign.headerParam } }],
+          });
+        }
+      }
+
+      if (campaign.buttonParam && templateVars.buttonUrl) {
+        templateComponents.push({
+          type: "button",
+          sub_type: "url",
+          index: String(templateVars.buttonUrl.index),
+          parameters: [{ type: "text", text: campaign.buttonParam }],
+        });
+      }
+
+      if (templateComponents.length > 0) {
+        (body.template as Record<string, unknown>).components = templateComponents;
       }
 
       let res = await fetch(

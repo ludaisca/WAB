@@ -20,7 +20,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const { name, waAccountId, waTemplateId, scheduledAt, recipients } =
+    const { name, waAccountId, waTemplateId, scheduledAt, headerParam, buttonParam, recipients } =
       parsed.data;
 
     const [account, template] = await Promise.all([
@@ -51,6 +51,8 @@ export async function POST(req: Request) {
           name,
           status: scheduledAt ? "SCHEDULED" : "DRAFT",
           scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+          headerParam: headerParam || null,
+          buttonParam: buttonParam || null,
           recipientCount: recipients.length,
         },
         include: {

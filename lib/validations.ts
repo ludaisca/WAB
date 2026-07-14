@@ -97,6 +97,8 @@ export const campaignSchema = z.object({
   waAccountId: z.string().min(1, "La cuenta es requerida"),
   waTemplateId: z.string().min(1, "La plantilla es requerida"),
   scheduledAt: z.string().datetime().optional().nullable(),
+  headerParam: z.string().optional(),
+  buttonParam: z.string().optional(),
   recipients: z.array(z.object({
     phoneNumber: z.string().min(1, "El número es requerido").regex(/^\d+$/, "Debe ser numérico"),
     contactName: z.string().optional(),

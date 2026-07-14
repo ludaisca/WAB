@@ -1,20 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Save, X, Plus } from "lucide-react";
+import { ArrowLeft, Save, X, Plus, Upload, FileX } from "lucide-react";
 import { Card, CardBody, CardFooter } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
+import { Badge } from "@/app/components/ui/badge";
 import { FormField } from "@/app/components/ui/form-field";
 import { DatePicker } from "@/app/components/ui/date-picker";
 import { Spinner } from "@/app/components/ui/spinner";
+import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
+import { getTemplateVariables } from "@/lib/whatsapp/template-variables";
+import { parseCsv, type ParsedCsvRow } from "@/lib/whatsapp/parse-csv";
+import { TemplatePreview } from "../_template-preview";
 
 interface Account { id: string; name: string; channel: string; }
-interface Template { id: string; name: string; language: string; category: string; status: string; }
+interface Template { id: string; name: string; language: string; category: string; status: string; components: unknown; }
+interface RecipientRow { phoneNumber: string; contactName: string; params: string[] }
 
 const TEMPLATE_STATUS_LABEL: Record<string, string> = {
   PENDING: "En revisión",
@@ -24,9 +30,13 @@ const TEMPLATE_STATUS_LABEL: Record<string, string> = {
   DISABLED: "Deshabilitada",
 };
 
+const CSV_PAGE_SIZE = 10;
+
 export default function NewCampaignPage() {
   const router = useRouter();
   const { success, error: toastError } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const headerFileInputRef = useRef<HTMLInputElement>(null);
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -37,14 +47,32 @@ export default function NewCampaignPage() {
   const [waTemplateId, setWaTemplateId] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [sendNow, setSendNow] = useState(true);
+  const [headerParam, setHeaderParam] = useState("");
+  const [headerFileName, setHeaderFileName] = useState<string | null>(null);
+  const [headerPreviewUrl, setHeaderPreviewUrl] = useState<string | null>(null);
+  const [headerUploading, setHeaderUploading] = useState(false);
+  const [buttonParam, setButtonParam] = useState("");
 
-  const [recipients, setRecipients] = useState<Array<{ phoneNumber: string; contactName: string }>>([
-    { phoneNumber: "", contactName: "" },
+  const [recipients, setRecipients] = useState<RecipientRow[]>([
+    { phoneNumber: "", contactName: "", params: [] },
   ]);
-  const [csvText, setCsvText] = useState("");
+
+  const [csvRows, setCsvRows] = useState<ParsedCsvRow[]>([]);
+  const [csvFileName, setCsvFileName] = useState<string | null>(null);
+  const [csvPage, setCsvPage] = useState(0);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+
+  const selectedTemplate = useMemo(
+    () => templates.find((t) => t.id === waTemplateId) ?? null,
+    [templates, waTemplateId]
+  );
+  const templateVars = useMemo(
+    () => (selectedTemplate ? getTemplateVariables(selectedTemplate.components) : null),
+    [selectedTemplate]
+  );
+  const bodyParamCount = templateVars?.bodyParamCount ?? 0;
 
   useEffect(() => {
     fetch("/api/whatsapp/accounts").then(r => r.json()).then(d => {
@@ -67,8 +95,54 @@ export default function NewCampaignPage() {
       .finally(() => setLoadingTemplates(false));
   }, [waAccountId, toastError]);
 
+  // Params, header/button values and any imported CSV are all specific to the
+  // previously selected template's shape — switching templates invalidates them.
+  function handleTemplateChange(id: string) {
+    setWaTemplateId(id);
+    setHeaderParam("");
+    if (headerPreviewUrl) URL.revokeObjectURL(headerPreviewUrl);
+    setHeaderPreviewUrl(null);
+    setHeaderFileName(null);
+    setButtonParam("");
+    setCsvRows([]);
+    setCsvFileName(null);
+    setCsvPage(0);
+    setRecipients(prev => prev.map(r => ({ ...r, params: [] })));
+  }
+
+  async function handleHeaderFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !waAccountId) return;
+
+    if (templateVars?.header.format === "IMAGE") {
+      if (headerPreviewUrl) URL.revokeObjectURL(headerPreviewUrl);
+      setHeaderPreviewUrl(URL.createObjectURL(file));
+    }
+    setHeaderFileName(file.name);
+    setHeaderUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("accountId", waAccountId);
+      const res = await fetch("/api/whatsapp/media", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Error al subir el archivo");
+      setHeaderParam(data.mediaId);
+      success("Archivo de cabecera cargado");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al subir el archivo");
+      setHeaderParam("");
+      setHeaderFileName(null);
+      if (headerPreviewUrl) URL.revokeObjectURL(headerPreviewUrl);
+      setHeaderPreviewUrl(null);
+    } finally {
+      setHeaderUploading(false);
+    }
+  }
+
   function addRecipient() {
-    setRecipients(prev => [...prev, { phoneNumber: "", contactName: "" }]);
+    setRecipients(prev => [...prev, { phoneNumber: "", contactName: "", params: [] }]);
   }
   function removeRecipient(idx: number) {
     setRecipients(prev => prev.filter((_, i) => i !== idx));
@@ -76,17 +150,78 @@ export default function NewCampaignPage() {
   function updateRecipient(idx: number, field: "phoneNumber" | "contactName", value: string) {
     setRecipients(prev => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
   }
-  function handleCsvImport() {
-    if (!csvText.trim()) return;
-    const lines = csvText.trim().split("\n");
-    const newRecipients = lines.map(line => {
-      const [phone, name] = line.split(",").map(s => s.trim());
-      return { phoneNumber: phone || "", contactName: name || "" };
-    }).filter(r => r.phoneNumber);
-    setRecipients(prev => [...prev, ...newRecipients].filter(Boolean));
-    setCsvText("");
-    success(`${newRecipients.length} destinatarios agregados`);
+  function updateRecipientParam(idx: number, paramIdx: number, value: string) {
+    setRecipients(prev => prev.map((r, i) => {
+      if (i !== idx) return r;
+      const params = [...r.params];
+      params[paramIdx] = value;
+      return { ...r, params };
+    }));
   }
+
+  function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const parsed = parseCsv(String(reader.result ?? ""));
+      setCsvRows(parsed.rows);
+      setCsvFileName(file.name);
+      setCsvPage(0);
+
+      if (parsed.rows.length === 0) {
+        toastError("No se encontraron destinatarios válidos en el archivo");
+      } else if (bodyParamCount > 0 && parsed.paramColumnCount !== bodyParamCount) {
+        toastError(`El archivo trae ${parsed.paramColumnCount} columna(s) de variables, pero la plantilla requiere ${bodyParamCount}`);
+      } else {
+        success(`${parsed.rows.length} destinatarios importados`);
+      }
+    };
+    reader.onerror = () => toastError("Error al leer el archivo");
+    reader.readAsText(file);
+  }
+
+  function clearCsv() {
+    setCsvRows([]);
+    setCsvFileName(null);
+    setCsvPage(0);
+  }
+
+  const csvTotalPages = Math.max(1, Math.ceil(csvRows.length / CSV_PAGE_SIZE));
+  const csvPageRows = useMemo(
+    () => csvRows.slice(csvPage * CSV_PAGE_SIZE, csvPage * CSV_PAGE_SIZE + CSV_PAGE_SIZE),
+    [csvRows, csvPage]
+  );
+
+  const csvColumns: TableColumn<ParsedCsvRow>[] = useMemo(() => [
+    {
+      key: "phoneNumber",
+      header: "Teléfono",
+      render: (r) => <span className="font-mono text-xs">{r.phoneNumber}</span>,
+    },
+    {
+      key: "contactName",
+      header: "Nombre",
+      render: (r) => r.contactName || "—",
+    },
+    {
+      key: "params",
+      header: "Parámetros",
+      render: (r) => r.params.length > 0 ? r.params.filter(Boolean).join(" · ") || "—" : "—",
+    },
+    {
+      key: "status",
+      header: "Estado",
+      render: (r) => {
+        const validPhone = /^\d{8,15}$/.test(r.phoneNumber);
+        const validParams = bodyParamCount === 0 || r.params.filter(Boolean).length === bodyParamCount;
+        const ok = validPhone && validParams;
+        return <Badge tone={ok ? "success" : "danger"} size="sm">{ok ? "OK" : "Revisar"}</Badge>;
+      },
+    },
+  ], [bodyParamCount]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -94,8 +229,28 @@ export default function NewCampaignPage() {
     if (!name.trim()) newErrors.name = "Requerido";
     if (!waAccountId) newErrors.waAccountId = "Selecciona una cuenta";
     if (!waTemplateId) newErrors.waTemplateId = "Selecciona una plantilla";
-    const validRecipients = recipients.filter(r => r.phoneNumber.trim());
-    if (validRecipients.length === 0) newErrors.recipients = "Al menos un destinatario";
+
+    if (templateVars?.header.required && !headerParam.trim()) {
+      newErrors.headerParam = templateVars.header.format === "TEXT"
+        ? "La cabecera de esta plantilla requiere un valor"
+        : `Sube el archivo de ${templateVars.header.format?.toLowerCase()} para la cabecera`;
+    }
+    if (templateVars?.buttonUrl && !buttonParam.trim()) {
+      newErrors.buttonParam = "El botón de esta plantilla requiere un valor";
+    }
+
+    const manualRecipients = recipients.filter(r => r.phoneNumber.trim());
+    const allRecipients = [...manualRecipients, ...csvRows];
+
+    if (allRecipients.length === 0) {
+      newErrors.recipients = "Al menos un destinatario es requerido";
+    } else if (bodyParamCount > 0) {
+      const incomplete = allRecipients.some(r => r.params.filter(Boolean).length !== bodyParamCount);
+      if (incomplete) {
+        newErrors.recipients = `Todos los destinatarios deben tener los ${bodyParamCount} parámetro(s) del cuerpo`;
+      }
+    }
+
     setErrors(newErrors);
     if (Object.keys(newErrors).length > 0) return;
 
@@ -109,9 +264,14 @@ export default function NewCampaignPage() {
           waAccountId,
           waTemplateId,
           scheduledAt: sendNow ? null : scheduledAt || null,
-          recipients: validRecipients.map(r => ({
+          headerParam: headerParam.trim() || undefined,
+          buttonParam: buttonParam.trim() || undefined,
+          recipients: allRecipients.map(r => ({
             phoneNumber: r.phoneNumber.trim(),
             contactName: r.contactName.trim() || undefined,
+            parameters: bodyParamCount > 0
+              ? Object.fromEntries(r.params.map((v, i) => [String(i + 1), v]))
+              : undefined,
           })),
         }),
       });
@@ -131,116 +291,256 @@ export default function NewCampaignPage() {
     }
   }
 
+  const totalRecipients = recipients.filter(r => r.phoneNumber.trim()).length + csvRows.length;
+
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-4xl">
       <Link href="/whatsapp/campanas" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground transition-colors mb-3">
         <ArrowLeft size={14} /> Volver a campañas
       </Link>
       <h1 className="text-2xl font-bold tracking-tight">Nueva campaña</h1>
 
-      <Card>
-        <form onSubmit={handleSubmit}>
-          <CardBody>
-            <div className="space-y-5">
-              <FormField label="Nombre de la campaña" required error={errors.name}>
-                {(id) => <Input id={id} value={name} onChange={e => setName(e.target.value)} placeholder="Ej: Promoción Julio 2026" error={errors.name} />}
-              </FormField>
-
-              <div className="grid gap-5 sm:grid-cols-2">
-                <FormField label="Cuenta WhatsApp" required error={errors.waAccountId}>
-                  {(id) => (
-                    <Select id={id} value={waAccountId} onChange={e => { setWaAccountId(e.target.value); setWaTemplateId(""); }} placeholder="Seleccionar" error={errors.waAccountId}>
-                      {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                    </Select>
-                  )}
+      <div className="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
+        <Card>
+          <form onSubmit={handleSubmit}>
+            <CardBody>
+              <div className="space-y-5">
+                <FormField label="Nombre de la campaña" required error={errors.name}>
+                  {(id) => <Input id={id} value={name} onChange={e => setName(e.target.value)} placeholder="Ej: Promoción Julio 2026" error={errors.name} />}
                 </FormField>
-                <FormField
-                  label="Plantilla"
-                  required
-                  error={errors.waTemplateId}
-                  hint="Solo las plantillas aprobadas por Meta pueden usarse en una campaña."
-                >
-                  {(id) => (
-                    <Select id={id} value={waTemplateId} onChange={e => setWaTemplateId(e.target.value)} placeholder={loadingTemplates ? "Cargando..." : "Seleccionar"} error={errors.waTemplateId} disabled={!waAccountId || loadingTemplates}>
-                      {templates.map(t => (
-                        <option key={t.id} value={t.id} disabled={t.status !== "APPROVED"}>
-                          {t.name} ({t.language}) — {TEMPLATE_STATUS_LABEL[t.status] ?? t.status}
-                        </option>
-                      ))}
-                    </Select>
-                  )}
-                </FormField>
-              </div>
 
-              <div className="flex items-center justify-between py-2">
-                <div>
-                  <p className="text-sm font-medium">Enviar ahora</p>
-                  <p className="text-xs text-muted-darker">La campaña comenzará a enviarse inmediatamente</p>
-                </div>
-                <input type="checkbox" checked={sendNow} onChange={e => setSendNow(e.target.checked)} className="h-5 w-5 rounded border-border text-accent focus:ring-accent" />
-              </div>
-
-              {!sendNow && (
-                <FormField label="Programar para" hint="Fecha y hora de inicio">
-                  {(id) => <DatePicker id={id} value={scheduledAt} onChange={setScheduledAt} placeholder="Seleccionar fecha" />}
-                </FormField>
-              )}
-
-              <div className="border-t border-border pt-4">
-                <h3 className="text-sm font-semibold mb-3">Destinatarios ({recipients.filter(r => r.phoneNumber.trim()).length})</h3>
-
-                <div className="space-y-2 mb-4">
-                  {recipients.map((r, i) => (
-                    <div key={i} className="flex gap-2">
-                      <Input
-                        value={r.phoneNumber}
-                        onChange={e => updateRecipient(i, "phoneNumber", e.target.value)}
-                        placeholder="5215551234567"
-                        className="flex-1"
-                      />
-                      <Input
-                        value={r.contactName}
-                        onChange={e => updateRecipient(i, "contactName", e.target.value)}
-                        placeholder="Nombre (opcional)"
-                        className="w-36"
-                      />
-                      {recipients.length > 1 && (
-                        <Button variant="ghost" size="sm" icon={X} onClick={() => removeRecipient(i)} />
-                      )}
-                    </div>
-                  ))}
-                  <Button type="button" variant="secondary" size="sm" icon={Plus} onClick={addRecipient}>
-                    Agregar número
-                  </Button>
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <FormField label="Cuenta WhatsApp" required error={errors.waAccountId}>
+                    {(id) => (
+                      <Select id={id} value={waAccountId} onChange={e => { setWaAccountId(e.target.value); handleTemplateChange(""); }} placeholder="Seleccionar" error={errors.waAccountId}>
+                        {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                      </Select>
+                    )}
+                  </FormField>
+                  <FormField
+                    label="Plantilla"
+                    required
+                    error={errors.waTemplateId}
+                    hint="Solo las plantillas aprobadas por Meta pueden usarse en una campaña."
+                  >
+                    {(id) => (
+                      <Select id={id} value={waTemplateId} onChange={e => handleTemplateChange(e.target.value)} placeholder={loadingTemplates ? "Cargando..." : "Seleccionar"} error={errors.waTemplateId} disabled={!waAccountId || loadingTemplates}>
+                        {templates.map(t => (
+                          <option key={t.id} value={t.id} disabled={t.status !== "APPROVED"}>
+                            {t.name} ({t.language}) — {TEMPLATE_STATUS_LABEL[t.status] ?? t.status}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
+                  </FormField>
                 </div>
 
-                <details className="mt-4">
-                  <summary className="text-sm text-muted-darker cursor-pointer hover:text-foreground">Importar desde CSV</summary>
-                  <div className="mt-2 space-y-2">
-                    <textarea
-                      value={csvText}
-                      onChange={e => setCsvText(e.target.value)}
-                      placeholder="5215551234567, Juan Pérez&#10;5215557654321, María García"
-                      rows={4}
-                      className="w-full rounded-lg border border-border bg-surface-light px-3 py-2 text-sm placeholder:text-muted-darker focus:outline-none focus:ring-2 focus:ring-accent/40"
-                    />
-                    <Button type="button" variant="secondary" size="sm" onClick={handleCsvImport} disabled={!csvText.trim()}>
-                      Importar
+                {templateVars?.header.required && templateVars.header.format === "TEXT" && (
+                  <FormField
+                    label="Valor de la cabecera"
+                    required
+                    error={errors.headerParam}
+                    hint="Se aplica a todos los destinatarios de esta campaña."
+                  >
+                    {(id) => (
+                      <Input
+                        id={id}
+                        value={headerParam}
+                        onChange={e => setHeaderParam(e.target.value)}
+                        placeholder="Texto de la cabecera"
+                        error={errors.headerParam}
+                      />
+                    )}
+                  </FormField>
+                )}
+
+                {templateVars?.header.required && templateVars.header.format !== "TEXT" && (
+                  <FormField
+                    label={`Archivo de ${templateVars.header.format?.toLowerCase()} para la cabecera`}
+                    required
+                    error={errors.headerParam}
+                    hint="Se sube directo al sistema y se aplica a todos los destinatarios de esta campaña."
+                  >
+                    {() => (
+                      <div className="space-y-2">
+                        <input
+                          ref={headerFileInputRef}
+                          type="file"
+                          accept={
+                            templateVars.header.format === "IMAGE" ? "image/*"
+                              : templateVars.header.format === "VIDEO" ? "video/*"
+                              : "application/pdf"
+                          }
+                          onChange={handleHeaderFile}
+                          className="hidden"
+                        />
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          icon={Upload}
+                          onClick={() => headerFileInputRef.current?.click()}
+                          disabled={!waAccountId || headerUploading}
+                        >
+                          {headerUploading ? "Subiendo..." : "Subir archivo"}
+                        </Button>
+                        {headerFileName && !headerUploading && (
+                          <p className="text-xs text-muted-darker">{headerFileName} — cargado</p>
+                        )}
+                        {!waAccountId && (
+                          <p className="text-xs text-muted-darker">Selecciona primero una cuenta de WhatsApp</p>
+                        )}
+                      </div>
+                    )}
+                  </FormField>
+                )}
+
+                {templateVars?.buttonUrl && (
+                  <FormField
+                    label={`Valor dinámico del botón "${templateVars.buttonUrl.text}"`}
+                    required
+                    error={errors.buttonParam}
+                    hint="Se aplica a todos los destinatarios de esta campaña."
+                  >
+                    {(id) => (
+                      <Input
+                        id={id}
+                        value={buttonParam}
+                        onChange={e => setButtonParam(e.target.value)}
+                        placeholder="Sufijo o valor de la URL"
+                        error={errors.buttonParam}
+                      />
+                    )}
+                  </FormField>
+                )}
+
+                <div className="flex items-center justify-between py-2">
+                  <div>
+                    <p className="text-sm font-medium">Enviar ahora</p>
+                    <p className="text-xs text-muted-darker">La campaña comenzará a enviarse inmediatamente</p>
+                  </div>
+                  <input type="checkbox" checked={sendNow} onChange={e => setSendNow(e.target.checked)} className="h-5 w-5 rounded border-border text-accent focus:ring-accent" />
+                </div>
+
+                {!sendNow && (
+                  <FormField label="Programar para" hint="Fecha y hora de inicio">
+                    {(id) => <DatePicker id={id} value={scheduledAt} onChange={setScheduledAt} placeholder="Seleccionar fecha" />}
+                  </FormField>
+                )}
+
+                <div className="border-t border-border pt-4">
+                  <h3 className="text-sm font-semibold mb-3">Destinatarios ({totalRecipients})</h3>
+
+                  <div className="space-y-2 mb-4">
+                    {recipients.map((r, i) => (
+                      <div key={i} className="flex flex-wrap gap-2 items-start">
+                        <Input
+                          value={r.phoneNumber}
+                          onChange={e => updateRecipient(i, "phoneNumber", e.target.value)}
+                          placeholder="5215551234567"
+                          className="flex-1 min-w-[140px]"
+                        />
+                        <Input
+                          value={r.contactName}
+                          onChange={e => updateRecipient(i, "contactName", e.target.value)}
+                          placeholder="Nombre (opcional)"
+                          className="w-36"
+                        />
+                        {Array.from({ length: bodyParamCount }).map((_, paramIdx) => (
+                          <Input
+                            key={paramIdx}
+                            value={r.params[paramIdx] ?? ""}
+                            onChange={e => updateRecipientParam(i, paramIdx, e.target.value)}
+                            placeholder={`{{${paramIdx + 1}}}`}
+                            className="w-28"
+                          />
+                        ))}
+                        {recipients.length > 1 && (
+                          <Button type="button" variant="ghost" size="sm" icon={X} onClick={() => removeRecipient(i)} />
+                        )}
+                      </div>
+                    ))}
+                    <Button type="button" variant="secondary" size="sm" icon={Plus} onClick={addRecipient}>
+                      Agregar número
                     </Button>
                   </div>
-                </details>
-                {errors.recipients && <p className="text-xs text-danger mt-1">{errors.recipients}</p>}
+
+                  <div className="border border-border rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Importar desde CSV</span>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".csv,text/csv"
+                        onChange={handleCsvFile}
+                        className="hidden"
+                      />
+                      <Button type="button" variant="secondary" size="sm" icon={Upload} onClick={() => fileInputRef.current?.click()}>
+                        Subir archivo
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-darker">
+                      Primera fila con encabezados: <code className="bg-surface px-1 rounded">telefono</code>, <code className="bg-surface px-1 rounded">nombre</code>{bodyParamCount > 0 ? `, y ${bodyParamCount} columna(s) más para las variables del cuerpo` : ""}.
+                    </p>
+
+                    {csvFileName && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-darker">
+                            {csvFileName} — {csvRows.length} destinatario(s)
+                          </span>
+                          <Button type="button" variant="ghost" size="sm" icon={FileX} onClick={clearCsv}>
+                            Quitar
+                          </Button>
+                        </div>
+
+                        <Table
+                          columns={csvColumns}
+                          rows={csvPageRows}
+                          rowKey={(r) => r.id}
+                          emptyIcon={Upload}
+                          emptyTitle="Sin destinatarios"
+                        />
+
+                        {csvTotalPages > 1 && (
+                          <div className="flex items-center justify-between text-xs pt-1">
+                            <span className="text-muted-darker">Página {csvPage + 1} de {csvTotalPages}</span>
+                            <div className="flex gap-2">
+                              <Button type="button" variant="secondary" size="sm" disabled={csvPage === 0} onClick={() => setCsvPage(p => p - 1)}>
+                                Anterior
+                              </Button>
+                              <Button type="button" variant="secondary" size="sm" disabled={csvPage >= csvTotalPages - 1} onClick={() => setCsvPage(p => p + 1)}>
+                                Siguiente
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {errors.recipients && <p className="text-xs text-danger mt-2">{errors.recipients}</p>}
+                </div>
               </div>
+            </CardBody>
+            <CardFooter>
+              <Button type="submit" icon={saving ? undefined : Save} disabled={saving}>
+                {saving ? <Spinner /> : sendNow ? "Crear y enviar" : "Programar campaña"}
+              </Button>
+              <Button href="/whatsapp/campanas" type="button" variant="secondary">Cancelar</Button>
+            </CardFooter>
+          </form>
+        </Card>
+
+        <div className="lg:sticky lg:top-6">
+          {selectedTemplate ? (
+            <TemplatePreview components={selectedTemplate.components} headerImagePreview={headerPreviewUrl} />
+          ) : (
+            <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-darker">
+              Selecciona una plantilla para ver la vista previa
             </div>
-          </CardBody>
-          <CardFooter>
-            <Button type="submit" icon={saving ? undefined : Save} disabled={saving}>
-              {saving ? <Spinner /> : sendNow ? "Crear y enviar" : "Programar campaña"}
-            </Button>
-            <Button href="/whatsapp/campanas" type="button" variant="secondary">Cancelar</Button>
-          </CardFooter>
-        </form>
-      </Card>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
