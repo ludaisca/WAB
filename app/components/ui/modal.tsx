@@ -39,7 +39,7 @@ export function Modal({
   children,
 }: ModalProps) {
   const mounted = useHasMounted();
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(open);
   const overlayRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<Element | null>(null);
