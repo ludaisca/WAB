@@ -4,7 +4,8 @@ import { Plus, Phone, MessageCircle, CheckCircle2, Activity, Users } from "lucid
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
-import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
+import { CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
+import { BentoGrid, BentoTile } from "@/app/components/ui/bento-grid";
 import { StatCard } from "@/app/components/ui/stat-card";
 import { Badge } from "@/app/components/ui/badge";
 import { PageHeader } from "@/app/components/ui/page-header";
@@ -63,7 +64,7 @@ export default async function WhatsAppDashboardPage() {
         actions={<AddAccountButton />}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <BentoGrid>
         <StatCard
           label="Cuentas"
           value={String(accountsCount)}
@@ -95,10 +96,8 @@ export default async function WhatsAppDashboardPage() {
           tone="neutral"
           sublabel="Más reciente"
         />
-      </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
+        <BentoTile span={{ sm: 2, lg: 2 }}>
           <CardHeader>
             <CardTitle>Cuentas recientes</CardTitle>
           </CardHeader>
@@ -136,9 +135,9 @@ export default async function WhatsAppDashboardPage() {
               </div>
             )}
           </CardBody>
-        </Card>
+        </BentoTile>
 
-        <Card>
+        <BentoTile span={{ sm: 2, lg: 2 }}>
           <CardHeader>
             <CardTitle>Acciones rápidas</CardTitle>
           </CardHeader>
@@ -182,8 +181,8 @@ export default async function WhatsAppDashboardPage() {
               </Link>
             </div>
           </CardBody>
-        </Card>
-      </div>
+        </BentoTile>
+      </BentoGrid>
     </div>
   );
 }

@@ -4,11 +4,9 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Megaphone, Trash2, Eye } from "lucide-react";
-import { Card, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
-import { Spinner } from "@/app/components/ui/spinner";
-import { EmptyState } from "@/app/components/ui/empty-state";
+import { TileGrid } from "@/app/components/ui/tile-grid";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { PageHeader } from "@/app/components/ui/page-header";
 import { useToast } from "@/app/components/ui/toast";
@@ -88,70 +86,63 @@ export default function CampaignsPage() {
         }
       />
 
-      {loading ? (
-        <div className="flex items-center justify-center py-16"><Spinner /></div>
-      ) : campaigns.length === 0 ? (
-        <EmptyState
-          icon={Megaphone}
-          title="Sin campañas"
-          description="Crea tu primera campaña de WhatsApp para enviar mensajes a múltiples destinatarios."
-        />
-      ) : (
-        <div className="space-y-4">
-          {campaigns.map((c) => {
-            const badge = STATUS_BADGE[c.status] ?? { label: c.status, tone: "neutral" as const };
-            const progress = c.recipientCount > 0
-              ? Math.round(((c.sentCount + (c.deliveredCount || 0)) / c.recipientCount) * 100)
-              : 0;
-            return (
-              <Card key={c.id}>
-                <CardBody>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <Link href={`/whatsapp/campanas/${c.id}`} className="font-semibold text-sm text-accent hover:underline truncate">
-                          {c.name}
-                        </Link>
-                        <Badge tone={badge.tone} size="sm">{badge.label}</Badge>
+      <TileGrid
+        rows={campaigns}
+        rowKey={(c) => c.id}
+        loading={loading}
+        columns="2"
+        emptyIcon={Megaphone}
+        emptyTitle="Sin campañas"
+        emptyDescription="Crea tu primera campaña de WhatsApp para enviar mensajes a múltiples destinatarios."
+        renderTile={(c) => {
+          const badge = STATUS_BADGE[c.status] ?? { label: c.status, tone: "neutral" as const };
+          const progress = c.recipientCount > 0
+            ? Math.round(((c.sentCount + (c.deliveredCount || 0)) / c.recipientCount) * 100)
+            : 0;
+          return (
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <Link href={`/whatsapp/campanas/${c.id}`} className="font-semibold text-sm text-accent hover:underline truncate">
+                    {c.name}
+                  </Link>
+                  <Badge tone={badge.tone} size="sm">{badge.label}</Badge>
+                </div>
+                <p className="text-xs text-muted-darker mt-1">
+                  {c.waAccount.name} · Plantilla: {c.waTemplate.name}
+                </p>
+                {c.status !== "DRAFT" && (
+                  <div className="mt-3 space-y-1.5">
+                    <div className="flex items-center gap-2 text-xs text-muted-darker">
+                      <div className="flex-1 bg-surface rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="h-full bg-accent rounded-full transition-all"
+                          style={{ width: `${progress}%` }}
+                        />
                       </div>
-                      <p className="text-xs text-muted-darker mt-1">
-                        {c.waAccount.name} · Plantilla: {c.waTemplate.name}
-                      </p>
-                      {c.status !== "DRAFT" && (
-                        <div className="mt-3 space-y-1.5">
-                          <div className="flex items-center gap-2 text-xs text-muted-darker">
-                            <div className="flex-1 bg-surface rounded-full h-1.5 overflow-hidden">
-                              <div
-                                className="h-full bg-accent rounded-full transition-all"
-                                style={{ width: `${progress}%` }}
-                              />
-                            </div>
-                            <span>{progress}%</span>
-                          </div>
-                          <div className="flex gap-3 text-xs text-muted-darker">
-                            <span>Env: {c.sentCount}</span>
-                            <span>Entr: {c.deliveredCount}</span>
-                            <span>Leídos: {c.readCount}</span>
-                            {c.failedCount > 0 && <span className="text-danger">Fallos: {c.failedCount}</span>}
-                          </div>
-                        </div>
-                      )}
+                      <span>{progress}%</span>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button variant="secondary" size="sm" icon={Eye} onClick={() => router.push(`/whatsapp/campanas/${c.id}`)}>
-                        Detalle
-                      </Button>
-                      {c.status === "DRAFT" && (
-                        <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setDeleteId(c.id)} className="text-muted-darker hover:text-danger" />
-                      )}
+                    <div className="flex gap-3 text-xs text-muted-darker">
+                      <span>Env: {c.sentCount}</span>
+                      <span>Entr: {c.deliveredCount}</span>
+                      <span>Leídos: {c.readCount}</span>
+                      {c.failedCount > 0 && <span className="text-danger">Fallos: {c.failedCount}</span>}
                     </div>
                   </div>
-                </CardBody>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+                )}
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <Button variant="secondary" size="sm" icon={Eye} onClick={() => router.push(`/whatsapp/campanas/${c.id}`)}>
+                  Detalle
+                </Button>
+                {c.status === "DRAFT" && (
+                  <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setDeleteId(c.id)} className="text-muted-darker hover:text-danger" />
+                )}
+              </div>
+            </div>
+          );
+        }}
+      />
 
       <ConfirmDialog
         open={!!deleteId}

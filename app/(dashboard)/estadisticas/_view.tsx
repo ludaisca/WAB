@@ -14,7 +14,8 @@ import {
   Users,
   Mail,
 } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
+import { CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
+import { BentoGrid, BentoTile } from "@/app/components/ui/bento-grid";
 import { StatCard } from "@/app/components/ui/stat-card";
 import { Badge } from "@/app/components/ui/badge";
 import { PageHeader } from "@/app/components/ui/page-header";
@@ -116,15 +117,13 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
     <div className="space-y-6">
       <PageHeader title="Estadísticas" description="Métricas globales de uso de la plataforma." />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <BentoGrid>
         <StatCard label="Cuentas" value={String(stats.accounts)} icon={Phone} tone="accent" href="/whatsapp/cuentas" />
         <StatCard label="Chats activos" value={String(stats.chats)} icon={MessageCircle} tone="info" href="/whatsapp/chat" />
         <StatCard label="Mensajes" value={String(stats.messages)} icon={Mail} tone="success" href="/whatsapp/chat" />
         <StatCard label="Bots IA" value={`${stats.activeBots}/${stats.bots}`} icon={Bot} tone="success" sublabel="activos" href="/whatsapp/bots" />
-      </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
+        <BentoTile span={{ sm: 2, lg: 2 }} rowSpan={2}>
           <CardHeader>
             <div className="flex items-center gap-2">
               <BarChart3 size={16} className="text-accent" />
@@ -156,75 +155,71 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
               </div>
             )}
           </CardBody>
-        </Card>
+        </BentoTile>
 
-        <div className="space-y-4">
-          <StatCard
-            label="Costo estimado IA"
-            value={formatCost(stats.totalCost)}
-            icon={DollarSign}
-            tone="accent"
-          />
+        <StatCard
+          label="Costo estimado IA"
+          value={formatCost(stats.totalCost)}
+          icon={DollarSign}
+          tone="accent"
+        />
 
-          {stats.monthlyBudgetUsd != null && (
-            <Card>
-              <CardBody>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs text-muted-darker">Presupuesto del mes</p>
-                  <p className="text-xs font-medium">
-                    {formatCost(stats.monthlyCost)} / {formatCost(stats.monthlyBudgetUsd)}
-                  </p>
-                </div>
-                <div className="bg-surface rounded-full h-2 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${
-                      stats.monthlyCost >= stats.monthlyBudgetUsd ? "bg-danger" : "bg-accent"
-                    }`}
-                    style={{ width: `${Math.min(100, (stats.monthlyCost / stats.monthlyBudgetUsd) * 100)}%` }}
-                  />
-                </div>
-              </CardBody>
-            </Card>
-          )}
+        {stats.monthlyBudgetUsd != null && (
+          <BentoTile>
+            <CardBody>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-muted-darker">Presupuesto del mes</p>
+                <p className="text-xs font-medium">
+                  {formatCost(stats.monthlyCost)} / {formatCost(stats.monthlyBudgetUsd)}
+                </p>
+              </div>
+              <div className="bg-surface rounded-full h-2 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    stats.monthlyCost >= stats.monthlyBudgetUsd ? "bg-danger" : "bg-accent"
+                  }`}
+                  style={{ width: `${Math.min(100, (stats.monthlyCost / stats.monthlyBudgetUsd) * 100)}%` }}
+                />
+              </div>
+            </CardBody>
+          </BentoTile>
+        )}
 
-          <StatCard
-            label="Tokens consumidos"
-            value={stats.totalTokens.toLocaleString()}
-            icon={Zap}
-            tone="info"
-          />
+        <StatCard
+          label="Tokens consumidos"
+          value={stats.totalTokens.toLocaleString()}
+          icon={Zap}
+          tone="info"
+        />
 
-          <StatCard
-            label="Campañas completadas"
-            value={`${stats.campaignsCompleted}/${stats.campaigns}`}
-            icon={TrendingUp}
-            tone="success"
-            href="/whatsapp/campanas"
-          />
+        <StatCard
+          label="Campañas completadas"
+          value={`${stats.campaignsCompleted}/${stats.campaigns}`}
+          icon={TrendingUp}
+          tone="success"
+          href="/whatsapp/campanas"
+        />
 
-          {stats.chatStatusCounts.length > 0 && (
-            <Card>
-              <CardBody>
-                <p className="text-xs text-muted-darker mb-2">Chats por estado</p>
-                <div className="flex flex-wrap gap-2">
-                  {stats.chatStatusCounts.map((c) => (
-                    <Badge
-                      key={c.status}
-                      tone={CHAT_STATUS_BADGE[c.status] ?? "neutral"}
-                      size="sm"
-                    >
-                      {CHAT_STATUS_LABEL[c.status] ?? c.status}: {c.count}
-                    </Badge>
-                  ))}
-                </div>
-              </CardBody>
-            </Card>
-          )}
-        </div>
-      </div>
+        {stats.chatStatusCounts.length > 0 && (
+          <BentoTile>
+            <CardBody>
+              <p className="text-xs text-muted-darker mb-2">Chats por estado</p>
+              <div className="flex flex-wrap gap-2">
+                {stats.chatStatusCounts.map((c) => (
+                  <Badge
+                    key={c.status}
+                    tone={CHAT_STATUS_BADGE[c.status] ?? "neutral"}
+                    size="sm"
+                  >
+                    {CHAT_STATUS_LABEL[c.status] ?? c.status}: {c.count}
+                  </Badge>
+                ))}
+              </div>
+            </CardBody>
+          </BentoTile>
+        )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
+        <BentoTile span={{ sm: 2, lg: 2 }}>
           <CardHeader>
             <div className="flex items-center gap-2">
               <Bot size={16} className="text-accent" />
@@ -240,9 +235,9 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
               emptyTitle="Sin bots todavía"
             />
           </CardBody>
-        </Card>
+        </BentoTile>
 
-        <Card>
+        <BentoTile span={{ sm: 2, lg: 2 }}>
           <CardHeader>
             <div className="flex items-center gap-2">
               <Phone size={16} className="text-accent" />
@@ -275,27 +270,27 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
               </div>
             )}
           </CardBody>
-        </Card>
-      </div>
+        </BentoTile>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <UserCheck size={16} className="text-accent" />
-            <CardTitle>Rendimiento por agente</CardTitle>
-          </div>
-        </CardHeader>
-        <CardBody>
-          <Table
-            columns={agentColumns}
-            rows={stats.agentPerformance}
-            rowKey={(a) => a.userId}
-            emptyIcon={UserCheck}
-            emptyTitle="Sin datos todavía"
-            emptyDescription="Aparecerán agentes aquí una vez que se asignen y respondan chats."
-          />
-        </CardBody>
-      </Card>
+        <BentoTile span={{ sm: 2, lg: 4 }}>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <UserCheck size={16} className="text-accent" />
+              <CardTitle>Rendimiento por agente</CardTitle>
+            </div>
+          </CardHeader>
+          <CardBody>
+            <Table
+              columns={agentColumns}
+              rows={stats.agentPerformance}
+              rowKey={(a) => a.userId}
+              emptyIcon={UserCheck}
+              emptyTitle="Sin datos todavía"
+              emptyDescription="Aparecerán agentes aquí una vez que se asignen y respondan chats."
+            />
+          </CardBody>
+        </BentoTile>
+      </BentoGrid>
     </div>
   );
 }

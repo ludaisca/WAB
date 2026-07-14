@@ -5,7 +5,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
 import { StatCard } from "@/app/components/ui/stat-card";
-import { Card, CardTitle } from "@/app/components/ui/card";
+import { CardTitle } from "@/app/components/ui/card";
+import { BentoGrid, BentoTile } from "@/app/components/ui/bento-grid";
 import { IconBox } from "@/app/components/ui/icon-box";
 import { Badge } from "@/app/components/ui/badge";
 import { PageHeader } from "@/app/components/ui/page-header";
@@ -82,7 +83,7 @@ export default async function DashboardPage() {
     <div className="space-y-6">
       <PageHeader title="Panel" description="Resumen de tu actividad en WhatsApp" />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <BentoGrid>
         <StatCard
           label="Cuentas"
           value={accountsTotal === 0 ? "0" : `${accountsConnected}/${accountsTotal}`}
@@ -115,11 +116,8 @@ export default async function DashboardPage() {
           sublabel="completadas"
           href="/whatsapp/campanas"
         />
-      </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <Card padding="none">
+        <BentoTile span={{ sm: 2, lg: 2 }} padding="none">
             <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border">
               <div className="flex items-center gap-2">
                 <MessageCircle size={16} className="text-accent" />
@@ -212,10 +210,9 @@ export default async function DashboardPage() {
                 ))}
               </div>
             )}
-          </Card>
-        </div>
+        </BentoTile>
 
-        <div className="space-y-3">
+        <BentoTile span={{ sm: 2, lg: 2 }} className="gap-3">
           <CardTitle className="mb-1">Acceso rápido</CardTitle>
 
           <Link
@@ -250,8 +247,8 @@ export default async function DashboardPage() {
               <p className="text-xs text-muted-darker truncate">Administrar perfil y ajustes IA</p>
             </div>
           </Link>
-        </div>
-      </div>
+        </BentoTile>
+      </BentoGrid>
     </div>
   );
 }

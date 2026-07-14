@@ -4,11 +4,10 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Bot, Power, PowerOff, Trash2, Settings } from "lucide-react";
-import { Card, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Spinner } from "@/app/components/ui/spinner";
-import { EmptyState } from "@/app/components/ui/empty-state";
+import { TileGrid } from "@/app/components/ui/tile-grid";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { PageHeader } from "@/app/components/ui/page-header";
 import { useToast } from "@/app/components/ui/toast";
@@ -102,97 +101,88 @@ export default function BotsPage() {
         }
       />
 
-      {loading ? (
-        <div className="flex items-center justify-center py-16"><Spinner /></div>
-      ) : bots.length === 0 ? (
-        <EmptyState
-          icon={Bot}
-          title="Sin bots"
-          description="Crea tu primer bot de IA para automatizar conversaciones de WhatsApp."
-        />
-      ) : (
-        // Grid of Card, not <Table>: each bot's primary action is a status toggle with
-        // immediate visual feedback (Power/PowerOff), which reads better as a card than a table row.
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {bots.map((bot) => {
-            const provider = PROVIDER_BADGE[bot.provider] ?? { label: bot.provider, tone: "info" as const };
-            return (
-              <Card key={bot.id}>
-                <CardBody>
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div className="min-w-0">
-                        <Link href={`/whatsapp/bots/${bot.id}`} className="text-sm font-semibold text-accent hover:underline">
-                          {bot.name}
-                        </Link>
-                        <p className="text-xs text-muted-darker mt-0.5">
-                          {bot.waAccount?.name ?? "Sin cuenta (solo pruebas)"} · {bot.model}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleToggle(bot.id)}
-                        disabled={togglingId === bot.id}
-                        className={`p-1.5 rounded-md transition-colors ${
-                          bot.isActive
-                            ? "bg-success-bg text-success hover:bg-success-bg/80"
-                            : "bg-surface-light text-muted-darker hover:text-foreground"
-                        }`}
-                        title={bot.isActive ? "Desactivar" : "Activar"}
-                      >
-                        {togglingId === bot.id ? (
-                          <Spinner size="sm" />
-                        ) : bot.isActive ? (
-                          <Power size={14} />
-                        ) : (
-                          <PowerOff size={14} />
-                        )}
-                      </button>
-                    </div>
+      <TileGrid
+        rows={bots}
+        rowKey={(bot) => bot.id}
+        loading={loading}
+        columns="3"
+        emptyIcon={Bot}
+        emptyTitle="Sin bots"
+        emptyDescription="Crea tu primer bot de IA para automatizar conversaciones de WhatsApp."
+        renderTile={(bot) => {
+          const provider = PROVIDER_BADGE[bot.provider] ?? { label: bot.provider, tone: "info" as const };
+          return (
+            <div className="space-y-3">
+              <div className="flex items-start justify-between">
+                <div className="min-w-0">
+                  <Link href={`/whatsapp/bots/${bot.id}`} className="text-sm font-semibold text-accent hover:underline">
+                    {bot.name}
+                  </Link>
+                  <p className="text-xs text-muted-darker mt-0.5">
+                    {bot.waAccount?.name ?? "Sin cuenta (solo pruebas)"} · {bot.model}
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleToggle(bot.id)}
+                  disabled={togglingId === bot.id}
+                  className={`p-1.5 rounded-md transition-colors ${
+                    bot.isActive
+                      ? "bg-success-bg text-success hover:bg-success-bg/80"
+                      : "bg-surface-light text-muted-darker hover:text-foreground"
+                  }`}
+                  title={bot.isActive ? "Desactivar" : "Activar"}
+                >
+                  {togglingId === bot.id ? (
+                    <Spinner size="sm" />
+                  ) : bot.isActive ? (
+                    <Power size={14} />
+                  ) : (
+                    <PowerOff size={14} />
+                  )}
+                </button>
+              </div>
 
-                    <div className="flex flex-wrap gap-1.5">
-                      <Badge tone={provider.tone} size="sm">{provider.label}</Badge>
-                      {bot.ragEnabled && <Badge tone="success" size="sm">RAG</Badge>}
-                      <Badge tone={bot.isActive ? "success" : "neutral"} size="sm">
-                        {bot.isActive ? "Activo" : "Inactivo"}
-                      </Badge>
-                      {bot.status === "ERROR" && (
-                        <Badge tone="danger" size="sm">
-                          Error — reactivar para reintentar
-                        </Badge>
-                      )}
-                    </div>
+              <div className="flex flex-wrap gap-1.5">
+                <Badge tone={provider.tone} size="sm">{provider.label}</Badge>
+                {bot.ragEnabled && <Badge tone="success" size="sm">RAG</Badge>}
+                <Badge tone={bot.isActive ? "success" : "neutral"} size="sm">
+                  {bot.isActive ? "Activo" : "Inactivo"}
+                </Badge>
+                {bot.status === "ERROR" && (
+                  <Badge tone="danger" size="sm">
+                    Error — reactivar para reintentar
+                  </Badge>
+                )}
+              </div>
 
-                    <div className="flex items-center gap-1 text-xs text-muted-darker">
-                      <span>{bot._count.conversations} conversaciones</span>
-                      <span>·</span>
-                      <span>{bot._count.knowledgeBots} docs</span>
-                    </div>
+              <div className="flex items-center gap-1 text-xs text-muted-darker">
+                <span>{bot._count.conversations} conversaciones</span>
+                <span>·</span>
+                <span>{bot._count.knowledgeBots} docs</span>
+              </div>
 
-                    <div className="flex items-center gap-1 pt-2 border-t border-border">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="flex-1"
-                        icon={Settings}
-                        onClick={() => router.push(`/whatsapp/bots/${bot.id}`)}
-                      >
-                        Configurar
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={Trash2}
-                        onClick={() => setDeleteId(bot.id)}
-                        className="text-muted-darker hover:text-danger"
-                      />
-                    </div>
-                  </div>
-                </CardBody>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+              <div className="flex items-center gap-1 pt-2 border-t border-border">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="flex-1"
+                  icon={Settings}
+                  onClick={() => router.push(`/whatsapp/bots/${bot.id}`)}
+                >
+                  Configurar
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={Trash2}
+                  onClick={() => setDeleteId(bot.id)}
+                  className="text-muted-darker hover:text-danger"
+                />
+              </div>
+            </div>
+          );
+        }}
+      />
 
       <ConfirmDialog
         open={!!deleteId}

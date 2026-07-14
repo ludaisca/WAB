@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Search, RefreshCw, Contact as ContactIcon } from "lucide-react";
 import { Card } from "@/app/components/ui/card";
@@ -9,7 +9,7 @@ import { Select } from "@/app/components/ui/select";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { PageHeader } from "@/app/components/ui/page-header";
-import { Table, type TableColumn } from "@/app/components/ui/table";
+import { TileGrid } from "@/app/components/ui/tile-grid";
 import { Pagination } from "@/app/components/ui/pagination";
 import { useToast } from "@/app/components/ui/toast";
 import { ContactDrawer } from "@/app/components/whatsapp/contact-drawer";
@@ -32,6 +32,10 @@ interface ContactRow {
   tags: Array<{ tag: { id: string; name: string; color: string } }>;
   chat: { id: string; unreadCount: number; lastMessageAt: string | null } | null;
   _count: { notes: number };
+}
+
+function phoneFromJid(remoteJid: string): string {
+  return remoteJid.split("@")[0];
 }
 
 const LEAD_STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" | "danger" | "neutral" | "info" | "accent" }> = {
@@ -109,65 +113,6 @@ export default function ContactosPage() {
     fetchAccounts();
   }, [fetchAccounts]);
 
-  const columns: TableColumn<ContactRow>[] = useMemo(() => [
-    {
-      key: "name",
-      header: "Nombre",
-      render: (contact) => (
-        <>
-          <span className="font-medium text-foreground">{contact.name ?? contact.remoteJid}</span>
-          {contact.chat && (
-            <Link
-              href={`/whatsapp/chat/${contact.accountId}/${contact.chat.id}`}
-              onClick={(e) => e.stopPropagation()}
-              className="ml-2 text-xs text-accent hover:underline"
-            >
-              Ver chat
-            </Link>
-          )}
-        </>
-      ),
-    },
-    {
-      key: "leadStatus",
-      header: "Estado",
-      render: (contact) => {
-        const badge = LEAD_STATUS_BADGE[contact.leadStatus] ?? { label: contact.leadStatus, tone: "neutral" as const };
-        return <Badge tone={badge.tone} size="sm">{badge.label}</Badge>;
-      },
-    },
-    {
-      key: "tags",
-      header: "Etiquetas",
-      render: (contact) => (
-        <div className="flex flex-wrap gap-1">
-          {contact.tags.map(({ tag }) => (
-            <Badge key={tag.id} tone="accent" size="sm">{tag.name}</Badge>
-          ))}
-        </div>
-      ),
-      hideBelow: "md",
-    },
-    {
-      key: "notes",
-      header: "Notas",
-      render: (contact) => <span className="text-xs text-muted-darker">{contact._count.notes}</span>,
-      hideBelow: "sm",
-    },
-    {
-      key: "lastActivity",
-      header: "Última actividad",
-      render: (contact) => (
-        <span className="text-xs text-muted-darker">
-          {contact.chat?.lastMessageAt
-            ? new Date(contact.chat.lastMessageAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
-            : "—"}
-        </span>
-      ),
-      hideBelow: "md",
-    },
-  ], []);
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -216,17 +161,62 @@ export default function ContactosPage() {
           </Select>
         </div>
 
-        <Table
-          columns={columns}
+        <TileGrid
           rows={contacts}
           rowKey={(c) => c.id}
           loading={loading}
           error={fetchError}
           onRetry={fetchContacts}
           onRowClick={(c) => setSelectedId(c.id)}
+          columns="3"
           emptyIcon={ContactIcon}
           emptyTitle="Sin contactos"
           emptyDescription="Los contactos se crean automáticamente cuando recibes un mensaje de WhatsApp."
+          renderTile={(contact) => {
+            const badge = LEAD_STATUS_BADGE[contact.leadStatus] ?? { label: contact.leadStatus, tone: "neutral" as const };
+            const account = accounts.find((a) => a.id === contact.accountId);
+            return (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-foreground text-sm truncate">{contact.name ?? contact.remoteJid}</span>
+                  <Badge tone={badge.tone} size="sm">{badge.label}</Badge>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-darker">
+                  <span>{phoneFromJid(contact.remoteJid)}</span>
+                  {accounts.length > 1 && account && (
+                    <>
+                      <span>·</span>
+                      <span>{account.name}</span>
+                    </>
+                  )}
+                </div>
+                {contact.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {contact.tags.map(({ tag }) => (
+                      <Badge key={tag.id} tone="accent" size="sm">{tag.name}</Badge>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-xs text-muted-darker pt-1">
+                  <span>{contact._count.notes} nota(s)</span>
+                  <span>
+                    {contact.chat?.lastMessageAt
+                      ? new Date(contact.chat.lastMessageAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+                      : "—"}
+                  </span>
+                </div>
+                {contact.chat && (
+                  <Link
+                    href={`/whatsapp/chat/${contact.accountId}/${contact.chat.id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-block text-xs text-accent hover:underline"
+                  >
+                    Ver chat
+                  </Link>
+                )}
+              </div>
+            );
+          }}
         />
         {total > PAGE_SIZE && (
           <div className="flex justify-center mt-4 pt-4 border-t border-border">

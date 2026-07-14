@@ -1,13 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Shield, ShieldOff, UserPlus, Users } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Spinner } from "@/app/components/ui/spinner";
 import { PageHeader } from "@/app/components/ui/page-header";
-import { Table, type TableColumn } from "@/app/components/ui/table";
+import { TileGrid } from "@/app/components/ui/tile-grid";
 import { useToast } from "@/app/components/ui/toast";
 import { UserFormModal } from "./_form";
 
@@ -79,63 +78,6 @@ export default function UsersPage() {
     return role === "admin" ? ShieldOff : Shield;
   }
 
-  const columns: TableColumn<UserData>[] = useMemo(() => [
-    {
-      key: "name",
-      header: "Usuario",
-      render: (u) => <span className="font-medium text-sm">{u.name ?? "—"}</span>,
-    },
-    {
-      key: "email",
-      header: "Email",
-      render: (u) => <span className="text-xs font-mono">{u.email}</span>,
-      hideBelow: "sm",
-    },
-    {
-      key: "role",
-      header: "Rol",
-      render: (u) => (
-        <Badge tone={u.role === "admin" ? "warning" : u.role === "ejecutivo" ? "info" : "neutral"} size="sm">
-          {u.role === "admin" ? "Admin" : u.role === "ejecutivo" ? "Ejecutivo" : "Usuario"}
-        </Badge>
-      ),
-    },
-    {
-      key: "waAccounts",
-      header: "Cuentas",
-      render: (u) => <span className="text-xs">{u.waAccounts.length}</span>,
-      hideBelow: "md",
-    },
-    {
-      key: "createdAt",
-      header: "Registro",
-      render: (u) => (
-        <span className="text-xs text-muted-darker">
-          {new Date(u.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}
-        </span>
-      ),
-      hideBelow: "md",
-    },
-    {
-      key: "actions",
-      header: "",
-      headerClassName: "text-right",
-      cellClassName: "text-right",
-      render: (u) => (
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={nextRoleIcon(u.role)}
-          onClick={() => toggleRole(u.id, u.role)}
-          disabled={togglingId === u.id}
-          className={u.role === "admin" ? "text-warning" : "text-muted-darker"}
-        >
-          {togglingId === u.id ? <Spinner /> : `Hacer ${nextRoleLabel(u.role)}`}
-        </Button>
-      ),
-    },
-  ], [togglingId, toggleRole]);
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -148,24 +90,47 @@ export default function UsersPage() {
         }
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Todos los usuarios ({users.length})</CardTitle>
-        </CardHeader>
-        <CardBody>
-          <Table
-            columns={columns}
-            rows={users}
-            rowKey={(u) => u.id}
-            loading={loading}
-            error={fetchError}
-            onRetry={fetchUsers}
-            emptyIcon={Users}
-            emptyTitle="Sin usuarios"
-            emptyDescription="No hay usuarios registrados en el sistema."
-          />
-        </CardBody>
-      </Card>
+      <p className="text-sm text-muted-darker">Todos los usuarios ({users.length})</p>
+
+      <TileGrid
+        rows={users}
+        rowKey={(u) => u.id}
+        loading={loading}
+        error={fetchError}
+        onRetry={fetchUsers}
+        columns="3"
+        emptyIcon={Users}
+        emptyTitle="Sin usuarios"
+        emptyDescription="No hay usuarios registrados en el sistema."
+        renderTile={(u) => (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium text-sm truncate">{u.name ?? "—"}</span>
+              <Badge tone={u.role === "admin" ? "warning" : u.role === "ejecutivo" ? "info" : "neutral"} size="sm">
+                {u.role === "admin" ? "Admin" : u.role === "ejecutivo" ? "Ejecutivo" : "Usuario"}
+              </Badge>
+            </div>
+            <p className="text-xs font-mono text-muted-darker truncate">{u.email}</p>
+            <div className="flex items-center gap-2 text-xs text-muted-darker">
+              <span>{u.waAccounts.length} cuenta(s)</span>
+              <span>·</span>
+              <span>{new Date(u.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}</span>
+            </div>
+            <div className="pt-2 border-t border-border">
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={nextRoleIcon(u.role)}
+                onClick={() => toggleRole(u.id, u.role)}
+                disabled={togglingId === u.id}
+                className={u.role === "admin" ? "text-warning w-full justify-center" : "text-muted-darker w-full justify-center"}
+              >
+                {togglingId === u.id ? <Spinner /> : `Hacer ${nextRoleLabel(u.role)}`}
+              </Button>
+            </div>
+          </div>
+        )}
+      />
 
       <UserFormModal
         open={showCreate}

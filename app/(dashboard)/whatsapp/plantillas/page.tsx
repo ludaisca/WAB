@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Plus, RefreshCw, MessageSquareText } from "lucide-react";
 import { Card, CardBody } from "@/app/components/ui/card";
@@ -10,7 +10,7 @@ import { Badge } from "@/app/components/ui/badge";
 import { Spinner } from "@/app/components/ui/spinner";
 import { EmptyState } from "@/app/components/ui/empty-state";
 import { PageHeader } from "@/app/components/ui/page-header";
-import { Table, type TableColumn } from "@/app/components/ui/table";
+import { TileGrid } from "@/app/components/ui/tile-grid";
 import { useToast } from "@/app/components/ui/toast";
 import { TemplateFormModal } from "./_form";
 
@@ -111,30 +111,6 @@ function TemplatesContent() {
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
   const missingWabaId = selectedAccount && !selectedAccount.wabaId;
 
-  const columns: TableColumn<Template>[] = useMemo(() => [
-    { key: "name", header: "Nombre", render: (t) => <span className="font-medium">{t.name}</span> },
-    { key: "language", header: "Idioma", render: (t) => <span className="text-xs">{t.language}</span>, hideBelow: "sm" },
-    { key: "category", header: "Categoría", render: (t) => <span className="text-xs">{t.category}</span>, hideBelow: "md" },
-    {
-      key: "status",
-      header: "Estado",
-      render: (t) => {
-        const badge = STATUS_BADGE[t.status] ?? { label: t.status, tone: "neutral" as const };
-        return <Badge tone={badge.tone} size="sm">{badge.label}</Badge>;
-      },
-    },
-    {
-      key: "syncedAt",
-      header: "Sincronizada",
-      render: (t) => (
-        <span className="text-xs text-muted-darker">
-          {new Date(t.syncedAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
-        </span>
-      ),
-      hideBelow: "md",
-    },
-  ], []);
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -192,21 +168,36 @@ function TemplatesContent() {
           </CardBody>
         </Card>
       ) : (
-        <Card>
-          <CardBody>
-            <Table
-              columns={columns}
-              rows={templates}
-              rowKey={(t) => t.id}
-              loading={loading}
-              error={fetchError}
-              onRetry={fetchTemplates}
-              emptyIcon={MessageSquareText}
-              emptyTitle="Sin plantillas"
-              emptyDescription="No hay plantillas en esta cuenta. Sincroniza desde Meta o crea una nueva."
-            />
-          </CardBody>
-        </Card>
+        <TileGrid
+          rows={templates}
+          rowKey={(t) => t.id}
+          loading={loading}
+          error={fetchError}
+          onRetry={fetchTemplates}
+          columns="3"
+          emptyIcon={MessageSquareText}
+          emptyTitle="Sin plantillas"
+          emptyDescription="No hay plantillas en esta cuenta. Sincroniza desde Meta o crea una nueva."
+          renderTile={(t) => {
+            const badge = STATUS_BADGE[t.status] ?? { label: t.status, tone: "neutral" as const };
+            return (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-sm truncate">{t.name}</span>
+                  <Badge tone={badge.tone} size="sm">{badge.label}</Badge>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs text-muted-darker">
+                  <span>{t.language}</span>
+                  <span>·</span>
+                  <span>{t.category}</span>
+                </div>
+                <p className="text-xs text-muted-darker">
+                  Sincronizada: {new Date(t.syncedAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                </p>
+              </div>
+            );
+          }}
+        />
       )}
 
       <TemplateFormModal
