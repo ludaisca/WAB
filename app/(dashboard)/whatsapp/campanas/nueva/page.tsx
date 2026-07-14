@@ -16,7 +16,7 @@ import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
 import { getTemplateVariables } from "@/lib/whatsapp/template-variables";
 import { parseCsv, type ParsedCsvRow } from "@/lib/whatsapp/parse-csv";
-import { TemplatePreview } from "../_template-preview";
+import { TemplatePreview } from "@/app/components/whatsapp/template-preview";
 
 interface Account { id: string; name: string; channel: string; }
 interface Template { id: string; name: string; language: string; category: string; status: string; components: unknown; }

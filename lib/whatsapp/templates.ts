@@ -38,7 +38,7 @@ function buildPayload(input: TemplateCreateInput): MetaTemplatePayload {
       components.push({
         type: "HEADER",
         format: h.format,
-        example: { header_handle: [h.exampleUrl ?? ""] },
+        example: { header_handle: [h.exampleHandle ?? ""] },
       });
     }
   }

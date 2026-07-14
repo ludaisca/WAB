@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
-import { Image as ImageIcon, Video, FileText, Type, Plus, X } from "lucide-react";
+import { useState, useRef, useCallback, useMemo } from "react";
+import { Type, Plus, X, Upload } from "lucide-react";
 import { Modal } from "@/app/components/ui/modal";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -13,6 +13,7 @@ import { RadioGroup } from "@/app/components/ui/radio";
 import { Banner } from "@/app/components/ui/banner";
 import { Spinner } from "@/app/components/ui/spinner";
 import { useToast } from "@/app/components/ui/toast";
+import { TemplatePreview } from "@/app/components/whatsapp/template-preview";
 
 interface Account { id: string; name: string; wabaId: string | null; }
 
@@ -39,21 +40,15 @@ const LANGUAGES = [
 
 const HEADER_TYPES = [
   { value: "TEXT", label: "Texto", description: "Título o encabezado de texto" },
-  { value: "IMAGE", label: "Imagen", description: "URL de imagen de ejemplo" },
-  { value: "VIDEO", label: "Video", description: "URL de video de ejemplo" },
-  { value: "DOCUMENT", label: "Documento", description: "URL de documento de ejemplo" },
+  { value: "IMAGE", label: "Imagen", description: "Archivo de imagen de ejemplo" },
+  { value: "VIDEO", label: "Video", description: "Archivo de video de ejemplo" },
+  { value: "DOCUMENT", label: "Documento", description: "Archivo de documento de ejemplo" },
 ];
 
 interface ButtonDef {
   type: "QUICK_REPLY" | "URL";
   text: string;
   url?: string;
-}
-
-interface HeaderDef {
-  format: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT";
-  text?: string;
-  exampleUrl?: string;
 }
 
 interface Props {
@@ -65,8 +60,9 @@ interface Props {
 }
 
 export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = "", onCreated }: Props) {
-  const { success } = useToast();
+  const { success, error: toastError } = useToast();
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const headerFileInputRef = useRef<HTMLInputElement>(null);
 
   const [waAccountId, setWaAccountId] = useState(defaultAccountId);
   const [name, setName] = useState("");
@@ -74,7 +70,10 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
   const [headerEnabled, setHeaderEnabled] = useState(false);
   const [headerFormat, setHeaderFormat] = useState<"TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT">("TEXT");
   const [headerText, setHeaderText] = useState("");
-  const [headerUrl, setHeaderUrl] = useState("");
+  const [headerExampleHandle, setHeaderExampleHandle] = useState("");
+  const [headerPreviewUrl, setHeaderPreviewUrl] = useState<string | null>(null);
+  const [headerFileName, setHeaderFileName] = useState<string | null>(null);
+  const [headerUploading, setHeaderUploading] = useState(false);
   const [body, setBody] = useState("");
   const [footer, setFooter] = useState("");
   const [buttons, setButtons] = useState<ButtonDef[]>([]);
@@ -88,12 +87,55 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
     setHeaderEnabled(false);
     setHeaderFormat("TEXT");
     setHeaderText("");
-    setHeaderUrl("");
+    setHeaderExampleHandle("");
+    if (headerPreviewUrl) URL.revokeObjectURL(headerPreviewUrl);
+    setHeaderPreviewUrl(null);
+    setHeaderFileName(null);
     setBody("");
     setFooter("");
     setButtons([]);
     setError("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resets on close, header cleanup is intentionally not a dependency
   }, [defaultAccountId]);
+
+  function handleHeaderFormatChange(format: typeof headerFormat) {
+    setHeaderFormat(format);
+    setHeaderExampleHandle("");
+    if (headerPreviewUrl) URL.revokeObjectURL(headerPreviewUrl);
+    setHeaderPreviewUrl(null);
+    setHeaderFileName(null);
+  }
+
+  async function handleHeaderFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !waAccountId) return;
+
+    if (headerFormat === "IMAGE") {
+      if (headerPreviewUrl) URL.revokeObjectURL(headerPreviewUrl);
+      setHeaderPreviewUrl(URL.createObjectURL(file));
+    }
+    setHeaderFileName(file.name);
+    setHeaderUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("waAccountId", waAccountId);
+      const res = await fetch("/api/whatsapp/templates/upload-media", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Error al subir el archivo");
+      setHeaderExampleHandle(data.handle);
+      success("Archivo de ejemplo cargado");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al subir el archivo");
+      setHeaderExampleHandle("");
+      setHeaderFileName(null);
+      if (headerPreviewUrl) URL.revokeObjectURL(headerPreviewUrl);
+      setHeaderPreviewUrl(null);
+    } finally {
+      setHeaderUploading(false);
+    }
+  }
 
   function insertVariable() {
     const textarea = bodyRef.current;
@@ -125,14 +167,35 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
     );
   }
 
+  const previewComponents = useMemo(() => {
+    const comps: unknown[] = [];
+    if (headerEnabled) {
+      comps.push(
+        headerFormat === "TEXT"
+          ? { type: "HEADER", format: "TEXT", text: headerText }
+          : { type: "HEADER", format: headerFormat }
+      );
+    }
+    comps.push({ type: "BODY", text: body });
+    if (footer.trim()) comps.push({ type: "FOOTER", text: footer });
+    if (buttons.length > 0) {
+      comps.push({ type: "BUTTONS", buttons: buttons.map((b) => ({ type: b.type, text: b.text, url: b.url })) });
+    }
+    return comps;
+  }, [headerEnabled, headerFormat, headerText, body, footer, buttons]);
+
   async function handleSubmit() {
     setError("");
 
     if (!name.trim()) { setError("El nombre es requerido"); return; }
     if (!body.trim()) { setError("El cuerpo es requerido"); return; }
+    if (headerEnabled && headerFormat !== "TEXT" && !headerExampleHandle) {
+      setError(`Sube un archivo de ${headerFormat.toLowerCase()} de ejemplo para la cabecera`);
+      return;
+    }
 
     const components: {
-      header?: HeaderDef;
+      header?: { format: string; text?: string; exampleHandle?: string };
       body: string;
       footer?: string;
       buttons?: ButtonDef[];
@@ -146,7 +209,7 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
       components.header = {
         format: headerFormat,
         text: headerFormat === "TEXT" ? headerText : undefined,
-        exampleUrl: headerFormat !== "TEXT" ? headerUrl : undefined,
+        exampleHandle: headerFormat !== "TEXT" ? headerExampleHandle : undefined,
       };
     }
 
@@ -178,8 +241,6 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
       setSaving(false);
     }
   }
-
-  const hasUrlButton = buttons.some((b) => b.type === "URL" && b.url);
 
   return (
     <Modal
@@ -249,7 +310,7 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
                   name="headerFormat"
                   options={HEADER_TYPES}
                   value={headerFormat}
-                  onChange={(v) => setHeaderFormat(v as typeof headerFormat)}
+                  onChange={(v) => handleHeaderFormatChange(v as typeof headerFormat)}
                 />
                 {headerFormat === "TEXT" ? (
                   <Input
@@ -258,11 +319,31 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
                     placeholder="Texto de la cabecera"
                   />
                 ) : (
-                  <Input
-                    value={headerUrl}
-                    onChange={(e) => setHeaderUrl(e.target.value)}
-                    placeholder={`URL del ${headerFormat.toLowerCase()} de ejemplo`}
-                  />
+                  <div className="space-y-2">
+                    <input
+                      ref={headerFileInputRef}
+                      type="file"
+                      accept={headerFormat === "IMAGE" ? "image/*" : headerFormat === "VIDEO" ? "video/*" : "application/pdf"}
+                      onChange={handleHeaderFile}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      icon={Upload}
+                      onClick={() => headerFileInputRef.current?.click()}
+                      disabled={!waAccountId || headerUploading}
+                    >
+                      {headerUploading ? "Subiendo..." : "Subir archivo de ejemplo"}
+                    </Button>
+                    {headerFileName && !headerUploading && (
+                      <p className="text-xs text-muted-darker">{headerFileName} — cargado</p>
+                    )}
+                    {!waAccountId && (
+                      <p className="text-xs text-muted-darker">Selecciona primero una cuenta</p>
+                    )}
+                  </div>
                 )}
               </>
             )}
@@ -368,74 +449,7 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
         {/* PREVIEW */}
         <div className="lg:w-72 shrink-0">
           <p className="text-xs font-semibold text-muted-darker uppercase tracking-wider mb-3">Vista previa</p>
-          <div className="bg-[#e5ddd5] dark:bg-[#1a1a1a] rounded-xl overflow-hidden border border-border">
-            {/* Header bar */}
-            <div className="bg-[#075e54] dark:bg-[#054d44] px-3 py-2.5 flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-white text-[10px] font-bold">
-                {name ? name.charAt(0).toUpperCase() : "?"}
-              </div>
-              <p className="text-white text-xs font-medium truncate">{name || "Plantilla"}</p>
-            </div>
-
-            {/* Message bubble */}
-            <div className="p-3 flex justify-start">
-              <div className="max-w-[90%] bg-white dark:bg-[#2a2a2a] rounded-lg rounded-tl-sm shadow-sm overflow-hidden">
-                {/* Header media preview */}
-                {headerEnabled && (
-                  <div className="bg-surface-light dark:bg-[#333] flex items-center justify-center text-muted-darker" style={{ height: headerFormat === "TEXT" ? "auto" : 80 }}>
-                    {headerFormat === "TEXT" ? (
-                      <p className="text-xs font-semibold text-[#075e54] dark:text-[#25D366] px-3 py-2">
-                        {headerText || "(cabecera de texto)"}
-                      </p>
-                    ) : (
-                      <div className="flex flex-col items-center gap-1">
-                        {headerFormat === "IMAGE" && <ImageIcon size={18} />}
-                        {headerFormat === "VIDEO" && <Video size={18} />}
-                        {headerFormat === "DOCUMENT" && <FileText size={18} />}
-                        <span className="text-[10px]">{headerFormat.toLowerCase()}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Body */}
-                <div className="px-3 py-2.5">
-                  <p className="text-xs leading-relaxed whitespace-pre-wrap">
-                    {body ? (
-                      body.replace(/\{\{(\d+)\}\}/g, (_, n) => (
-                        `<span class="inline-block bg-accent/15 text-accent rounded px-1 text-[10px] font-bold">{{${n}}}</span>`
-                      ))
-                    ) : (
-                      <span className="text-muted-darker">(cuerpo del mensaje)</span>
-                    )}
-                  </p>
-                </div>
-
-                {/* Footer */}
-                {footer && (
-                  <div className="px-3 pb-1">
-                    <p className="text-[10px] text-muted-darker">{footer}</p>
-                  </div>
-                )}
-
-                {/* Buttons */}
-                {buttons.length > 0 && (
-                  <div className="border-t border-border px-2 py-1.5 space-y-1">
-                    {buttons.map((btn, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center gap-1.5 text-[10px] text-accent font-medium py-0.5"
-                      >
-                        {btn.type === "URL" ? <span>🌐</span> : <span>💬</span>}
-                        <span className="truncate">{btn.text || `Botón ${idx + 1}`}</span>
-                        {btn.type === "URL" && hasUrlButton && <span className="text-muted-darker text-[9px]">→</span>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <TemplatePreview components={previewComponents} headerImagePreview={headerPreviewUrl} />
           <p className="text-[10px] text-muted-darker mt-2 text-center">
             La revisión de Meta puede tomar hasta 24 horas. Aparecerá como &quot;Pendiente&quot; hasta que sea aprobada.
           </p>

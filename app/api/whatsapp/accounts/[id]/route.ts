@@ -32,6 +32,7 @@ export async function GET(
         phoneNumber: true,
         phoneNumberId: true,
         wabaId: true,
+        appId: true,
         status: true,
         errorMessage: true,
         lastActivity: true,
@@ -89,10 +90,11 @@ export async function PATCH(
     }
 
     const data: Record<string, unknown> = {};
-    const { name, accessToken, verifyToken, appSecret, wabaId } = parsed.data;
+    const { name, accessToken, verifyToken, appSecret, wabaId, appId } = parsed.data;
 
     if (name) data.name = name;
     if (wabaId) data.wabaId = wabaId;
+    if (appId) data.appId = appId;
 
     if (typeof body?.autoAssignEnabled === "boolean") {
       data.autoAssignEnabled = body.autoAssignEnabled;
@@ -131,6 +133,7 @@ export async function PATCH(
         phoneNumber: true,
         phoneNumberId: true,
         wabaId: true,
+        appId: true,
         status: true,
         errorMessage: true,
         lastActivity: true,

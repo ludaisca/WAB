@@ -65,6 +65,11 @@ model WAAccount {
   phoneNumber     String?
   phoneNumberId   String?
   wabaId          String?
+  // Meta App ID that owns accessToken — required only for the Resumable Upload
+  // API used when creating a template with a media header (distinct from wabaId,
+  // which scopes template/message sends). Different WABA accounts can belong to
+  // different Meta Apps, so this is per-account rather than a global env var.
+  appId           String?
   accessToken     String?
   verifyTokenHash String?
   appSecret       String?

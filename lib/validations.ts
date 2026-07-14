@@ -37,6 +37,7 @@ export const waAccountSchema = z.object({
   phoneNumberId: z.string().min(1, "El Phone Number ID es requerido").regex(/^\d+$/, "Debe ser un ID numérico"),
   accessToken: z.string().min(1, "El token de acceso es requerido"),
   wabaId: z.string().regex(/^\d+$/, "Debe ser un ID numérico").optional().or(z.literal("")),
+  appId: z.string().regex(/^\d+$/, "Debe ser un ID numérico").optional().or(z.literal("")),
   verifyToken: z.string().min(6, "El verify token debe tener al menos 6 caracteres").optional().or(z.literal("")),
   appSecret: z.string().optional().or(z.literal("")),
 });
@@ -47,6 +48,7 @@ export const waAccountUpdateSchema = z.object({
   verifyToken: z.string().min(6).optional(),
   appSecret: z.string().optional(),
   wabaId: z.string().optional(),
+  appId: z.string().optional(),
 });
 
 export const sendMessageSchema = z.object({
@@ -126,7 +128,9 @@ export const templateCreateSchema = z.object({
     header: z.object({
       format: headerFormatEnum,
       text: z.string().optional(),
-      exampleUrl: z.string().url("URL inválida").optional(),
+      // A Resumable Upload API handle (lib/whatsapp/resumable-upload.ts), not a URL —
+      // Meta requires binary media uploaded through that flow for template creation.
+      exampleHandle: z.string().optional(),
     }).optional(),
     body: z.string().min(1, "El cuerpo es requerido").max(1024, "El cuerpo es demasiado largo"),
     footer: z.string().max(60, "Máximo 60 caracteres").optional(),

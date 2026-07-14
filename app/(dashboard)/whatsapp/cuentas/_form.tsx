@@ -23,6 +23,7 @@ export function CuentaFormModal({ open, onClose, onCreated }: Props) {
   const [phoneNumberId, setPhoneNumberId] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [wabaId, setWabaId] = useState("");
+  const [appId, setAppId] = useState("");
   const [appSecret, setAppSecret] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -35,6 +36,7 @@ export function CuentaFormModal({ open, onClose, onCreated }: Props) {
     setPhoneNumberId("");
     setAccessToken("");
     setWabaId("");
+    setAppId("");
     setAppSecret("");
     setErrors({});
     setApiError("");
@@ -62,6 +64,7 @@ export function CuentaFormModal({ open, onClose, onCreated }: Props) {
     else if (!/^\d+$/.test(phoneNumberId.trim())) newErrors.phoneNumberId = "Debe ser un ID numérico";
     if (!accessToken.trim()) newErrors.accessToken = "El token de acceso es requerido";
     if (wabaId.trim() && !/^\d+$/.test(wabaId.trim())) newErrors.wabaId = "Debe ser un ID numérico";
+    if (appId.trim() && !/^\d+$/.test(appId.trim())) newErrors.appId = "Debe ser un ID numérico";
 
     setErrors(newErrors);
     if (Object.keys(newErrors).length > 0) return;
@@ -76,6 +79,7 @@ export function CuentaFormModal({ open, onClose, onCreated }: Props) {
           phoneNumberId: phoneNumberId.trim(),
           accessToken: accessToken.trim(),
           wabaId: wabaId.trim() || undefined,
+          appId: appId.trim() || undefined,
           appSecret: appSecret.trim() || undefined,
         }),
       });
@@ -197,6 +201,12 @@ export function CuentaFormModal({ open, onClose, onCreated }: Props) {
         <FormField label="WABA ID" error={errors.wabaId} hint="Opcional — ID de la cuenta de WhatsApp Business (ej: 987654321098765)">
           {(id) => (
             <Input id={id} value={wabaId} onChange={(e) => setWabaId(e.target.value)} placeholder="987654321098765" error={errors.wabaId} />
+          )}
+        </FormField>
+
+        <FormField label="App ID (opcional)" error={errors.appId} hint="ID de la App de Meta que emitió el token — requerido para subir imágenes al crear plantillas">
+          {(id) => (
+            <Input id={id} value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="123456789012345" error={errors.appId} />
           )}
         </FormField>
 

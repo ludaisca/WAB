@@ -21,7 +21,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
-    const { name, phoneNumberId, accessToken, wabaId, verifyToken, appSecret } =
+    const { name, phoneNumberId, accessToken, wabaId, appId, verifyToken, appSecret } =
       parsed.data;
 
     const validateResult = await validateToken(phoneNumberId, accessToken);
@@ -39,6 +39,7 @@ export async function POST(req: Request) {
         verifyTokenHash: verifyHash,
         phoneNumber: validateResult.displayPhoneNumber,
         wabaId: wabaId || validateResult.id,
+        appId: appId || null,
         appSecret: appSecret ? encrypt(appSecret) : null,
         status: "CONNECTED",
         lastActivity: new Date(),

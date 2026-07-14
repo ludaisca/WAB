@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Copy, Check, Trash2, RefreshCw, MessageCircle, FileText } from "lucide-react";
+import { ArrowLeft, Copy, Check, Trash2, RefreshCw, MessageCircle, FileText, Pencil } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
+import { Input } from "@/app/components/ui/input";
 import { Spinner } from "@/app/components/ui/spinner";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { Banner } from "@/app/components/ui/banner";
@@ -19,6 +20,7 @@ interface AccountDetail {
   phoneNumber: string | null;
   phoneNumberId: string;
   wabaId: string | null;
+  appId: string | null;
   status: string;
   errorMessage: string | null;
   lastActivity: string | null;
@@ -48,6 +50,9 @@ export default function CuentaDetailPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [editingAppId, setEditingAppId] = useState(false);
+  const [appIdDraft, setAppIdDraft] = useState("");
+  const [savingAppId, setSavingAppId] = useState(false);
 
   const fetchAccount = useCallback(async () => {
     setLoading(true);
@@ -93,6 +98,35 @@ export default function CuentaDetailPage() {
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  function startEditAppId() {
+    setAppIdDraft(account?.appId ?? "");
+    setEditingAppId(true);
+  }
+
+  async function handleSaveAppId() {
+    if (appIdDraft.trim() && !/^\d+$/.test(appIdDraft.trim())) {
+      toastError("El App ID debe ser un ID numérico");
+      return;
+    }
+    setSavingAppId(true);
+    try {
+      const res = await fetch(`/api/whatsapp/accounts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appId: appIdDraft.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Error al guardar");
+      setAccount((prev) => prev && { ...prev, appId: data.appId });
+      setEditingAppId(false);
+      success("App ID actualizado");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al guardar el App ID");
+    } finally {
+      setSavingAppId(false);
+    }
   }
 
   async function handleToggleAutoAssign(enabled: boolean) {
@@ -170,6 +204,32 @@ export default function CuentaDetailPage() {
             <div className="flex justify-between border-b border-border pb-3">
               <dt className="text-sm text-muted-darker">WABA ID</dt>
               <dd className="text-sm font-mono">{account.wabaId ?? "—"}</dd>
+            </div>
+            <div className="flex justify-between items-center border-b border-border pb-3 gap-3">
+              <dt className="text-sm text-muted-darker shrink-0">App ID</dt>
+              {editingAppId ? (
+                <div className="flex items-center gap-2 flex-1 justify-end">
+                  <Input
+                    value={appIdDraft}
+                    onChange={(e) => setAppIdDraft(e.target.value)}
+                    placeholder="123456789012345"
+                    className="text-sm font-mono max-w-[200px]"
+                  />
+                  <Button size="sm" onClick={handleSaveAppId} disabled={savingAppId}>
+                    {savingAppId ? <Spinner /> : "Guardar"}
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => setEditingAppId(false)}>
+                    Cancelar
+                  </Button>
+                </div>
+              ) : (
+                <dd className="text-sm font-mono flex items-center gap-2">
+                  {account.appId ?? "—"}
+                  <button onClick={startEditAppId} className="text-muted-darker hover:text-foreground transition-colors" aria-label="Editar App ID">
+                    <Pencil size={13} />
+                  </button>
+                </dd>
+              )}
             </div>
             <div className="flex justify-between border-b border-border pb-3">
               <dt className="text-sm text-muted-darker">Chats activos</dt>
