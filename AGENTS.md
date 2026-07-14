@@ -6,8 +6,7 @@
 - **Prisma 5** (PostgreSQL + pgvector)
 - **Redis 7** + **BullMQ** (job queues for async processing)
 - React 19, lucide-react, zod, bcryptjs, next-themes, openai, @google/generative-ai, ioredis
-- `@whiskeysockets/baileys` (WhatsApp Web protocol, dev/testing channel — see "WhatsApp channels" below), `qrcode`
-- WhatsApp **multimodal** (image/audio/video/document/sticker) inbound on both channels + outbound on Meta — see "Media handling" below
+- WhatsApp **multimodal** (image/audio/video/document/sticker) inbound + outbound on Meta Cloud API — see "Media handling" below
 
 ## Development
 
@@ -65,7 +64,7 @@ RSC pages should have a sibling `loading.tsx` with skeleton placeholders — Nex
 ## Database
 
 ### Schema
-`prisma/schema.prisma` — 24 models. Key relationships: `User → WAAccount[]`, `User → AppSettings (1:1)`, `WABot ↔ WABotKnowledge (M:N via WABotKnowledgeBot)`, `WAAccount → WAAccountShare[] → User`, `WAChat → Contact (1:1)`, `Contact ↔ Tag (M:N via ContactTag)`, `WAAccount → WABaileysSession` (1:1, only for `channel: BAILEYS`). `WAMessage` carries all media metadata: `messageType` (`text`/`image`/`audio`/`video`/`document`/`sticker`), `caption`, `mediaId` (Meta id), `mediaUrl` (relative path under `MEDIA_ROOT`), `mimeType`, `filename`, `width`/`height`/`duration`/`bytesSize`. `body` is reused for both text and caption-derived text; `caption` is the dedicated caption field.
+`prisma/schema.prisma` — 25 models. Key relationships: `User → WAAccount[]`, `User → AppSettings (1:1)`, `WABot ↔ WABotKnowledge (M:N via WABotKnowledgeBot)`, `WAAccount → WAAccountShare[] → User`, `WAChat → Contact (1:1)`, `Contact ↔ Tag (M:N via ContactTag)`, `User → WALeadScorerBot[]`, `WAChat → WALeadScore[] ← WALeadScorerBot` (one score per `(chatId, scorerId)` pair, see "Lead scoring" below). `WAMessage` carries all media metadata: `messageType` (`text`/`image`/`audio`/`video`/`document`/`sticker`), `caption`, `mediaId` (Meta id), `mediaUrl` (relative path under `MEDIA_ROOT`), `mimeType`, `filename`, `width`/`height`/`duration`/`bytesSize`. `body` is reused for both text and caption-derived text; `caption` is the dedicated caption field.
 
 ### Commands
 ```bash
@@ -87,15 +86,17 @@ Uses `prisma.$transaction()` for atomic `count() + create()` — prevents race c
 
 ## Redis + BullMQ
 
-4 queues, auto-started via `instrumentation.ts`:
+5 queues, auto-started via `instrumentation.ts`:
 
 | Queue | Concurrency | Timeout | Trigger |
 |---|---|---|---|
-| `bot-messages` | 3 | 60s | `ingestInboundMessage()` detects active bot → enqueues (both Meta webhook and Baileys) |
+| `bot-messages` | 3 | 60s | `ingestInboundMessage()` detects active bot → enqueues |
 | `campaign-send` | 1 | 60s | Admin clicks "Enviar" on campaign |
 | `rag-index` | 2 | 60s | User uploads knowledge document |
-| `media-download` | 5 | 90s, 5 attempts | `ingestInboundMessage()` with Meta `mediaId` → downloads binary bytes async (Baileys downloads inline, doesn't use this queue) |
+| `media-download` | 5 | 90s, 5 attempts | `ingestInboundMessage()` with Meta `mediaId` → downloads binary bytes async |
+| `media-cleanup` | 1 | 60s | Self-scheduled: `startWorkers()` registers a repeatable job (`repeat: {pattern: "0 3 * * *"}`, daily at 3am) on boot — not triggered by user action |
 
+- `media-cleanup-worker.ts:processMediaCleanupJob()` deletes `WAMessage.mediaUrl` files older than `MEDIA_RETENTION_DAYS` (env var, default 90) and clears the column, keeping the `media_data` volume bounded. No-ops if `MEDIA_RETENTION_DAYS <= 0`.
 - Workers live in `lib/workers/`. Queue definitions in `lib/queue.ts`.
 - `REDIS_URL` env var required.
 - `defaultJobOptions` include `attempts: 3`, `backoff: exponential`, `removeOnComplete: 100`, `removeOnFail: 50`.
@@ -118,6 +119,8 @@ Provider clients in `lib/ai/providers/`. Factory in `lib/ai/factory.ts`.
 - RAG: documents chunked → embeddings generated → stored in pgvector → searched with cosine similarity (`<=>` operator).
 - **Vision model cost**: each image in context ≈ +800-1500 tokens. Bot history is text-only (no past images forwarded); only the *current* user image becomes an `image_url` part in the `user` turn. The worker re-reads `WAMessage.mediaUrl` from DB if the Meta download job hasn't finished populating the local path yet.
 - **Vision capability check**: there's no enforced gate on per-model vision capability — if a model isn't vision-capable it will error on the multimodal turn, which the bot-worker catch sets `WABot.status: "ERROR"` (same as any other AI failure). Currently known vision-capable models: Gemini 1.5/2.0 Flash/Pro, OpenRouter `openai/gpt-4o`, `anthropic/claude-3.5-sonnet`, `google/gemini-2.0-flash-*`.
+- **Lead scorer bots** (`WALeadScorerBot`) reuse the same provider/model/API-key plumbing as `WABot` (own `provider`+`model`+`systemPrompt`, resolved via the same `getUserApiKey()`) but score a conversation on demand instead of replying to it — see "Lead scoring" under CRM below.
+- **Model list race on provider switch**: `configuracion/ia/page.tsx` and `bots/_form.tsx` both track a `modelsProvider` state alongside the fetched `models` list, and only snap the selected model to `models[0].id` once `modelsProvider` matches the currently selected `provider`. Fetching the model list is async — without this guard, switching OpenRouter→Google right after load/save could persist an OpenRouter-shaped model id under the Google provider.
 
 ### Creating templates for Meta
 `lib/whatsapp/templates.ts` — `createTemplate(wabaId, accessToken, input)` calls `POST /{waba_id}/message_templates`. Constructs the payload from Zod-validated input. API route at `app/api/whatsapp/templates/create/route.ts`.
@@ -132,16 +135,16 @@ Fields encrypted at rest: `WAAccount.accessToken`, `WAAccount.appSecret`, `AppSe
 
 `POST /api/whatsapp/webhook` handles Meta webhook. Key behaviors:
 - **Always** validates `X-Hub-Signature-256` — rejects if signature invalid regardless of `appSecret` presence. `appSecret` is required for signature validation; if missing, webhook rejects all POSTs.
-- Per-message logic (Contact upsert, chat upsert, `WAMessage` create, notification, bot enqueue, media-download enqueue) lives in `lib/whatsapp/ingest-message.ts:ingestInboundMessage()` — shared with the Baileys channel (see below). The webhook route itself just parses Meta's payload shape and calls it per message. `ingestInboundMessage()` returns `{messageId, chatId} | null` (null = deduplicated by wamid).
+- Per-message logic (Contact upsert, chat upsert, `WAMessage` create, notification, bot enqueue, media-download enqueue, auto-assignment) lives in `lib/whatsapp/ingest-message.ts:ingestInboundMessage()`. The webhook route itself just parses Meta's payload shape and calls it per message. `ingestInboundMessage()` returns `{messageId, chatId} | null` (null = deduplicated by wamid).
 - Maps all 4 Meta statuses to `WACampaignRecipient`: `sent → SENT`, `delivered → DELIVERED`, `read → READ`, `failed → FAILED`.
 - Detects groups: `remoteJid.includes("@g.us")` → `isGroup = true`.
-- For inbound media with `mediaId` and no `localMediaPath` (Meta path only — Baileys passes `localMediaPath` already), the webhook enqueues a `media-download` job (see Redis queues).
+- For inbound media with a Meta `mediaId` and no local path yet, the webhook enqueues a `media-download` job (see Redis queues).
 
 ## Media handling
 
 WhatsApp media is **binary-byte persisted locally on disk** (not just Meta URL references), so chat UI and bot vision can stream/read it without depending on Meta's short-lived (≈minutes) download URLs.
 
-- **Storage**: `lib/whatsapp/media-store.ts` — `saveMediaFromMeta(accountId, mediaId, encryptedAccessToken)` (Meta fetch), `saveMediaFromBuffer(accountId, buffer, mimeType)` (Baileys raw bytes), `mediaReadStream(relativePath)` (fs stream), `resolveAbsolutePath(relativePath)` (with `..` traversal guard), `mediaEndpointFor(messageId)` (returns the proxy URL the UI must use).
+- **Storage**: `lib/whatsapp/media-store.ts` — `saveMediaFromMeta(accountId, mediaId, encryptedAccessToken)` (Meta fetch), `saveMediaFromBuffer(accountId, buffer, mimeType)` (persists a buffer already in memory — used for outbound Meta media uploads), `mediaReadStream(relativePath)` (fs stream), `resolveAbsolutePath(relativePath)` (with `..` traversal guard), `mediaEndpointFor(messageId)` (returns the proxy URL the UI must use).
 - **Path scheme**: `mediaUrl` stored on `WAMessage` is a path *relative* to `MEDIA_ROOT` (e.g. `<accountId>/<uuid>.<ext>`). All helpers accept/return relative paths; resolve to absolute only at the boundary.
 - **Proxied serving**: `GET /api/whatsapp/messages/[messageId]/media` looks up the `WAMessage`, verifies `chat.accountId ∈ getUserAccountIds(session.user.id)`, streams bytes with `Content-Type: mimeType` and `Content-Disposition` (inline for image/audio/video, attachment for documents). Auth check is mandatory — without it any authenticated user could fetch any media by `messageId`.
 - **Outbound upload (Meta only)**: `POST /api/whatsapp/media` accepts multipart `file` + `accountId`, validates ownership + that the account is `META_CLOUD`, calls `uploadMedia(phoneNumberId, accessToken, file, name, mime)` (`lib/whatsapp.ts`, `POST /{phone_number_id}/media` Graph endpoint) which returns a Meta `mediaId`, then also persists a local copy for the outbound history. Rate-limited via `rateLimit()`. Returns `{ mediaId, mimeType, filename, localMediaPath, bytesSize }` to be passed to the send route as-is.
@@ -149,18 +152,12 @@ WhatsApp media is **binary-byte persisted locally on disk** (not just Meta URL r
 - **UI rendering**: `MessageBubble` switches on `messageType` (`image`/`audio`/`video`/`document`/`sticker`) and renders the appropriate tag pointing at `/api/whatsapp/messages/[id]/media`. While `mediaUrl` is null (async download still queued), shows a placeholder (`[imagen recibida]` etc.) — the 5s polling in the chat page picks up the populated row once the worker finishes.
 - **Bot vision input**: `lib/workers/bot-worker.ts:buildUserContent()` reads the inbound image's local bytes from disk → base64 → `ContentPart[] = [{type:"text",text:caption?}, {type:"image_url",image_url:{url:`data:${mime};base64,...`}}]`. Images in history turns are NOT forwarded (text-only) to bound token cost. `bot-worker` re-checks Prisma for `mediaUrl` if the enqueue payload's `localMediaPath` is empty (situation: bot job fired before `media-download` worker finished).
 
-## WhatsApp channels (Meta Cloud API vs. Baileys)
+## WhatsApp Business Cloud API
 
-`WAAccount.channel` (`META_CLOUD` | `BAILEYS`) distinguishes the two supported connection types.
+Single channel today — `WAAccount.channel` is an enum (`WAChannel`) kept for future extensibility but only has one value, `META_CLOUD`. The `BAILEYS` channel (unofficial WhatsApp Web protocol, used for dev/testing without a public webhook URL) was removed: `lib/whatsapp-baileys/`, its API routes, and the `WABaileysSession` model are gone. `phoneNumberId`/`accessToken`/`wabaId`/`verifyTokenHash`/`appSecret` stay nullable on `WAAccount` because they're filled in during the account setup wizard, not because of a second channel.
 
-- **`META_CLOUD`** (default, production) — official WhatsApp Cloud API. Uses `phoneNumberId`/`accessToken`/`verifyTokenHash`/`appSecret`, driven by `app/api/whatsapp/webhook/route.ts` and `lib/whatsapp.ts`.
-- **`BAILEYS`** (dev/testing only) — connects via `@whiskeysockets/baileys` (unofficial WhatsApp Web multi-device protocol) after scanning a QR, so no public webhook URL is needed. **Only use with disposable test numbers — WhatsApp can ban/limit accounts using this protocol.**
-  - `lib/whatsapp-baileys/connection-manager.ts` keeps a `Map<accountId, socket>` in memory, started from `instrumentation.ts` on boot (reconnects all `CONNECTED` Baileys accounts) and from `POST /api/whatsapp/accounts/baileys` (new pairing).
-  - Session (Signal protocol creds/keys) persists in Postgres via `WABaileysSession.authState` (`lib/whatsapp-baileys/auth-store.ts`), not the filesystem — survives container recreation without a dedicated volume.
-  - Outbound sends go through `lib/whatsapp/send.ts:sendWhatsAppMessage(account, params)`, which branches on `account.channel` — always use this wrapper, never call `lib/whatsapp.ts:sendMessage()` directly, or Baileys accounts will break.
-  - **Inbound media**: `messages.upsert` handler detects `imageMessage`/`videoMessage`/`audioMessage`/`documentMessage`/`stickerMessage` and downloads the binary inline via `downloadContentFromMessage()` (Baileys export), persists it via `saveMediaFromBuffer()`, and passes `localMediaPath` to `ingestInboundMessage()` — so Baileys media is available immediately, **without** the async `media-download` queue (Meta-only).
-  - **Not supported for Baileys accounts**: message templates and bulk campaigns (Meta-only concepts — account selectors in `campanas/nueva` and `plantillas` filter these accounts out), and outbound media (text only in v1 — `send.ts` throws `"El envío de multimedia todavía no está soportado en cuentas de WhatsApp Web (Baileys)"` for `type !== "text"`). The chat composer clip button is not yet gated to Meta accounts — if you add that gate, check `account.channel === "META_CLOUD"` before showing it.
-  - Fields `phoneNumberId`/`accessToken`/`verifyTokenHash` are nullable on `WAAccount` — any code reading them must check `account.channel === "META_CLOUD"` first (see `templates/route.ts`, `templates/create/route.ts`, `campaign-worker.ts` for the pattern).
+- Outbound sends always go through `lib/whatsapp/send.ts:sendWhatsAppMessage(account, params)` (decrypts the token, delegates to `lib/whatsapp.ts:sendMessage()`) — keep using this wrapper from routes/workers rather than calling `sendMessage()` directly, so token decryption stays in one place.
+- Template creation and bulk campaigns require `wabaId` + `accessToken` on the account (checked via `account.channel !== "META_CLOUD" || !account.wabaId || !account.accessToken` in `templates/route.ts`, `templates/create/route.ts`, `campaign-worker.ts` — the channel check is a no-op today but keeps the guard shape if a second channel ever comes back).
 
 ## CRM & team collaboration
 
@@ -168,6 +165,11 @@ WhatsApp media is **binary-byte persisted locally on disk** (not just Meta URL r
 - Chat assignment: `WAChat.assignedToId` restricted to the account owner + `WAAccountShare` grantees (`lib/chat-assignees.ts:getEligibleAssignees()`, the shared candidate pool used everywhere assignment/mentions/auto-assign need "who can touch this account"). Assigning manually triggers no side effect by itself; a `CHAT_MESSAGE` notification fires on the *next* inbound message if the chat is already assigned (or gets auto-assigned, see below).
 - `Notification` model + polling bell (`app/components/ui/notification-bell.tsx`, polls `GET /api/whatsapp/notifications` every 25s). Types: `CHAT_MESSAGE`, `CAMPAIGN_COMPLETED`, `CAMPAIGN_FAILED`, `BOT_ERROR`, `BUDGET_EXCEEDED`, `NOTE_MENTION`. No websockets in this app — polling is the established pattern for anything "live."
 - Monthly AI budget: `AppSettings.monthlyBudgetUsd` (optional) + `budgetAlertMonth` (guards against re-notifying within the same month). Checked in `bot-worker.ts` after every logged `WABotUsage` row.
+- **Campaign sends create CRM records**: a successfully delivered campaign recipient now upserts a `Contact`/`WAChat`/`WAMessage` (`direction: OUTBOUND`, `messageType: "template"`) and tags both the contact and chat with `Campaña: <campaign name>` (`lib/workers/campaign-worker.ts`) — so campaign leads show up in `/whatsapp/contactos` and the chat list, not just in `WACampaignRecipient`. A recipient that fails to send leaves no CRM trace (no phantom contact).
+
+### Lead scoring (`WALeadScorerBot` / `WALeadScore`)
+
+Distinct from the AI reply bots (`WABot`): a `WALeadScorerBot` (own `name`/`provider`/`model`/`systemPrompt`, CRUD at `/whatsapp/calificadores`) scores a *conversation transcript* on demand rather than replying to it. `POST /api/whatsapp/chats/[chatId]/score` requires a `scorerId` in the body, loads that scorer's config + the chat's messages, and asks the AI for `{score (0-100), label: "frio"|"tibio"|"caliente", summary, reasons[]}` via a fixed JSON-contract system message appended after the scorer's own system prompt. The result is upserted on `@@unique([chatId, scorerId])` — **a chat can carry one score per scorer**, not a single global score; don't assume `WALeadScore` is 1:1 with `WAChat`. `GET` on the same route returns all scores for the chat (one per scorer that has run so far). `GET /api/whatsapp/chats/[chatId]/scorers` lists the account owner's active scorers for the picker. `LeadScoreBadge` (popover in the chat header) lets the user pick a scorer, re-run it, and flip between scorers' past results.
 
 ### Conversation-level features (distinct from Contact-level)
 
@@ -203,7 +205,7 @@ Not every list uses `<Table>` — `whatsapp/bots/page.tsx` deliberately stays a 
 Standard entity CRUD lives in a `_form.tsx` file next to the list's `page.tsx`, exporting a single `<XxxFormModal open onClose onSaved initialData? />` that handles both create and edit (`initialData` present ⇒ edit). Structure: `<Modal size="md|lg|xl" footer={Cancelar/Guardar}>` + `{error && <Banner tone="danger">}` + `<FormField>` blocks. See `whatsapp/plantillas/_form.tsx` as the reference implementation.
 
 Exceptions that stay as a dedicated page instead of a modal:
-- Async state that must survive an accidental close (`whatsapp/cuentas/nueva` — Baileys QR pairing polls `/api/whatsapp/accounts/baileys/[id]/status` every 2s with a capped retry count).
+- `whatsapp/cuentas/nueva` stays a dedicated page rather than a modal for historical reasons (originally justified by Baileys QR-pairing async state); it's now a plain Meta Cloud API credentials form, so it's a reasonable candidate to migrate to the standard modal pattern next time it's touched.
 - Unbounded dynamic content (`whatsapp/campanas/nueva` — recipient list can grow to hundreds of rows via CSV import; doesn't fit a modal's `max-h-[90vh]`).
 
 ## Auth
@@ -231,7 +233,9 @@ Exceptions that stay as a dedicated page instead of a modal:
 - **Startup script** — uses `migrate deploy` when `prisma/migrations/` exists, falls back to `db push`. This repo currently has **no** `prisma/migrations/` directory — always use `npx prisma db push`, not `migrate dev`, for schema changes.
 - **Dev container needs a restart after `prisma db push`** — the running `npm run dev` process keeps the pre-regeneration Prisma Client in memory; `npx prisma generate` writes new files to `node_modules` but the live process won't pick them up without `docker compose restart app` (or a full `down -v && up --build`). Queries against newly-added models/fields will 500 until restarted.
 - **`WABot.status` vs `isActive`** — two separate gates. `ingestInboundMessage()`'s bot lookup requires *both* `isActive: true` and `status: "ACTIVE"`. Any unhandled error in `processBotMessageJob()` sets `status: "ERROR"` (and notifies) — toggling `isActive` back on via `POST /api/whatsapp/bots/[id]/toggle` is what resets `status` back to `"ACTIVE"`; the bot won't recover just by looking "Active" in a stale UI state. The `/test` endpoint bypasses both fields entirely, so it can succeed while the real message pipeline stays silently dead.
-- **Baileys build gotcha** — `@whiskeysockets/baileys` must stay in `next.config.ts`'s `serverExternalPackages`, or Turbopack fails the production build trying to statically resolve its optional `jimp`/`sharp` dynamic imports (which are wrapped in a runtime try/catch and never actually required unless media thumbnailing is used).
+- **`WABot.waAccountId` is nullable** — a bot can be created and exercised via its `/test` ("Probar") tab without a WhatsApp account attached; it just never gets picked up by the real inbound pipeline (which filters by account) until one is assigned.
+- **`WALeadScore` is keyed by `(chatId, scorerId)`, not just `chatId`** — a chat can carry scores from multiple `WALeadScorerBot`s at once; `findUnique({where:{chatId}})` no longer works, use the composite key.
+- **`MEDIA_RETENTION_DAYS`** (default 90) drives the daily `media-cleanup` queue job that deletes old `WAMessage` media files — set to `0` (or leave unset with a non-positive value) to disable purging.
 - **pgvector IVFFlat index** — see "pgvector" under Database; don't re-add the `CREATE INDEX` to `docker/init.sql`, it will silently no-op there.
 - **Never put `<Button>` inside `<Link>`** — renders invalid HTML (`<button>` inside `<a>`). Instead: `<Button onClick={() => router.push("/path")}>` or use a plain `<a>` styled as a button.
 - **`/api/whatsapp/chats` has two response shapes** — a flat array (legacy, when called with no `page` query param — still used by `dashboard/page.tsx` and `whatsapp/page.tsx`) vs. `{items, total, page, pageSize}` (when `page` is present — used by `whatsapp/chat/page.tsx`'s "cargar más"). Check which shape a new consumer needs before adding a call.
