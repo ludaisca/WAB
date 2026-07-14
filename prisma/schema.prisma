@@ -226,6 +226,8 @@ model WAMessage {
   status      String?
   senderId    String?
   sender      User?            @relation(fields: [senderId], references: [id], onDelete: SetNull)
+  campaignId  String?
+  campaign    WACampaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   timestamp   DateTime
   createdAt   DateTime         @default(now()) @map("created_at")
 
@@ -286,6 +288,7 @@ model WACampaign {
   updatedAt       DateTime             @updatedAt @map("updated_at")
 
   recipients WACampaignRecipient[]
+  messages   WAMessage[]
 
   @@index([userId])
   @@index([waAccountId])
@@ -342,6 +345,7 @@ model WABot {
   memoryType   BotMemoryType @default(RECENT)
   memoryLimit  Int           @default(20)
   ragEnabled   Boolean       @default(false)
+  humanizeEnabled Boolean    @default(false)
   isActive     Boolean       @default(false)
   status       BotStatus     @default(ACTIVE)
   createdAt    DateTime      @default(now()) @map("created_at")

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/crypto";
-import { getTemplateVariables } from "@/lib/whatsapp/template-variables";
+import { getTemplateVariables, renderTemplateText } from "@/lib/whatsapp/template-variables";
 
 interface CampaignJob {
   campaignId: string;
@@ -150,9 +150,13 @@ export async function processCampaignJob(job: CampaignJob) {
         // phantom contact behind.
         const remoteJid = recipient.phoneNumber;
         const contactName = recipient.contactName ?? recipient.phoneNumber;
-        const messageBody = recipient.parameters
-          ? `Plantilla: ${templateName} — ${Object.values(recipient.parameters as Record<string, string>).join(", ")}`
-          : `Plantilla: ${templateName}`;
+        const bodyParams = recipient.parameters
+          ? Object.values(recipient.parameters as Record<string, string>)
+          : [];
+        const messageBody = renderTemplateText(campaign.waTemplate.components, {
+          bodyParams,
+          headerParam: campaign.headerParam,
+        }) || `Plantilla: ${templateName}`;
 
         const contact = await prisma.contact.upsert({
           where: { accountId_remoteJid: { accountId: campaign.waAccountId, remoteJid } },
@@ -185,6 +189,7 @@ export async function processCampaignJob(job: CampaignJob) {
             body: messageBody,
             status: "sent",
             timestamp: sentAt,
+            campaignId: campaign.id,
           },
         });
 

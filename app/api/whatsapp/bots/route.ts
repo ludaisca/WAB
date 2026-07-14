@@ -31,6 +31,7 @@ export async function POST(req: Request) {
       memoryType,
       memoryLimit,
       ragEnabled,
+      humanizeEnabled,
     } = parsed.data;
 
     if (waAccountId) {
@@ -62,6 +63,7 @@ export async function POST(req: Request) {
         memoryType: memoryType ?? "RECENT",
         memoryLimit: memoryLimit ?? 20,
         ragEnabled: ragEnabled ?? false,
+        humanizeEnabled: humanizeEnabled ?? false,
       },
       select: {
         id: true,
@@ -74,6 +76,7 @@ export async function POST(req: Request) {
         memoryType: true,
         memoryLimit: true,
         ragEnabled: true,
+        humanizeEnabled: true,
         isActive: true,
         status: true,
         waAccountId: true,
@@ -115,6 +118,7 @@ export async function GET(req: Request) {
         memoryType: true,
         memoryLimit: true,
         ragEnabled: true,
+        humanizeEnabled: true,
         isActive: true,
         status: true,
         waAccountId: true,

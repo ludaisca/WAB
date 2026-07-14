@@ -29,6 +29,34 @@ function hasVariable(text?: string): boolean {
   return !!text && /\{\{\s*\d+\s*\}\}/.test(text);
 }
 
+interface RenderTemplateTextInput {
+  bodyParams?: string[];
+  headerParam?: string | null;
+}
+
+// Renders the actual text a recipient would read for a template send — substitutes
+// {{n}} placeholders positionally, same convention as campaign-worker.ts's
+// Object.values(recipient.parameters). Used to store the real message text on
+// WAMessage.body instead of a cryptic "Plantilla: X — a, b" placeholder.
+export function renderTemplateText(components: unknown, { bodyParams = [], headerParam }: RenderTemplateTextInput): string {
+  const list = Array.isArray(components) ? (components as MetaTemplateComponent[]) : [];
+  const header = list.find((c) => c.type === "HEADER");
+  const body = list.find((c) => c.type === "BODY");
+
+  const substitute = (text: string, params: string[]) =>
+    text.replace(/\{\{\s*(\d+)\s*\}\}/g, (_match, n) => params[Number(n) - 1] ?? `{{${n}}}`);
+
+  const parts: string[] = [];
+  if (header?.format === "TEXT" && header.text) {
+    parts.push(substitute(header.text, headerParam ? [headerParam] : []));
+  }
+  if (body?.text) {
+    parts.push(substitute(body.text, bodyParams));
+  }
+
+  return parts.join("\n\n").trim();
+}
+
 export function getTemplateVariables(components: unknown): TemplateVariables {
   const list = Array.isArray(components) ? (components as MetaTemplateComponent[]) : [];
 

@@ -28,3 +28,4 @@ export const mediaDownloadQueue = new Queue("media-download", {
   defaultJobOptions: mediaDownloadJobOptions,
 });
 export const mediaCleanupQueue = new Queue("media-cleanup", { connection, defaultJobOptions });
+export const botSendQueue = new Queue("bot-message-send", { connection, defaultJobOptions });

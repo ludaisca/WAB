@@ -5,7 +5,10 @@ import { getAIProvider } from "@/lib/ai/factory";
 import { searchKnowledge } from "@/lib/ai/rag";
 import { getUserApiKey } from "@/lib/ai/settings";
 import { estimateCost } from "@/lib/ai/pricing";
+import { wrapUserPrompt } from "@/lib/ai/prompt-sanitizer";
 import { resolveAbsolutePath } from "@/lib/whatsapp/media-store";
+import { splitReply, computeTypingDelay } from "@/lib/whatsapp/humanize";
+import { botSendQueue } from "@/lib/queue";
 import type { AIProvider, AIMessage, ContentPart } from "@/lib/ai/types";
 
 interface BotMessageJob {
@@ -83,7 +86,7 @@ async function handleBotMessage(job: BotMessageJob) {
   }
 
   const messages: AIMessage[] = [];
-  messages.push({ role: "system", content: bot.systemPrompt });
+  messages.push({ role: "system", content: wrapUserPrompt(bot.systemPrompt) });
 
   if (bot.ragEnabled) {
     const ragQuery =
@@ -95,6 +98,23 @@ async function handleBotMessage(job: BotMessageJob) {
         content: `Información relevante de la base de conocimiento:\n\n${knowledge}`,
       });
     }
+  }
+
+  // Regardless of memoryType, if the most recent outbound message in this chat came
+  // from a campaign send, tell the bot what the customer is replying to — otherwise
+  // it replies "blind" to a lead who just received a specific marketing offer.
+  const lastOutbound = await prisma.wAMessage.findFirst({
+    where: { chatId: waChatId, direction: "OUTBOUND" },
+    orderBy: { timestamp: "desc" },
+    select: {
+      campaign: { select: { name: true, waTemplate: { select: { name: true } } } },
+    },
+  });
+  if (lastOutbound?.campaign) {
+    messages.push({
+      role: "system",
+      content: `Esta conversación inició a partir de la campaña "${lastOutbound.campaign.name}" usando la plantilla "${lastOutbound.campaign.waTemplate.name}". Ten esto en cuenta al responder.`,
+    });
   }
 
   if (bot.memoryType === "RECENT" && bot.memoryLimit > 0) {
@@ -158,34 +178,52 @@ async function handleBotMessage(job: BotMessageJob) {
 
   if (!chat) return;
 
-  const sendResult = await sendWhatsAppMessage(bot.waAccount, {
-    to: chat.remoteJid,
-    type: "text",
-    body: result.content,
-  });
-
-  const wamid = sendResult.wamid ?? undefined;
   const now = new Date();
 
+  if (bot.humanizeEnabled) {
+    // Split the reply across several messages with a simulated typing delay between
+    // each, queued as separate delayed jobs so this job returns immediately instead
+    // of holding a bot-messages concurrency slot for the whole send sequence.
+    const chunks = splitReply(result.content);
+    let cumulativeDelay = 0;
+    for (const chunk of chunks) {
+      cumulativeDelay += computeTypingDelay(chunk);
+      await botSendQueue.add(
+        "send-chunk",
+        { accountId: bot.waAccount.id, waChatId, remoteJid: chat.remoteJid, chunk },
+        { delay: cumulativeDelay }
+      );
+    }
+  } else {
+    const sendResult = await sendWhatsAppMessage(bot.waAccount, {
+      to: chat.remoteJid,
+      type: "text",
+      body: result.content,
+    });
+
+    await Promise.all([
+      prisma.wAMessage.create({
+        data: {
+          wamid: sendResult.wamid ?? undefined,
+          chatId: waChatId,
+          direction: "OUTBOUND",
+          messageType: "text",
+          body: result.content,
+          status: "sent",
+          timestamp: now,
+        },
+      }),
+      prisma.wAChat.update({
+        where: { id: waChatId },
+        data: {
+          lastMessage: result.content.slice(0, 500),
+          lastMessageAt: now,
+        },
+      }),
+    ]);
+  }
+
   await Promise.all([
-    prisma.wAMessage.create({
-      data: {
-        wamid,
-        chatId: waChatId,
-        direction: "OUTBOUND",
-        messageType: "text",
-        body: result.content,
-        status: "sent",
-        timestamp: now,
-      },
-    }),
-    prisma.wAChat.update({
-      where: { id: waChatId },
-      data: {
-        lastMessage: result.content.slice(0, 500),
-        lastMessageAt: now,
-      },
-    }),
     prisma.wABotConversation.update({
       where: { id: conversation.id },
       data: {

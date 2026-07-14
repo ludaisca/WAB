@@ -49,6 +49,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
   const [memoryType, setMemoryType] = useState("RECENT");
   const [memoryLimit, setMemoryLimit] = useState("20");
   const [ragEnabled, setRagEnabled] = useState(false);
+  const [humanizeEnabled, setHumanizeEnabled] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -69,6 +70,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
     setMemoryType("RECENT");
     setMemoryLimit("20");
     setRagEnabled(false);
+    setHumanizeEnabled(false);
     setErrors({});
     setError("");
   }, []);
@@ -136,6 +138,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
           setMemoryType(d.memoryType);
           setMemoryLimit(String(d.memoryLimit ?? 20));
           setRagEnabled(d.ragEnabled);
+          setHumanizeEnabled(d.humanizeEnabled ?? false);
         }
       })
       .catch(() => toastError("Error al cargar bot"))
@@ -168,6 +171,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
         memoryType,
         memoryLimit: Number(memoryLimit),
         ragEnabled,
+        humanizeEnabled,
       };
 
       const url = isEditing ? `/api/whatsapp/bots/${editId}` : "/api/whatsapp/bots";
@@ -301,6 +305,14 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
                 <p className="text-xs text-muted-darker">El bot buscará en documentos antes de responder</p>
               </div>
               <Switch checked={ragEnabled} onCheckedChange={setRagEnabled} />
+            </div>
+
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <p className="text-sm font-medium">Humanizar respuestas</p>
+                <p className="text-xs text-muted-darker">Divide respuestas largas en varios mensajes con un pequeño retraso entre cada uno, para que se sienta menos automático</p>
+              </div>
+              <Switch checked={humanizeEnabled} onCheckedChange={setHumanizeEnabled} />
             </div>
           </div>
         </div>

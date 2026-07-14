@@ -4,6 +4,7 @@ import { processCampaignJob } from "./campaign-worker";
 import { processRagJob } from "./rag-worker";
 import { processMediaDownloadJob } from "./media-worker";
 import { processMediaCleanupJob } from "./media-cleanup-worker";
+import { processBotSendJob } from "./bot-send-worker";
 import { mediaCleanupQueue } from "@/lib/queue";
 
 const connection = {
@@ -37,7 +38,11 @@ export function startWorkers() {
     await processMediaCleanupJob();
   }, { connection, concurrency: 1 });
 
-  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker);
+  const botSendWorker = new Worker("bot-message-send", async (job) => {
+    await processBotSendJob(job.data);
+  }, { connection, concurrency: 5 });
+
+  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, botSendWorker);
 
   mediaCleanupQueue
     .add(

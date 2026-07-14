@@ -28,6 +28,7 @@ export async function GET(
         memoryType: true,
         memoryLimit: true,
         ragEnabled: true,
+        humanizeEnabled: true,
         isActive: true,
         status: true,
         waAccountId: true,
@@ -103,6 +104,7 @@ export async function PATCH(
     if (fields.memoryType) data.memoryType = fields.memoryType;
     if (fields.memoryLimit !== undefined) data.memoryLimit = fields.memoryLimit;
     if (fields.ragEnabled !== undefined) data.ragEnabled = fields.ragEnabled;
+    if (fields.humanizeEnabled !== undefined) data.humanizeEnabled = fields.humanizeEnabled;
 
     const updated = await prisma.wABot.update({
       where: { id },
@@ -118,6 +120,7 @@ export async function PATCH(
         memoryType: true,
         memoryLimit: true,
         ragEnabled: true,
+        humanizeEnabled: true,
         isActive: true,
         status: true,
         waAccountId: true,

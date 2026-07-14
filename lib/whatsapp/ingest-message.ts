@@ -29,6 +29,19 @@ export interface IngestResult {
   chatId: string;
 }
 
+function phoneFromJid(remoteJid: string): string {
+  return remoteJid.split("@")[0];
+}
+
+// Meta omits profile.name on some payloads (privacy settings, forwards, template
+// replies), in which case the caller falls back to the raw phone number. Treat
+// that fallback as "no real name" so a previously-saved name never regresses to
+// a bare phone number on a later message.
+function isFallbackName(name: string | null | undefined, remoteJid: string): boolean {
+  if (!name) return true;
+  return name === remoteJid || name === phoneFromJid(remoteJid);
+}
+
 // Shared by both the Meta Cloud webhook and the Baileys connection listener
 // so the CRM (Contact upsert), chat threading, notifications, and bot
 // triggering behave identically regardless of which WhatsApp channel a
@@ -45,10 +58,26 @@ export async function ingestInboundMessage(
     if (existing) return null;
   }
 
+  const [existingContact, existingChat] = await Promise.all([
+    prisma.contact.findUnique({
+      where: { accountId_remoteJid: { accountId, remoteJid: msg.remoteJid } },
+      select: { name: true },
+    }),
+    prisma.wAChat.findUnique({
+      where: { accountId_remoteJid: { accountId, remoteJid: msg.remoteJid } },
+      select: { name: true },
+    }),
+  ]);
+
+  const contactNameShouldUpdate =
+    !isFallbackName(msg.contactName, msg.remoteJid) || isFallbackName(existingContact?.name, msg.remoteJid);
+  const chatNameShouldUpdate =
+    !isFallbackName(msg.contactName, msg.remoteJid) || isFallbackName(existingChat?.name, msg.remoteJid);
+
   const contactRecord = await prisma.contact.upsert({
     where: { accountId_remoteJid: { accountId, remoteJid: msg.remoteJid } },
     create: { accountId, remoteJid: msg.remoteJid, name: msg.contactName },
-    update: { name: msg.contactName },
+    update: contactNameShouldUpdate ? { name: msg.contactName } : {},
   });
 
   const chat = await prisma.wAChat.upsert({
@@ -64,7 +93,7 @@ export async function ingestInboundMessage(
       contactId: contactRecord.id,
     },
     update: {
-      name: msg.contactName,
+      ...(chatNameShouldUpdate ? { name: msg.contactName } : {}),
       isGroup: msg.isGroup,
       lastMessage: msg.body.slice(0, 500),
       lastMessageAt: msg.timestamp,

@@ -80,6 +80,7 @@ export const botSchema = z.object({
   memoryType: z.enum(["NONE", "RECENT", "SUMMARY"]).optional(),
   memoryLimit: z.number().min(1).max(100).optional(),
   ragEnabled: z.boolean().optional(),
+  humanizeEnabled: z.boolean().optional(),
 });
 
 export const botUpdateSchema = botSchema.partial();
