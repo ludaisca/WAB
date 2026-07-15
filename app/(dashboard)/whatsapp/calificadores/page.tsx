@@ -12,6 +12,7 @@ import { PageHeader } from "@/app/components/ui/page-header";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import { Button } from "@/app/components/ui/button";
 import { Select } from "@/app/components/ui/select";
+import { Modal } from "@/app/components/ui/modal";
 import { useToast } from "@/app/components/ui/toast";
 import { LeadScorerFormModal } from "./_form";
 
@@ -32,6 +33,7 @@ interface LeadScoreRow {
   score: number;
   label: "frio" | "tibio" | "caliente";
   summary: string;
+  reasons: string;
   updatedAt: string;
   scorer: { id: string; name: string };
   chat: {
@@ -278,6 +280,8 @@ function LeadsTab() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [scorerFilter, setScorerFilter] = useState("all");
   const [labelFilter, setLabelFilter] = useState("all");
+  const [accountFilter, setAccountFilter] = useState("all");
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
@@ -306,13 +310,22 @@ function LeadsTab() {
     return Array.from(seen.entries());
   }, [rows]);
 
+  const accounts = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const r of rows) seen.set(r.chat.account.id, r.chat.account.name);
+    return Array.from(seen.entries());
+  }, [rows]);
+
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       if (scorerFilter !== "all" && r.scorer.id !== scorerFilter) return false;
       if (labelFilter !== "all" && r.label !== labelFilter) return false;
+      if (accountFilter !== "all" && r.chat.account.id !== accountFilter) return false;
       return true;
     });
-  }, [rows, scorerFilter, labelFilter]);
+  }, [rows, scorerFilter, labelFilter, accountFilter]);
+
+  const detailRow = useMemo(() => rows.find((r) => r.id === detailId) ?? null, [rows, detailId]);
 
   const columns: TableColumn<LeadScoreRow>[] = useMemo(() => [
     {
@@ -322,10 +335,16 @@ function LeadsTab() {
         <Link
           href={`/whatsapp/chat/${r.chat.accountId}/${r.chat.id}`}
           className="font-medium hover:text-accent transition-colors"
+          onClick={(e) => e.stopPropagation()}
         >
           {r.chat.name || r.chat.remoteJid.split("@")[0]}
         </Link>
       ),
+    },
+    {
+      key: "phone",
+      header: "Teléfono",
+      render: (r) => <span className="text-xs text-muted-darker">{r.chat.remoteJid.split("@")[0]}</span>,
     },
     {
       key: "account",
@@ -360,6 +379,13 @@ function LeadsTab() {
     },
   ], []);
 
+  let detailReasons: string[] = [];
+  try {
+    detailReasons = detailRow ? JSON.parse(detailRow.reasons) : [];
+  } catch {
+    detailReasons = [];
+  }
+
   return (
     <>
       <div className="flex flex-wrap items-center gap-3">
@@ -379,6 +405,14 @@ function LeadsTab() {
             <option value="frio">Frío</option>
           </Select>
         </div>
+        <div className="w-56">
+          <Select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)}>
+            <option value="all">Todas las cuentas</option>
+            {accounts.map(([id, name]) => (
+              <option key={id} value={id}>{name}</option>
+            ))}
+          </Select>
+        </div>
       </div>
 
       <Card>
@@ -390,12 +424,65 @@ function LeadsTab() {
             loading={loading}
             error={fetchError}
             onRetry={fetchRows}
+            onRowClick={(r) => setDetailId(r.id)}
             emptyIcon={Sparkles}
             emptyTitle="Sin leads calificados"
             emptyDescription="Los chats que califiques manualmente o mediante ejecución automática aparecerán aquí."
           />
         </CardBody>
       </Card>
+
+      <Modal
+        open={!!detailRow}
+        onClose={() => setDetailId(null)}
+        title={detailRow ? (detailRow.chat.name || detailRow.chat.remoteJid.split("@")[0]) : undefined}
+        size="lg"
+      >
+        {detailRow && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <Badge tone={LABEL_TONE[detailRow.label]}>{LABEL_TEXT[detailRow.label]} · {detailRow.score}/100</Badge>
+              <span className="text-xs text-muted-darker">
+                {new Date(detailRow.updatedAt).toLocaleString("es-MX", { dateStyle: "long", timeStyle: "short" })}
+              </span>
+            </div>
+            <dl className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <dt className="text-xs text-muted-darker">Cuenta</dt>
+                <dd>{detailRow.chat.account.name}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-darker">Teléfono</dt>
+                <dd>{detailRow.chat.remoteJid.split("@")[0]}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-darker">Calificador</dt>
+                <dd>{detailRow.scorer.name}</dd>
+              </div>
+            </dl>
+            <div>
+              <p className="text-xs text-muted-darker mb-1">Resumen del análisis</p>
+              <p className="text-sm text-foreground whitespace-pre-wrap">{detailRow.summary}</p>
+            </div>
+            {detailReasons.length > 0 && (
+              <div>
+                <p className="text-xs text-muted-darker mb-1">Motivos</p>
+                <ul className="text-sm text-foreground list-disc pl-4 space-y-1">
+                  {detailReasons.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <Link
+              href={`/whatsapp/chat/${detailRow.chat.accountId}/${detailRow.chat.id}`}
+              className="inline-flex text-sm text-accent hover:underline"
+            >
+              Ir al chat →
+            </Link>
+          </div>
+        )}
+      </Modal>
     </>
   );
 }
