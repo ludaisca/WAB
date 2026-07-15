@@ -6,7 +6,8 @@ import { processMediaDownloadJob } from "./media-worker";
 import { processMediaCleanupJob } from "./media-cleanup-worker";
 import { processBotSendJob } from "./bot-send-worker";
 import { processLeadScoringTick } from "./lead-scoring-worker";
-import { mediaCleanupQueue, leadScoringQueue } from "@/lib/queue";
+import { processLeadRecoveryTick } from "./lead-recovery-worker";
+import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue } from "@/lib/queue";
 
 const connection = {
   url: process.env.REDIS_URL || "redis://redis:6379",
@@ -20,7 +21,10 @@ export function startWorkers() {
   started = true;
 
   const botWorker = new Worker("bot-messages", async (job) => {
-    await processBotMessageJob(job.data);
+    await processBotMessageJob(job.data, {
+      attemptsMade: job.attemptsMade,
+      maxAttempts: job.opts.attempts ?? 1,
+    });
   }, { connection, concurrency: 3 });
 
   const campaignWorker = new Worker("campaign-send", async (job) => {
@@ -47,7 +51,11 @@ export function startWorkers() {
     await processLeadScoringTick();
   }, { connection, concurrency: 1 });
 
-  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, botSendWorker, leadScoringWorker);
+  const leadRecoveryWorker = new Worker("lead-recovery", async () => {
+    await processLeadRecoveryTick();
+  }, { connection, concurrency: 1 });
+
+  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker);
 
   mediaCleanupQueue
     .add(
@@ -67,6 +75,16 @@ export function startWorkers() {
       { jobId: "lead-scoring-tick", repeat: { pattern: "*/5 * * * *" } }
     )
     .catch((err) => console.error("[workers] No se pudo programar lead-scoring:", err));
+
+  // Umbrales en horas (mínimo configurable: horas enteras) — un tick cada 15
+  // minutos da resolución de sobra sin sondear Redis de más.
+  leadRecoveryQueue
+    .add(
+      "tick",
+      {},
+      { jobId: "lead-recovery-tick", repeat: { pattern: "*/15 * * * *" } }
+    )
+    .catch((err) => console.error("[workers] No se pudo programar lead-recovery:", err));
 
   console.log("[workers] BullMQ workers started");
 }

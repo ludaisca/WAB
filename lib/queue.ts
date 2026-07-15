@@ -30,3 +30,4 @@ export const mediaDownloadQueue = new Queue("media-download", {
 export const mediaCleanupQueue = new Queue("media-cleanup", { connection, defaultJobOptions });
 export const botSendQueue = new Queue("bot-message-send", { connection, defaultJobOptions });
 export const leadScoringQueue = new Queue("lead-scoring", { connection, defaultJobOptions });
+export const leadRecoveryQueue = new Queue("lead-recovery", { connection, defaultJobOptions });

@@ -27,6 +27,12 @@ export async function GET() {
       defaultProvider: settings.defaultProvider,
       defaultModel: settings.defaultModel,
       monthlyBudgetUsd: settings.monthlyBudgetUsd,
+      leadRecoveryEnabled: settings.leadRecoveryEnabled,
+      leadRecoveryFirstMessageHours: settings.leadRecoveryFirstMessageHours,
+      leadRecoverySecondMessageHours: settings.leadRecoverySecondMessageHours,
+      leadRecoveryBusinessHourStart: settings.leadRecoveryBusinessHourStart,
+      leadRecoveryBusinessHourEnd: settings.leadRecoveryBusinessHourEnd,
+      leadRecoveryTimezone: settings.leadRecoveryTimezone,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error interno";
@@ -47,6 +53,12 @@ export async function PATCH(req: Request) {
       defaultProvider?: string;
       defaultModel?: string;
       monthlyBudgetUsd?: number | null;
+      leadRecoveryEnabled?: boolean;
+      leadRecoveryFirstMessageHours?: number;
+      leadRecoverySecondMessageHours?: number | null;
+      leadRecoveryBusinessHourStart?: number;
+      leadRecoveryBusinessHourEnd?: number;
+      leadRecoveryTimezone?: string;
     };
 
     const data: Record<string, unknown> = {};
@@ -76,6 +88,24 @@ export async function PATCH(req: Request) {
       data.budgetAlertMonth = null;
     }
 
+    if (body.leadRecoveryEnabled !== undefined) data.leadRecoveryEnabled = body.leadRecoveryEnabled;
+    if (body.leadRecoveryFirstMessageHours !== undefined) {
+      data.leadRecoveryFirstMessageHours = Math.max(1, Math.round(body.leadRecoveryFirstMessageHours));
+    }
+    if (body.leadRecoverySecondMessageHours !== undefined) {
+      data.leadRecoverySecondMessageHours =
+        body.leadRecoverySecondMessageHours === null || Number.isNaN(body.leadRecoverySecondMessageHours)
+          ? null
+          : Math.max(1, Math.round(body.leadRecoverySecondMessageHours));
+    }
+    if (body.leadRecoveryBusinessHourStart !== undefined) {
+      data.leadRecoveryBusinessHourStart = Math.min(23, Math.max(0, Math.round(body.leadRecoveryBusinessHourStart)));
+    }
+    if (body.leadRecoveryBusinessHourEnd !== undefined) {
+      data.leadRecoveryBusinessHourEnd = Math.min(24, Math.max(1, Math.round(body.leadRecoveryBusinessHourEnd)));
+    }
+    if (body.leadRecoveryTimezone) data.leadRecoveryTimezone = body.leadRecoveryTimezone;
+
     const settings = await prisma.appSettings.upsert({
       where: { userId: session.user.id },
       create: { userId: session.user.id, ...data },
@@ -89,6 +119,12 @@ export async function PATCH(req: Request) {
       defaultProvider: settings.defaultProvider,
       defaultModel: settings.defaultModel,
       monthlyBudgetUsd: settings.monthlyBudgetUsd,
+      leadRecoveryEnabled: settings.leadRecoveryEnabled,
+      leadRecoveryFirstMessageHours: settings.leadRecoveryFirstMessageHours,
+      leadRecoverySecondMessageHours: settings.leadRecoverySecondMessageHours,
+      leadRecoveryBusinessHourStart: settings.leadRecoveryBusinessHourStart,
+      leadRecoveryBusinessHourEnd: settings.leadRecoveryBusinessHourEnd,
+      leadRecoveryTimezone: settings.leadRecoveryTimezone,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error interno";

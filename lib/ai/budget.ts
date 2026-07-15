@@ -1,10 +1,11 @@
 import { prisma } from "@/lib/prisma";
 
-// Combines WABotUsage (chat-reply bots) and WALeadScorerUsage (lead scorer
-// runs, including scheduled ones) so the monthly budget reflects total AI
-// spend for the user, not just one of the two bot types.
+// Combines WABotUsage (chat-reply bots), WALeadScorerUsage (lead scorer
+// runs, including scheduled ones) and WALeadRecoveryAttempt (reactivation
+// messages) so the monthly budget reflects total AI spend for the user, not
+// just some of the three usage sources.
 export async function getMonthlyAiCost(userId: string, monthStart: Date): Promise<number> {
-  const [botUsage, scorerUsage] = await Promise.all([
+  const [botUsage, scorerUsage, recoveryUsage] = await Promise.all([
     prisma.wABotUsage.aggregate({
       where: { bot: { userId }, createdAt: { gte: monthStart } },
       _sum: { estimatedCost: true },
@@ -13,9 +14,17 @@ export async function getMonthlyAiCost(userId: string, monthStart: Date): Promis
       where: { scorer: { userId }, createdAt: { gte: monthStart } },
       _sum: { estimatedCost: true },
     }),
+    prisma.wALeadRecoveryAttempt.aggregate({
+      where: { chat: { account: { userId } }, createdAt: { gte: monthStart } },
+      _sum: { estimatedCost: true },
+    }),
   ]);
 
-  return (botUsage._sum.estimatedCost ?? 0) + (scorerUsage._sum.estimatedCost ?? 0);
+  return (
+    (botUsage._sum.estimatedCost ?? 0) +
+    (scorerUsage._sum.estimatedCost ?? 0) +
+    (recoveryUsage._sum.estimatedCost ?? 0)
+  );
 }
 
 export async function isMonthlyBudgetExceeded(userId: string, now: Date): Promise<boolean> {
