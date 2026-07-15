@@ -173,6 +173,11 @@ export function AppShell({
 }: AppShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  // Chat is a dense, WhatsApp-Web-style inbox that manages its own internal
+  // scrolling panes — the standard page chrome (breadcrumb + p-8 padding)
+  // just eats space it needs, so this route gets a full-bleed shell instead.
+  const pathname = usePathname();
+  const fullBleed = pathname.startsWith("/whatsapp/chat");
 
   useEffect(() => {
     if (!collapsible) return;
@@ -193,7 +198,7 @@ export function AppShell({
   }, []);
 
   return (
-    <div className="flex min-h-svh bg-background">
+    <div className={cn("flex bg-background", fullBleed ? "h-svh" : "min-h-svh")}>
       <aside
         className={cn(
           "hidden md:flex border-r border-border bg-surface flex-col shrink-0 transition-all duration-200",
@@ -261,8 +266,13 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="flex-1 p-4 md:p-6 lg:p-8 animate-fade-in">
-          <Breadcrumb />
+        <main
+          className={cn(
+            "flex-1 animate-fade-in",
+            fullBleed ? "flex flex-col min-h-0 overflow-hidden" : "p-4 md:p-6 lg:p-8"
+          )}
+        >
+          {!fullBleed && <Breadcrumb />}
           {children}
         </main>
       </div>

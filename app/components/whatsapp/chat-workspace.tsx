@@ -8,7 +8,6 @@ import {
   ArrowLeft,
   MessageSquare,
   User,
-  StickyNote,
   Check,
   CheckCheck,
   FileAudio,
@@ -17,6 +16,8 @@ import {
   Paperclip,
   X,
   Image as ImageIcon,
+  Download,
+  Maximize2,
 } from "lucide-react";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
@@ -24,23 +25,17 @@ import { Button } from "@/app/components/ui/button";
 import { Badge } from "@/app/components/ui/badge";
 import { Spinner } from "@/app/components/ui/spinner";
 import { EmptyState } from "@/app/components/ui/empty-state";
+import { Modal } from "@/app/components/ui/modal";
 import { useToast } from "@/app/components/ui/toast";
 import { ContactDrawer } from "@/app/components/whatsapp/contact-drawer";
 import { ChatAssigneePicker } from "@/app/components/whatsapp/chat-assignee-picker";
 import { ChatTagPicker } from "@/app/components/whatsapp/chat-tag-picker";
 import { LeadScoreBadge } from "@/app/components/whatsapp/lead-score-badge";
-import { ChatNotesDrawer } from "@/app/components/whatsapp/chat-notes-drawer";
+import { ChatCostBadge } from "@/app/components/whatsapp/chat-cost-badge";
 
 const CHATS_PAGE_SIZE = 30;
 
 type ChatStatus = "OPEN" | "PENDING" | "RESOLVED";
-
-const STATUS_TABS: Array<{ key: ChatStatus | "ALL"; label: string }> = [
-  { key: "OPEN", label: "Abiertos" },
-  { key: "PENDING", label: "Pendientes" },
-  { key: "RESOLVED", label: "Resueltos" },
-  { key: "ALL", label: "Todos" },
-];
 
 const STATUS_BADGE: Record<ChatStatus, { label: string; tone: "info" | "warning" | "success" }> = {
   OPEN: { label: "Abierto", tone: "info" },
@@ -62,6 +57,7 @@ interface ChatItem {
   assignedToId: string | null;
   assignedTo: { id: string; name: string | null } | null;
   account: { id: string; name: string; phoneNumber: string | null };
+  campaign: { id: string; name: string } | null;
 }
 
 interface CannedResponseItem {
@@ -69,6 +65,17 @@ interface CannedResponseItem {
   shortcut: string;
   content: string;
 }
+
+interface CampaignOption {
+  id: string;
+  name: string;
+}
+
+const HAS_REPLIED_OPTIONS: Array<{ value: "" | "yes" | "no"; label: string }> = [
+  { value: "", label: "Todos los chats" },
+  { value: "yes", label: "Con respuesta del lead" },
+  { value: "no", label: "Sin respuesta del lead" },
+];
 
 interface Message {
   id: string;
@@ -122,11 +129,17 @@ function formatDayDivider(ts: string): string {
 // juggling multiple WhatsApp numbers tell them apart at a glance.
 const ACCOUNT_TONES = ["info", "success", "warning", "danger", "accent"] as const;
 type AccountTone = (typeof ACCOUNT_TONES)[number];
-function accountTone(accountId: string): AccountTone {
+function hashTone(id: string): AccountTone {
   let hash = 0;
-  for (let i = 0; i < accountId.length; i++) hash = (hash * 31 + accountId.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
   return ACCOUNT_TONES[hash % ACCOUNT_TONES.length];
 }
+const accountTone = hashTone;
+// Separate name at call sites for readability — the badge doesn't get its own
+// color pool (Tailwind literals aside, 5 semantic tones is already what the
+// design system offers); a campaign badge always carries its name as text, so
+// a same-tone collision between two campaigns is still unambiguous.
+const campaignTone = hashTone;
 
 // Tailwind v4 has no safelist/config for this project to pick up a dynamic
 // `bg-${tone}` string from — the dot indicator needs literal class names.
@@ -149,7 +162,14 @@ function mediaEndpoint(messageId: string): string {
   return `/api/whatsapp/messages/${encodeURIComponent(messageId)}/media`;
 }
 
-function MediaContent({ msg }: { msg: Message }) {
+interface PreviewMedia {
+  type: "image" | "video";
+  src: string;
+  filename: string | null;
+  mimeType: string | null;
+}
+
+function MediaContent({ msg, onPreview }: { msg: Message; onPreview: (media: PreviewMedia) => void }) {
   const mediaSrc = msg.mediaUrl ? mediaEndpoint(msg.id) : null;
 
   if (msg.messageType === "image" || msg.messageType === "sticker") {
@@ -162,13 +182,19 @@ function MediaContent({ msg }: { msg: Message }) {
       );
     }
     return (
-      // eslint-disable-next-line @next/next/no-img-element -- proxied media, runtime URL
-      <img
-        src={mediaSrc}
-        alt={msg.caption ?? "imagen"}
-        className="max-w-full max-h-72 rounded-lg object-cover"
-        loading="lazy"
-      />
+      <button
+        type="button"
+        onClick={() => onPreview({ type: "image", src: mediaSrc, filename: msg.filename, mimeType: msg.mimeType })}
+        className="block cursor-zoom-in"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element -- proxied media, runtime URL */}
+        <img
+          src={mediaSrc}
+          alt={msg.caption ?? "imagen"}
+          className="max-w-full max-h-72 rounded-lg object-cover"
+          loading="lazy"
+        />
+      </button>
     );
   }
 
@@ -181,7 +207,19 @@ function MediaContent({ msg }: { msg: Message }) {
         </div>
       );
     }
-    return <audio controls src={mediaSrc} className="w-full max-w-xs" />;
+    return (
+      <div className="flex items-center gap-1.5">
+        <audio controls src={mediaSrc} className="w-full max-w-xs" />
+        <a
+          href={mediaSrc}
+          download={msg.filename ?? undefined}
+          className="text-muted-darker hover:text-foreground shrink-0"
+          title="Descargar audio"
+        >
+          <Download size={14} />
+        </a>
+      </div>
+    );
   }
 
   if (msg.messageType === "video") {
@@ -193,7 +231,19 @@ function MediaContent({ msg }: { msg: Message }) {
         </div>
       );
     }
-    return <video controls src={mediaSrc} className="max-w-full max-h-72 rounded-lg" />;
+    return (
+      <div className="relative group max-w-full">
+        <video controls src={mediaSrc} className="max-w-full max-h-72 rounded-lg" />
+        <button
+          type="button"
+          onClick={() => onPreview({ type: "video", src: mediaSrc, filename: msg.filename, mimeType: msg.mimeType })}
+          className="absolute top-2 right-2 p-1.5 rounded-md bg-black/50 text-white hover:bg-black/70"
+          title="Ver en grande"
+        >
+          <Maximize2 size={14} />
+        </button>
+      </div>
+    );
   }
 
   if (msg.messageType === "document") {
@@ -221,7 +271,7 @@ function MediaContent({ msg }: { msg: Message }) {
   return null;
 }
 
-function MessageBubble({ msg }: { msg: Message }) {
+function MessageBubble({ msg, onPreview }: { msg: Message; onPreview: (media: PreviewMedia) => void }) {
   const isInbound = msg.direction === "INBOUND";
   const hasMedia = msg.messageType !== "text" && (msg.mediaUrl || msg.mediaId);
   const caption = msg.caption ?? (hasMedia && msg.body && msg.body !== `[${msg.messageType}]` ? msg.body : null);
@@ -237,7 +287,7 @@ function MessageBubble({ msg }: { msg: Message }) {
       >
         {hasMedia && (
           <div className="mb-1 space-y-1">
-            <MediaContent msg={msg} />
+            <MediaContent msg={msg} onPreview={onPreview} />
             {caption && <p className="whitespace-pre-wrap break-words">{caption}</p>}
           </div>
         )}
@@ -257,6 +307,37 @@ function MessageBubble({ msg }: { msg: Message }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function MediaPreviewModal({ media, onClose }: { media: PreviewMedia | null; onClose: () => void }) {
+  return (
+    <Modal
+      open={!!media}
+      onClose={onClose}
+      size="lg"
+      title={media?.filename ?? (media?.type === "image" ? "Imagen" : "Video")}
+      footer={
+        media && (
+          <Button
+            href={media.src}
+            external
+            icon={Download}
+            variant="secondary"
+            {...{ download: media.filename ?? "" }}
+          >
+            Descargar
+          </Button>
+        )
+      }
+    >
+      {media?.type === "image" ? (
+        // eslint-disable-next-line @next/next/no-img-element -- proxied media, runtime URL
+        <img src={media.src} alt={media.filename ?? "imagen"} className="max-h-[70vh] w-auto mx-auto rounded-lg" />
+      ) : media ? (
+        <video src={media.src} controls autoPlay className="max-h-[70vh] w-full rounded-lg" />
+      ) : null}
+    </Modal>
   );
 }
 
@@ -280,9 +361,11 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
   const [sending, setSending] = useState(false);
   const [search, setSearch] = useState("");
   const [accountFilter, setAccountFilter] = useState(initialAccountId || "");
-  const [statusFilter, setStatusFilter] = useState<ChatStatus | "ALL">("OPEN");
+  const [campaignFilter, setCampaignFilter] = useState("");
+  const [hasRepliedFilter, setHasRepliedFilter] = useState<"" | "yes" | "no">("");
+  const [campaigns, setCampaigns] = useState<CampaignOption[]>([]);
   const [contactDrawerOpen, setContactDrawerOpen] = useState(false);
-  const [notesDrawerOpen, setNotesDrawerOpen] = useState(false);
+  const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
   const [cannedResponses, setCannedResponses] = useState<CannedResponseItem[]>([]);
 
   // Media attachments state
@@ -294,9 +377,10 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
 
   const buildChatsParams = useCallback((page: number, pageSize: number): URLSearchParams => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-    if (statusFilter !== "ALL") params.set("status", statusFilter);
+    if (campaignFilter) params.set("campaignId", campaignFilter);
+    if (hasRepliedFilter) params.set("hasReplied", hasRepliedFilter);
     return params;
-  }, [statusFilter]);
+  }, [campaignFilter, hasRepliedFilter]);
 
   const refreshChats = useCallback(async () => {
     try {
@@ -343,6 +427,17 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
     setPrevInitialAccountId(initialAccountId);
     if (initialAccountId) setAccountFilter(initialAccountId);
   }
+
+  // Campaign list for the filter dropdown — fetched once, doesn't depend on the
+  // current chat filters.
+  useEffect(() => {
+    fetch("/api/whatsapp/campaigns")
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d)) setCampaigns(d.map((c: { id: string; name: string }) => ({ id: c.id, name: c.name })));
+      })
+      .catch(() => {});
+  }, []);
 
   // Load initial chats list
   useEffect(() => {
@@ -584,7 +679,7 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
   }
 
   return (
-    <div className="flex h-[calc(100vh-9rem)] -m-4 md:-m-6 lg:-m-8">
+    <div className="flex flex-1 min-h-0">
       {/* Sidebar - Chats list */}
       <div className={`${selectedChatId ? "hidden md:flex" : "flex"} md:flex flex-col w-full md:w-80 lg:w-96 border-r border-border shrink-0`}>
         <div className="p-4 border-b border-border space-y-2">
@@ -608,20 +703,26 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar chat..."
           />
-          <div className="flex gap-1 pt-1">
-            {STATUS_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setStatusFilter(tab.key)}
-                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-                  statusFilter === tab.key
-                    ? "bg-accent text-on-accent"
-                    : "bg-surface-light text-muted-darker hover:text-foreground"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <Select
+              value={campaignFilter}
+              onChange={(e) => setCampaignFilter(e.target.value)}
+              className="text-xs"
+            >
+              <option value="">Todas las campañas</option>
+              {campaigns.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </Select>
+            <Select
+              value={hasRepliedFilter}
+              onChange={(e) => setHasRepliedFilter(e.target.value as "" | "yes" | "no")}
+              className="text-xs"
+            >
+              {HAS_REPLIED_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </Select>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
@@ -661,10 +762,19 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
                           <p className="text-xs text-muted-darker truncate mt-0.5">
                             {chat.lastMessage ?? "Sin mensajes"}
                           </p>
-                          {chat.assignedTo && (
-                            <Badge tone="info" size="sm" className="mt-1">
-                              {chat.assignedTo.name ?? "Asignado"}
-                            </Badge>
+                          {(chat.assignedTo || chat.campaign) && (
+                            <div className="flex flex-wrap items-center gap-1 mt-1">
+                              {chat.assignedTo && (
+                                <Badge tone="info" size="sm">
+                                  {chat.assignedTo.name ?? "Asignado"}
+                                </Badge>
+                              )}
+                              {chat.campaign && (
+                                <Badge tone={campaignTone(chat.campaign.id)} size="sm" className="max-w-[10rem] truncate">
+                                  {chat.campaign.name}
+                                </Badge>
+                              )}
+                            </div>
                           )}
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
@@ -741,15 +851,6 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
                     </p>
                   )}
                 </div>
-                {selectedChat && (
-                  <button
-                    onClick={() => setNotesDrawerOpen(true)}
-                    className="text-muted-darker hover:text-foreground transition-colors shrink-0"
-                    title="Notas internas"
-                  >
-                    <StickyNote size={18} />
-                  </button>
-                )}
                 {selectedChat?.contactId && (
                   <button
                     onClick={() => setContactDrawerOpen(true)}
@@ -776,6 +877,7 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
                   </select>
                   <ChatTagPicker key={selectedChat.id} chatId={selectedChat.id} />
                   <LeadScoreBadge key={`score-${selectedChat.id}`} chatId={selectedChat.id} />
+                  <ChatCostBadge key={`cost-${selectedChat.id}`} chatId={selectedChat.id} />
                   <ChatAssigneePicker
                     chatId={selectedChat.id}
                     assignedTo={selectedChat.assignedTo}
@@ -811,7 +913,7 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
                           </span>
                         </div>
                       )}
-                      <MessageBubble msg={msg} />
+                      <MessageBubble msg={msg} onPreview={setPreviewMedia} />
                     </div>
                   );
                 })
@@ -922,13 +1024,7 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
         />
       )}
 
-      {notesDrawerOpen && selectedChat && (
-        <ChatNotesDrawer
-          chatId={selectedChat.id}
-          chatTitle={selectedChat.name ?? selectedChat.remoteJid}
-          onClose={() => setNotesDrawerOpen(false)}
-        />
-      )}
+      <MediaPreviewModal media={previewMedia} onClose={() => setPreviewMedia(null)} />
     </div>
   );
 }

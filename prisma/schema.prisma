@@ -24,7 +24,6 @@ model User {
   appSettings    AppSettings?
   sharedAccounts WAAccountShare[]
   notes          WANote[]
-  chatNotes      WAChatNote[]
   assignedChats  WAChat[]         @relation("ChatAssignments")
   notifications  Notification[]
   sentMessages   WAMessage[]
@@ -51,6 +50,16 @@ model AppSettings {
   defaultModel     String   @default("google/gemini-2.5-flash")
   monthlyBudgetUsd Float?
   budgetAlertMonth String?
+
+  // Recuperación de leads: config global por usuario, aplica a todas sus
+  // cuentas de WhatsApp. secondMessageHours null = solo se manda 1 mensaje.
+  leadRecoveryEnabled            Boolean  @default(false)
+  leadRecoveryFirstMessageHours  Int      @default(2)
+  leadRecoverySecondMessageHours Int?     @default(12)
+  leadRecoveryBusinessHourStart  Int      @default(8)
+  leadRecoveryBusinessHourEnd    Int      @default(20)
+  leadRecoveryTimezone           String   @default("America/Mexico_City")
+
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   @@map("app_settings")
@@ -160,8 +169,8 @@ model WAChat {
   messages         WAMessage[]
   botConversations WABotConversation[]
   chatTags         ChatTag[]
-  chatNotes        WAChatNote[]
   leadScores       WALeadScore[]
+  recoveryAttempts WALeadRecoveryAttempt[]
 
   @@unique([accountId, remoteJid])
   @@index([assignedToId])
@@ -258,15 +267,41 @@ model WAMessage {
   timestamp   DateTime
   createdAt   DateTime         @default(now()) @map("created_at")
 
+  recoveryAttempt WALeadRecoveryAttempt?
+
   @@unique([chatId, wamid])
   @@index([wamid])
   @@index([chatId, timestamp])
+  @@index([chatId, direction])
+  @@index([campaignId])
   @@map("wa_messages")
 }
 
 enum MessageDirection {
   INBOUND
   OUTBOUND
+}
+
+// Registra cada mensaje de reactivación enviado a un chat que se quedó
+// callado — attemptNumber (1 o 2) + createdAt permiten calcular en qué etapa
+// va un chat sin tener que resetear nada manualmente cuando el lead responde:
+// solo se cuentan los intentos con createdAt posterior al último INBOUND.
+model WALeadRecoveryAttempt {
+  id               String    @id @default(cuid())
+  chatId           String
+  chat             WAChat    @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  attemptNumber    Int
+  messageId        String    @unique
+  message          WAMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  model            String
+  promptTokens     Int
+  completionTokens Int
+  totalTokens      Int
+  estimatedCost    Float
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  @@index([chatId, createdAt])
+  @@map("wa_lead_recovery_attempts")
 }
 
 model WATemplate {
@@ -527,26 +562,12 @@ model WANote {
   @@map("wa_notes")
 }
 
-model WAChatNote {
-  id        String   @id @default(cuid())
-  chatId    String
-  chat      WAChat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  authorId  String
-  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  body      String   @db.Text
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([chatId, createdAt])
-  @@map("wa_chat_notes")
-}
-
 enum NotificationType {
   CHAT_MESSAGE
   CAMPAIGN_COMPLETED
   CAMPAIGN_FAILED
   BOT_ERROR
   BUDGET_EXCEEDED
-  NOTE_MENTION
 }
 
 model Notification {

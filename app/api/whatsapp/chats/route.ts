@@ -29,6 +29,26 @@ export async function GET(req: Request) {
       if (statuses.length > 0) where.status = { in: statuses };
     }
 
+    // Ambos filtros son sobre la relación messages[] — se combinan vía AND en
+    // lugar de asignar dos veces where.messages, que se pisarían entre sí.
+    const messageFilters: Record<string, unknown>[] = [];
+
+    const campaignIdParam = searchParams.get("campaignId");
+    if (campaignIdParam) {
+      messageFilters.push({ messages: { some: { campaignId: campaignIdParam } } });
+    }
+
+    const hasRepliedParam = searchParams.get("hasReplied");
+    if (hasRepliedParam === "yes") {
+      messageFilters.push({ messages: { some: { direction: "INBOUND" } } });
+    } else if (hasRepliedParam === "no") {
+      messageFilters.push({ messages: { none: { direction: "INBOUND" } } });
+    }
+
+    if (messageFilters.length > 0) {
+      where.AND = messageFilters;
+    }
+
     // Paginación opt-in: sin `page`/`pageSize` en la query se preserva el
     // comportamiento legado (array plano completo) para los consumidores
     // que aún no la usan (dashboard/page.tsx, whatsapp/page.tsx).
@@ -55,9 +75,17 @@ export async function GET(req: Request) {
       account: {
         select: { id: true, name: true, phoneNumber: true },
       },
+      // Most recent campaign-tagged message, if any — powers the campaign
+      // badge in the chat list without a separate round trip per row.
+      messages: {
+        where: { campaignId: { not: null } },
+        orderBy: { timestamp: "desc" },
+        take: 1,
+        select: { campaign: { select: { id: true, name: true } } },
+      },
     } as const;
 
-    const [chats, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       prisma.wAChat.findMany({
         where,
         select,
@@ -66,6 +94,11 @@ export async function GET(req: Request) {
       }),
       paginate ? prisma.wAChat.count({ where }) : Promise.resolve(null),
     ]);
+
+    const chats = rows.map(({ messages, ...chat }) => ({
+      ...chat,
+      campaign: messages[0]?.campaign ?? null,
+    }));
 
     if (paginate) {
       return NextResponse.json({ items: chats, total, page, pageSize });

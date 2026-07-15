@@ -1,6 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/crypto";
 import { getTemplateVariables, renderTemplateText } from "@/lib/whatsapp/template-variables";
+import { saveMediaFromMeta, isImageMime, isVideoMime } from "@/lib/whatsapp/media-store";
+
+function mediaMessageTypeFromMime(mimeType: string): string {
+  if (isImageMime(mimeType)) return "image";
+  if (isVideoMime(mimeType)) return "video";
+  return "document";
+}
 
 interface CampaignJob {
   campaignId: string;
@@ -45,6 +52,25 @@ export async function processCampaignJob(job: CampaignJob) {
     create: { name: `Campaña: ${campaign.name}` },
     update: {},
   });
+
+  // Header media is identical for every recipient, so it's downloaded once here
+  // (not per-recipient inside the loop below) and reused for every WAMessage CRM
+  // record created — avoids hammering Meta's API and duplicating the same file
+  // on disk hundreds of times. Non-fatal on failure: the campaign still sends,
+  // it just won't show the header image in the chat CRM view.
+  let headerMedia: { relativePath: string; mimeType: string; bytesSize: number } | null = null;
+  if (campaign.headerParam && templateVars.header.format && templateVars.header.format !== "TEXT") {
+    try {
+      const stored = await saveMediaFromMeta(
+        campaign.waAccountId,
+        campaign.headerParam,
+        campaign.waAccount.accessToken!
+      );
+      headerMedia = { relativePath: stored.relativePath, mimeType: stored.remoteMimeType, bytesSize: stored.bytesSize };
+    } catch {
+      headerMedia = null;
+    }
+  }
 
   let totalSuccess = 0;
   let totalFailed = 0;
@@ -185,8 +211,12 @@ export async function processCampaignJob(job: CampaignJob) {
             wamid: wamid ?? null,
             chatId: chat.id,
             direction: "OUTBOUND",
-            messageType: "template",
+            messageType: headerMedia ? mediaMessageTypeFromMime(headerMedia.mimeType) : "template",
             body: messageBody,
+            mediaId: headerMedia ? campaign.headerParam : null,
+            mediaUrl: headerMedia ? headerMedia.relativePath : null,
+            mimeType: headerMedia ? headerMedia.mimeType : null,
+            bytesSize: headerMedia ? headerMedia.bytesSize : null,
             status: "sent",
             timestamp: sentAt,
             campaignId: campaign.id,
