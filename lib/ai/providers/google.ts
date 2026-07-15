@@ -44,9 +44,15 @@ export function createGoogleClient(apiKey: string) {
   const genAI = new GoogleGenerativeAI(apiKey);
 
   async function complete(params: AICompletionParams): Promise<AICompletionResponse> {
-    const systemMsg = params.messages.find((m) => m.role === "system");
-    const systemText =
-      typeof systemMsg?.content === "string" ? systemMsg.content : undefined;
+    // Callers (bot-worker's RAG/campaign-context/summary injections, the lead
+    // scorer's business-prompt + JSON-contract pair) may push several
+    // system-role messages. Concatenate all of them — picking only the first
+    // silently dropped the rest, which is how the lead scorer's JSON-format
+    // instruction went missing and Gemini's replies failed to parse.
+    const systemTexts = params.messages
+      .filter((m) => m.role === "system" && typeof m.content === "string")
+      .map((m) => m.content as string);
+    const systemText = systemTexts.length > 0 ? systemTexts.join("\n\n") : undefined;
 
     // systemInstruction must be set here, on getGenerativeModel(). The SDK only
     // runs its string->Content formatting on this value; if passed to
