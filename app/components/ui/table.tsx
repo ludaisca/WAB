@@ -10,7 +10,7 @@ import { Dropdown } from "./dropdown";
 
 export interface TableColumn<T> {
   key: string;
-  header: string;
+  header: React.ReactNode;
   headerClassName?: string;
   cellClassName?: string;
   render: (row: T) => React.ReactNode;

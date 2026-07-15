@@ -13,6 +13,9 @@ import { Table, type TableColumn } from "@/app/components/ui/table";
 import { Button } from "@/app/components/ui/button";
 import { Select } from "@/app/components/ui/select";
 import { Modal } from "@/app/components/ui/modal";
+import { DatePicker } from "@/app/components/ui/date-picker";
+import { Checkbox } from "@/app/components/ui/checkbox";
+import { RadioGroup } from "@/app/components/ui/radio";
 import { useToast } from "@/app/components/ui/toast";
 import { toCsv, downloadCsv } from "@/lib/csv";
 import { LeadScorerFormModal } from "./_form";
@@ -107,6 +110,49 @@ function labelTone(label: string) {
 
 function labelText(label: string) {
   return LABEL_TEXT[label] ?? label;
+}
+
+function reasonsList(reasons: string): string[] {
+  try {
+    return JSON.parse(reasons);
+  } catch {
+    return [];
+  }
+}
+
+interface ExportColumnDef {
+  key: string;
+  label: string;
+  get: (r: LeadScoreRow) => string;
+}
+
+const EXPORT_COLUMNS: ExportColumnDef[] = [
+  { key: "lead", label: "Lead", get: (r) => r.chat.name || r.chat.remoteJid.split("@")[0] },
+  { key: "phone", label: "Teléfono", get: (r) => r.chat.remoteJid.split("@")[0] },
+  { key: "account", label: "Cuenta", get: (r) => r.chat.account.name },
+  { key: "label", label: "Calificación", get: (r) => labelText(r.label) },
+  { key: "score", label: "Score", get: (r) => String(r.score) },
+  { key: "scorer", label: "Calificador", get: (r) => r.scorer.name },
+  { key: "summary", label: "Resumen", get: (r) => r.summary },
+  { key: "reasons", label: "Motivos", get: (r) => reasonsList(r.reasons).join(" | ") },
+  { key: "producto_interes", label: "Producto de interés", get: (r) => r.details?.producto_interes ?? "" },
+  { key: "urgencia", label: "Urgencia", get: (r) => r.details?.urgencia ?? "" },
+  { key: "presupuesto", label: "Presupuesto", get: (r) => r.details?.presupuesto ?? "" },
+  { key: "necesidad_principal", label: "Necesidad principal", get: (r) => r.details?.necesidad_principal ?? "" },
+  { key: "contexto_negocio", label: "Contexto de negocio", get: (r) => r.details?.contexto_negocio ?? "" },
+  { key: "senales_compra", label: "Señales de compra", get: (r) => (r.details?.senales_compra ?? []).join(" | ") },
+  { key: "objeciones_dudas", label: "Objeciones / dudas", get: (r) => (r.details?.objeciones_dudas ?? []).join(" | ") },
+  { key: "proximos_pasos", label: "Próximos pasos", get: (r) => (r.details?.proximos_pasos ?? []).join(" | ") },
+  { key: "nombre_real", label: "Nombre real", get: (r) => r.details?.nombre_real ?? "" },
+  { key: "tono_interes", label: "Tono de interés", get: (r) => r.details?.tono_interes ?? "" },
+  { key: "nivel_interaccion", label: "Nivel de interacción", get: (r) => r.details?.nivel_interaccion ?? "" },
+  { key: "updatedAt", label: "Actualizado", get: (r) => new Date(r.updatedAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }) },
+];
+
+function isoDaysAgo(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
 }
 
 const TABS = ["calificadores", "leads"] as const;
@@ -317,7 +363,13 @@ function LeadsTab() {
   const [scorerFilter, setScorerFilter] = useState("all");
   const [labelFilter, setLabelFilter] = useState("all");
   const [accountFilter, setAccountFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState(() => isoDaysAgo(30));
+  const [dateTo, setDateTo] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportScope, setExportScope] = useState<"current" | "selected">("current");
+  const [exportColumns, setExportColumns] = useState<Set<string>>(new Set(EXPORT_COLUMNS.map((c) => c.key)));
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
@@ -357,41 +409,68 @@ function LeadsTab() {
       if (scorerFilter !== "all" && r.scorer.id !== scorerFilter) return false;
       if (labelFilter !== "all" && r.label !== labelFilter) return false;
       if (accountFilter !== "all" && r.chat.account.id !== accountFilter) return false;
+      const updatedDate = r.updatedAt.slice(0, 10);
+      if (dateFrom && updatedDate < dateFrom) return false;
+      if (dateTo && updatedDate > dateTo) return false;
       return true;
     });
-  }, [rows, scorerFilter, labelFilter, accountFilter]);
+  }, [rows, scorerFilter, labelFilter, accountFilter, dateFrom, dateTo]);
+
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((r) => selectedIds.has(r.id));
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        for (const r of filtered) next.delete(r.id);
+      } else {
+        for (const r of filtered) next.add(r.id);
+      }
+      return next;
+    });
+  }, [filtered, allFilteredSelected]);
 
   const detailRow = useMemo(() => rows.find((r) => r.id === detailId) ?? null, [rows, detailId]);
 
-  function handleExportCsv() {
-    const headers = ["Lead", "Teléfono", "Cuenta", "Calificación", "Score", "Calificador", "Resumen", "Motivos", "Producto de interés", "Urgencia", "Presupuesto", "Próximos pasos", "Actualizado"];
-    const csvRows = filtered.map((r) => {
-      let reasons: string[] = [];
-      try {
-        reasons = JSON.parse(r.reasons);
-      } catch {
-        reasons = [];
-      }
-      return [
-        r.chat.name || r.chat.remoteJid.split("@")[0],
-        r.chat.remoteJid.split("@")[0],
-        r.chat.account.name,
-        labelText(r.label),
-        String(r.score),
-        r.scorer.name,
-        r.summary,
-        reasons.join(" | "),
-        r.details?.producto_interes ?? "",
-        r.details?.urgencia ?? "",
-        r.details?.presupuesto ?? "",
-        (r.details?.proximos_pasos ?? []).join(" | "),
-        new Date(r.updatedAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }),
-      ];
+  function toggleExportColumn(key: string) {
+    setExportColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
     });
+  }
+
+  function handleExportCsv() {
+    const exportRows = exportScope === "selected" ? filtered.filter((r) => selectedIds.has(r.id)) : filtered;
+    const activeColumns = EXPORT_COLUMNS.filter((c) => exportColumns.has(c.key));
+    const headers = activeColumns.map((c) => c.label);
+    const csvRows = exportRows.map((r) => activeColumns.map((c) => c.get(r)));
     downloadCsv(`leads-calificados-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(headers, csvRows));
+    setExportModalOpen(false);
   }
 
   const columns: TableColumn<LeadScoreRow>[] = useMemo(() => [
+    {
+      key: "select",
+      header: (
+        <Checkbox checked={allFilteredSelected} onChange={toggleSelectAll} />
+      ),
+      render: (r) => (
+        <div onClick={(e) => e.stopPropagation()}>
+          <Checkbox checked={selectedIds.has(r.id)} onChange={() => toggleSelected(r.id)} />
+        </div>
+      ),
+    },
     {
       key: "chat",
       header: "Lead",
@@ -441,7 +520,7 @@ function LeadsTab() {
         </span>
       ),
     },
-  ], []);
+  ], [allFilteredSelected, selectedIds, toggleSelected, toggleSelectAll]);
 
   let detailReasons: string[] = [];
   try {
@@ -479,17 +558,27 @@ function LeadsTab() {
             ))}
           </Select>
         </div>
+        <div className="w-36">
+          <DatePicker value={dateFrom} onChange={setDateFrom} placeholder="Desde" max={dateTo || undefined} />
+        </div>
+        <div className="w-36">
+          <DatePicker value={dateTo} onChange={setDateTo} placeholder="Hasta" min={dateFrom || undefined} />
+        </div>
         <Button
           variant="secondary"
           size="sm"
           icon={Download}
-          onClick={handleExportCsv}
+          onClick={() => setExportModalOpen(true)}
           disabled={filtered.length === 0}
           className="ml-auto"
         >
           Exportar CSV
         </Button>
       </div>
+
+      {selectedIds.size > 0 && (
+        <p className="text-xs text-muted-darker">{selectedIds.size} lead(s) seleccionado(s).</p>
+      )}
 
       <Card>
         <CardBody>
@@ -618,6 +707,73 @@ function LeadsTab() {
             </Link>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        title="Exportar CSV"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setExportModalOpen(false)}>Cancelar</Button>
+            <Button
+              onClick={handleExportCsv}
+              disabled={exportColumns.size === 0 || (exportScope === "selected" && selectedIds.size === 0)}
+            >
+              Exportar
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-5">
+          <div>
+            <p className="text-sm font-medium mb-2">Qué exportar</p>
+            <RadioGroup
+              name="export-scope"
+              value={exportScope}
+              onChange={(v) => {
+                if (v === "selected" && selectedIds.size === 0) return;
+                setExportScope(v as "current" | "selected");
+              }}
+              options={[
+                { value: "current", label: `Vista actual (${filtered.length} leads)`, description: "Todo lo que cumple los filtros y el rango de fechas activos." },
+                {
+                  value: "selected",
+                  label: `Seleccionados (${selectedIds.size} leads)`,
+                  description: selectedIds.size === 0 ? "Marca leads en la tabla con la casilla de la izquierda para habilitar esta opción." : undefined,
+                },
+              ]}
+            />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium">Columnas</p>
+              <button
+                type="button"
+                onClick={() => setExportColumns(
+                  exportColumns.size === EXPORT_COLUMNS.length
+                    ? new Set()
+                    : new Set(EXPORT_COLUMNS.map((c) => c.key))
+                )}
+                className="text-xs text-accent hover:underline"
+              >
+                {exportColumns.size === EXPORT_COLUMNS.length ? "Ninguna" : "Todas"}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
+              {EXPORT_COLUMNS.map((c) => (
+                <Checkbox
+                  key={c.key}
+                  id={`export-col-${c.key}`}
+                  checked={exportColumns.has(c.key)}
+                  onChange={() => toggleExportColumn(c.key)}
+                  label={c.label}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
       </Modal>
     </>
   );
