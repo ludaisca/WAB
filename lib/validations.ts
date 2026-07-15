@@ -98,6 +98,8 @@ export const leadScorerBotSchema = z.object({
     .union(LEAD_SCORER_SCHEDULE_INTERVALS.map((n) => z.literal(n)) as [z.ZodLiteral<number>, ...z.ZodLiteral<number>[]])
     .nullable()
     .optional(),
+  // Empty/omitted = every account the user owns or has shared with them.
+  scheduleAccountIds: z.array(z.string()).optional(),
 }).refine(
   (data) => !data.scheduleEnabled || data.scheduleIntervalMinutes != null,
   { message: "Selecciona cada cuánto debe ejecutarse el calificador", path: ["scheduleIntervalMinutes"] }
@@ -114,6 +116,7 @@ export const leadScorerBotUpdateSchema = z.object({
     .union(LEAD_SCORER_SCHEDULE_INTERVALS.map((n) => z.literal(n)) as [z.ZodLiteral<number>, ...z.ZodLiteral<number>[]])
     .nullable()
     .optional(),
+  scheduleAccountIds: z.array(z.string()).optional(),
 });
 
 export const campaignSchema = z.object({

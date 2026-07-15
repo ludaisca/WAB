@@ -181,6 +181,7 @@ model WALeadScorerBot {
   isActive                Boolean   @default(true)
   scheduleEnabled         Boolean   @default(false)
   scheduleIntervalMinutes Int?
+  scheduleAccountIds      String[]  @default([])
   lastRunAt               DateTime?
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @updatedAt @map("updated_at")

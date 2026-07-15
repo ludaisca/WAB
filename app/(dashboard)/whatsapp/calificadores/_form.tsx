@@ -11,10 +11,12 @@ import { FormField } from "@/app/components/ui/form-field";
 import { Switch } from "@/app/components/ui/switch";
 import { Banner } from "@/app/components/ui/banner";
 import { Spinner } from "@/app/components/ui/spinner";
+import { MultiSelect } from "@/app/components/ui/multi-select";
 import { useToast } from "@/app/components/ui/toast";
 import { LEAD_SCORER_SCHEDULE_INTERVALS } from "@/lib/validations";
 
 interface ModelOption { id: string; name: string; }
+interface AccountOption { id: string; name: string; }
 
 const INTERVAL_LABEL: Record<number, string> = {
   15: "Cada 15 minutos",
@@ -57,6 +59,7 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
   const [isActive, setIsActive] = useState(true);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduleIntervalMinutes, setScheduleIntervalMinutes] = useState(30);
+  const [scheduleAccountIds, setScheduleAccountIds] = useState<string[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -64,6 +67,7 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
   const [models, setModels] = useState<ModelOption[]>(FALLBACK_MODELS.openrouter);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelsProvider, setModelsProvider] = useState("openrouter");
+  const [accounts, setAccounts] = useState<AccountOption[]>([]);
 
   const resetForm = useCallback(() => {
     setName("");
@@ -73,6 +77,7 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
     setIsActive(true);
     setScheduleEnabled(false);
     setScheduleIntervalMinutes(30);
+    setScheduleAccountIds([]);
     setErrors({});
     setError("");
   }, []);
@@ -104,6 +109,16 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
   }, [open, provider, fetchModels]);
 
   useEffect(() => {
+    if (!open) return;
+    fetch("/api/whatsapp/accounts")
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d)) setAccounts(d.map((a) => ({ id: a.id, name: a.name })));
+      })
+      .catch(() => {});
+  }, [open]);
+
+  useEffect(() => {
     if (modelsProvider !== provider) return;
     if (models.length === 0) return;
     if (!models.some((m) => m.id === model)) {
@@ -127,6 +142,7 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
           setIsActive(d.isActive);
           setScheduleEnabled(d.scheduleEnabled ?? false);
           setScheduleIntervalMinutes(d.scheduleIntervalMinutes ?? 30);
+          setScheduleAccountIds(d.scheduleAccountIds ?? []);
         }
       })
       .catch(() => toastError("Error al cargar el calificador"))
@@ -156,6 +172,7 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
         isActive,
         scheduleEnabled,
         scheduleIntervalMinutes: scheduleEnabled ? scheduleIntervalMinutes : null,
+        scheduleAccountIds: scheduleEnabled ? scheduleAccountIds : [],
       };
 
       const url = isEditing ? `/api/whatsapp/lead-scorers/${editId}` : "/api/whatsapp/lead-scorers";
@@ -266,19 +283,35 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
               <Switch checked={scheduleEnabled} onCheckedChange={setScheduleEnabled} />
             </div>
             {scheduleEnabled && (
-              <FormField label="Frecuencia" required error={errors.scheduleIntervalMinutes}>
-                {(id) => (
-                  <Select
-                    id={id}
-                    value={String(scheduleIntervalMinutes)}
-                    onChange={(e) => setScheduleIntervalMinutes(Number(e.target.value))}
-                  >
-                    {LEAD_SCORER_SCHEDULE_INTERVALS.map((m) => (
-                      <option key={m} value={m}>{INTERVAL_LABEL[m]}</option>
-                    ))}
-                  </Select>
-                )}
-              </FormField>
+              <>
+                <FormField label="Frecuencia" required error={errors.scheduleIntervalMinutes}>
+                  {(id) => (
+                    <Select
+                      id={id}
+                      value={String(scheduleIntervalMinutes)}
+                      onChange={(e) => setScheduleIntervalMinutes(Number(e.target.value))}
+                    >
+                      {LEAD_SCORER_SCHEDULE_INTERVALS.map((m) => (
+                        <option key={m} value={m}>{INTERVAL_LABEL[m]}</option>
+                      ))}
+                    </Select>
+                  )}
+                </FormField>
+                <FormField
+                  label="Cuentas a calificar"
+                  hint="Deja vacío para calificar automáticamente en todas tus cuentas. Selecciona una o varias para limitar el barrido a solo esas."
+                >
+                  {(id) => (
+                    <MultiSelect
+                      id={id}
+                      options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+                      value={scheduleAccountIds}
+                      onChange={setScheduleAccountIds}
+                      placeholder="Todas las cuentas"
+                    />
+                  )}
+                </FormField>
+              </>
             )}
             <p className="text-[11px] text-muted-darker">
               Respeta el presupuesto mensual de IA configurado en Configuración: si ya se superó, las ejecuciones automáticas se omiten hasta el mes siguiente.

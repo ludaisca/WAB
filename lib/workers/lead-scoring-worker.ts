@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { scoreChatWithScorer } from "@/lib/whatsapp/lead-scoring";
 import { checkBudgetAlert, isMonthlyBudgetExceeded } from "@/lib/ai/budget";
+import { getUserAccountIds } from "@/lib/shared-accounts";
 import type { WALeadScorerBot } from "@prisma/client";
 
 // Scheduled runs are unattended, so keep each tick's blast radius bounded:
@@ -36,9 +37,22 @@ async function runScheduledScorer(scorer: WALeadScorerBot, now: Date) {
     return;
   }
 
+  // Mirrors what manual scoring already allows (own + shared accounts, via
+  // getUserAccountIds), further narrowed by the scorer's own account scope
+  // (scheduleAccountIds) when one is configured — empty means "all of them".
+  const eligibleAccountIds = await getUserAccountIds(scorer.userId);
+  const scopedAccountIds = scorer.scheduleAccountIds.length > 0
+    ? eligibleAccountIds.filter((id) => scorer.scheduleAccountIds.includes(id))
+    : eligibleAccountIds;
+
+  if (scopedAccountIds.length === 0) {
+    await prisma.wALeadScorerBot.update({ where: { id: scorer.id }, data: { lastRunAt: now } });
+    return;
+  }
+
   const candidates = await prisma.wAChat.findMany({
     where: {
-      account: { userId: scorer.userId },
+      accountId: { in: scopedAccountIds },
       status: { in: ["OPEN", "PENDING"] },
       lastMessageAt: { not: null },
     },

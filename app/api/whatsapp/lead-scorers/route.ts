@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { leadScorerBotSchema } from "@/lib/validations";
+import { getUserAccountIds } from "@/lib/shared-accounts";
 
 export async function POST(req: Request) {
   try {
@@ -20,7 +21,17 @@ export async function POST(req: Request) {
       );
     }
 
-    const { name, provider, model, systemPrompt, isActive, scheduleEnabled, scheduleIntervalMinutes } = parsed.data;
+    const { name, provider, model, systemPrompt, isActive, scheduleEnabled, scheduleIntervalMinutes, scheduleAccountIds } = parsed.data;
+
+    let validAccountIds: string[] = [];
+    if (scheduleAccountIds && scheduleAccountIds.length > 0) {
+      const ownedIds = await getUserAccountIds(session.user.id);
+      const ownedSet = new Set(ownedIds);
+      if (scheduleAccountIds.some((id) => !ownedSet.has(id))) {
+        return NextResponse.json({ error: "Cuenta inválida en el alcance del calificador" }, { status: 400 });
+      }
+      validAccountIds = scheduleAccountIds;
+    }
 
     await prisma.appSettings.upsert({
       where: { userId: session.user.id },
@@ -38,6 +49,7 @@ export async function POST(req: Request) {
         isActive: isActive ?? true,
         scheduleEnabled: scheduleEnabled ?? false,
         scheduleIntervalMinutes: scheduleEnabled ? scheduleIntervalMinutes : null,
+        scheduleAccountIds: validAccountIds,
       },
     });
 

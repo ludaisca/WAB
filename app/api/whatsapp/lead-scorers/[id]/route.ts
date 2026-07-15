@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { leadScorerBotUpdateSchema } from "@/lib/validations";
+import { getUserAccountIds } from "@/lib/shared-accounts";
 
 export async function GET(
   _req: Request,
@@ -71,6 +72,16 @@ export async function PATCH(
     if (fields.isActive !== undefined) data.isActive = fields.isActive;
     if (fields.scheduleEnabled !== undefined) data.scheduleEnabled = fields.scheduleEnabled;
     if (fields.scheduleIntervalMinutes !== undefined) data.scheduleIntervalMinutes = fields.scheduleIntervalMinutes;
+    if (fields.scheduleAccountIds !== undefined) {
+      if (fields.scheduleAccountIds.length > 0) {
+        const ownedIds = await getUserAccountIds(session.user.id);
+        const ownedSet = new Set(ownedIds);
+        if (fields.scheduleAccountIds.some((accId) => !ownedSet.has(accId))) {
+          return NextResponse.json({ error: "Cuenta inválida en el alcance del calificador" }, { status: 400 });
+        }
+      }
+      data.scheduleAccountIds = fields.scheduleAccountIds;
+    }
 
     // Turning scheduling off (or leaving it off) always clears the interval —
     // avoids a stale minutes value lingering once re-enabled with no explicit choice.
