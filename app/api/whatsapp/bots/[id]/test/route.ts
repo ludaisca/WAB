@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAIProvider } from "@/lib/ai/factory";
 import { getUserApiKey } from "@/lib/ai/settings";
+import { wrapUserPrompt, SCOPE_GUARDRAIL } from "@/lib/ai/prompt-sanitizer";
 import type { AIProvider } from "@/lib/ai/types";
 
 export async function POST(
@@ -44,7 +45,8 @@ export async function POST(
     const client = getAIProvider(provider, apiKey);
 
     const messages = [
-      { role: "system" as const, content: bot.systemPrompt },
+      { role: "system" as const, content: wrapUserPrompt(bot.systemPrompt) },
+      { role: "system" as const, content: SCOPE_GUARDRAIL },
       { role: "user" as const, content: message },
     ];
 

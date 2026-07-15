@@ -104,7 +104,10 @@ export async function saveMediaFromMeta(
   const accessToken = decrypt(encryptedAccessToken);
   const { url, mimeType } = await getMediaUrl(mediaId, accessToken);
 
-  const res = await fetch(url);
+  // Meta's lookaside.fbsbx.com download URL isn't a public pre-signed link — it still
+  // requires the same Bearer token used to resolve it, or the byte download 401s even
+  // though the metadata lookup above (same token) succeeded.
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
     throw new Error(`Descarga de medio Meta fallida (HTTP ${res.status})`);
   }

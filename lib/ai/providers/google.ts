@@ -30,13 +30,15 @@ function toParts(content: AIMessage["content"]): GooglePart[] {
 
   return (content as ContentPart[]).map((p) => {
     if (p.type === "text") return { text: p.text };
-    // data URI scheme: data:<mime>;base64,<data>
-    const match = p.image_url.url.match(/^data:([^;]+);base64,(.+)$/);
+    // data URI scheme: data:<mime>;base64,<data> — inlineData itself is mime-agnostic,
+    // it works the same for an image_url or audio_url part.
+    const url = p.type === "image_url" ? p.image_url.url : p.audio_url.url;
+    const match = url.match(/^data:([^;]+);base64,(.+)$/);
     if (match) {
       return { inlineData: { mimeType: match[1], data: match[2] } };
     }
     // Plain URL isn't supported by inlineData (which expects raw bytes); skip silently.
-    return { text: "[imagen no embebida]" };
+    return { text: "[contenido no embebido]" };
   });
 }
 
@@ -70,8 +72,23 @@ export function createGoogleClient(apiKey: string) {
       parts: toParts(m.content),
     }));
 
+    // Gemini requires the first entry of `history` to have role "user" — it rejects the
+    // call outright otherwise ("First content should be with role 'user', got model").
+    // bot-worker's RECENT-memory window just takes the N most recent messages regardless
+    // of pairing, so the oldest kept message can legitimately be the bot's own outbound
+    // message (a campaign send, or a human agent reply before the bot took over — the
+    // window starts mid-exchange). Dropping those leading turns silently threw away real
+    // content the bot needs (e.g. what a campaign actually said) — instead, prepend one
+    // synthetic user turn so the real history survives intact and Gemini's constraint is
+    // still satisfied.
+    const priorHistory = history.slice(0, -1);
+    const needsLeadingUser = priorHistory.length > 0 && priorHistory[0].role === "model";
+    const trimmedHistory = needsLeadingUser
+      ? [{ role: "user" as GoogleRole, parts: [{ text: "(inicio de la conversación)" }] }, ...priorHistory]
+      : priorHistory;
+
     const chat = model.startChat({
-      history: history.slice(0, -1),
+      history: trimmedHistory,
       generationConfig: {
         temperature: params.temperature ?? 0.7,
         maxOutputTokens: params.maxTokens ?? 1024,

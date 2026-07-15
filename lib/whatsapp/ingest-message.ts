@@ -173,6 +173,7 @@ export async function ingestInboundMessage(
       localMediaPath: msg.localMediaPath ?? null,
       mimeType: msg.mimeType ?? null,
       caption: msg.caption ?? null,
+      filename: msg.filename ?? null,
     });
   }
 

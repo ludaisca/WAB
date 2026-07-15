@@ -5,9 +5,10 @@ import { getAIProvider } from "@/lib/ai/factory";
 import { searchKnowledge } from "@/lib/ai/rag";
 import { getUserApiKey } from "@/lib/ai/settings";
 import { estimateCost } from "@/lib/ai/pricing";
-import { wrapUserPrompt } from "@/lib/ai/prompt-sanitizer";
+import { wrapUserPrompt, SCOPE_GUARDRAIL } from "@/lib/ai/prompt-sanitizer";
 import { checkBudgetAlert } from "@/lib/ai/budget";
 import { resolveAbsolutePath } from "@/lib/whatsapp/media-store";
+import { extractDocumentText } from "@/lib/whatsapp/extract-document-text";
 import { splitReply, computeTypingDelay } from "@/lib/whatsapp/humanize";
 import { botSendQueue } from "@/lib/queue";
 import type { AIProvider, AIMessage, ContentPart } from "@/lib/ai/types";
@@ -22,27 +23,97 @@ interface BotMessageJob {
   localMediaPath?: string | null;
   mimeType?: string | null;
   caption?: string | null;
+  filename?: string | null;
 }
 
-export async function processBotMessageJob(job: BotMessageJob) {
+interface AttemptInfo {
+  attemptsMade: number;
+  maxAttempts: number;
+}
+
+export async function processBotMessageJob(
+  job: BotMessageJob,
+  attemptInfo: AttemptInfo = { attemptsMade: 0, maxAttempts: 1 }
+) {
   try {
     await handleBotMessage(job);
   } catch (err) {
     console.error("[bot-worker] Error processing job:", err instanceof Error ? err.message : err);
-    const bot = await prisma.wABot
-      .update({ where: { id: job.botId }, data: { status: "ERROR" } })
-      .catch(() => null);
-    if (bot) {
-      await prisma.notification.create({
-        data: {
-          userId: bot.userId,
-          type: "BOT_ERROR",
-          title: `Bot "${bot.name}" con error`,
-          body: err instanceof Error ? err.message.slice(0, 200) : "Error desconocido",
-          link: `/whatsapp/bots/${bot.id}`,
-        },
-      });
+    const isLastAttempt = attemptInfo.attemptsMade + 1 >= attemptInfo.maxAttempts;
+    if (!isLastAttempt) {
+      // Rethrow so BullMQ's configured retries (attempts: 3, exponential backoff)
+      // actually kick in — a transient network blip shouldn't give up on the
+      // first try and leave the lead's message unanswered.
+      throw err;
     }
+    await failBotAndNotify(
+      job.botId,
+      job.waChatId,
+      err instanceof Error ? err.message : "Error desconocido"
+    );
+  }
+}
+
+// The lead's message must never go fully unanswered just because the AI call
+// failed — after retries are exhausted (or immediately for a non-retryable
+// failure like a missing API key), mark the bot ERROR, notify the team, and
+// still attempt a graceful hand-off message so the lead gets a reply either way.
+async function failBotAndNotify(botId: string, waChatId: string, errorMessage: string) {
+  const bot = await prisma.wABot
+    .update({ where: { id: botId }, data: { status: "ERROR" } })
+    .catch(() => null);
+  if (bot) {
+    await prisma.notification.create({
+      data: {
+        userId: bot.userId,
+        type: "BOT_ERROR",
+        title: `Bot "${bot.name}" con error`,
+        body: errorMessage.slice(0, 200),
+        link: `/whatsapp/chat/${bot.waAccountId}/${waChatId}`,
+      },
+    });
+  }
+  await sendFallbackReply(botId, waChatId);
+}
+
+const FALLBACK_REPLY =
+  "Gracias por tu mensaje. Estamos teniendo un inconveniente técnico en este momento — un miembro de nuestro equipo te contactará en breve para continuar la conversación.";
+
+async function sendFallbackReply(botId: string, waChatId: string) {
+  try {
+    const bot = await prisma.wABot.findUnique({ where: { id: botId }, include: { waAccount: true } });
+    const chat = await prisma.wAChat.findUnique({ where: { id: waChatId }, select: { remoteJid: true } });
+    if (!bot?.waAccount || !chat) return;
+
+    const now = new Date();
+    const sendResult = await sendWhatsAppMessage(bot.waAccount, {
+      to: chat.remoteJid,
+      type: "text",
+      body: FALLBACK_REPLY,
+    });
+
+    await Promise.all([
+      prisma.wAMessage.create({
+        data: {
+          wamid: sendResult.wamid ?? undefined,
+          chatId: waChatId,
+          direction: "OUTBOUND",
+          messageType: "text",
+          body: FALLBACK_REPLY,
+          status: "sent",
+          timestamp: now,
+        },
+      }),
+      prisma.wAChat.update({
+        where: { id: waChatId },
+        data: { lastMessage: FALLBACK_REPLY.slice(0, 500), lastMessageAt: now },
+      }),
+    ]);
+  } catch (err) {
+    // Best-effort — if even the fallback send fails (e.g. WhatsApp's API is down
+    // too), there's nothing more automatic left to try; the BOT_ERROR notification
+    // already created is what surfaces this to a human.
+    console.error("[bot-worker] No se pudo enviar el mensaje de respaldo:", err instanceof Error ? err.message : err);
   }
 }
 
@@ -60,19 +131,7 @@ async function handleBotMessage(job: BotMessageJob) {
   const apiKey = await getUserApiKey(bot.userId, provider);
 
   if (!apiKey) {
-    await prisma.wABot.update({
-      where: { id: botId },
-      data: { status: "ERROR" },
-    });
-    await prisma.notification.create({
-      data: {
-        userId: bot.userId,
-        type: "BOT_ERROR",
-        title: `Bot "${bot.name}" sin API key`,
-        body: "Configura la clave del proveedor de IA en Configuración.",
-        link: `/whatsapp/bots/${botId}`,
-      },
-    });
+    await failBotAndNotify(botId, waChatId, "Configura la clave del proveedor de IA en Configuración.");
     return;
   }
 
@@ -88,6 +147,7 @@ async function handleBotMessage(job: BotMessageJob) {
 
   const messages: AIMessage[] = [];
   messages.push({ role: "system", content: wrapUserPrompt(bot.systemPrompt) });
+  messages.push({ role: "system", content: SCOPE_GUARDRAIL });
 
   if (bot.ragEnabled) {
     const ragQuery =
@@ -108,19 +168,26 @@ async function handleBotMessage(job: BotMessageJob) {
     where: { chatId: waChatId, direction: "OUTBOUND" },
     orderBy: { timestamp: "desc" },
     select: {
+      body: true,
       campaign: { select: { name: true, waTemplate: { select: { name: true } } } },
     },
   });
   if (lastOutbound?.campaign) {
+    const exactMessage = lastOutbound.body
+      ? `\n\nEl mensaje exacto que recibió el cliente fue:\n"${lastOutbound.body}"`
+      : "";
     messages.push({
       role: "system",
-      content: `Esta conversación inició a partir de la campaña "${lastOutbound.campaign.name}" usando la plantilla "${lastOutbound.campaign.waTemplate.name}". Ten esto en cuenta al responder.`,
+      content: `Esta conversación inició a partir de la campaña "${lastOutbound.campaign.name}" usando la plantilla "${lastOutbound.campaign.waTemplate.name}".${exactMessage}\n\nTen este contenido en cuenta al responder — el cliente puede estar reaccionando directamente a este mensaje.`,
     });
   }
 
   if (bot.memoryType === "RECENT" && bot.memoryLimit > 0) {
     const history = await prisma.wAMessage.findMany({
-      where: { chatId: waChatId },
+      // Exclude the message currently being processed — it's already appended below as
+      // the final user turn via buildUserContent(); without this it shows up twice
+      // (once here from the desc-ordered fetch, once as the "current" turn).
+      where: { chatId: waChatId, ...(job.messageId ? { id: { not: job.messageId } } : {}) },
       orderBy: { timestamp: "desc" },
       take: bot.memoryLimit * 2,
       select: {
@@ -161,8 +228,9 @@ async function handleBotMessage(job: BotMessageJob) {
     });
   }
 
-  // Build the user turn — embed the latest image inline if present and the model supports vision.
-  const userContent = await buildUserContent(job);
+  // Build the user turn — embed the latest image/audio inline, or the extracted text of a
+  // document, if present and the provider/media type combination supports it.
+  const userContent = await buildUserContent(job, provider);
   messages.push({ role: "user", content: userContent });
 
   const client = getAIProvider(provider, apiKey);
@@ -266,11 +334,16 @@ async function handleBotMessage(job: BotMessageJob) {
   ]);
 }
 
-async function buildUserContent(job: BotMessageJob): Promise<string | ContentPart[]> {
+async function buildUserContent(job: BotMessageJob, provider: AIProvider): Promise<string | ContentPart[]> {
   const isImage = job.messageType === "image" || job.messageType === "sticker";
+  // Audio understanding only works through Gemini's native inlineData — OpenRouter
+  // has no generic audio content shape (see ContentPart["audio_url"] comment).
+  const isAudio = job.messageType === "audio" && provider === "google";
+  const isDocument = job.messageType === "document";
   const bodyText = job.caption ?? job.incomingMessage ?? "";
+  const fallbackLabel = `[${job.messageType === "audio" ? "audio" : job.messageType} recibido]`;
 
-  if (!isImage) {
+  if (!isImage && !isAudio && !isDocument) {
     return bodyText || `[${job.messageType ?? "text"}]`;
   }
 
@@ -288,27 +361,38 @@ async function buildUserContent(job: BotMessageJob): Promise<string | ContentPar
   }
 
   if (!localPath) {
-    return bodyText && bodyText !== `[image]` ? `[imagen recibida] ${bodyText}` : `[imagen recibida]`;
+    return bodyText && bodyText !== `[${job.messageType}]` ? `${fallbackLabel} ${bodyText}` : fallbackLabel;
+  }
+  const absolute = resolveAbsolutePath(localPath);
+
+  if (isDocument) {
+    const extracted = await extractDocumentText(absolute, mimeType);
+    if (!extracted) {
+      return bodyText && bodyText !== `[document]` ? `${fallbackLabel} ${bodyText}` : fallbackLabel;
+    }
+    const label = job.filename ? `Documento "${job.filename}"` : "Documento recibido";
+    const caption = bodyText && bodyText !== `[document]` ? `\nMensaje del prospecto: ${bodyText}` : "";
+    return `${label}, contenido extraído:\n\n${extracted}${caption}`;
   }
 
   try {
-    const absolute = resolveAbsolutePath(localPath);
     const buffer = await fs.readFile(absolute);
     const base64 = buffer.toString("base64");
-    const mime = mimeType ?? "image/jpeg";
+    const mime = mimeType ?? (isImage ? "image/jpeg" : "audio/ogg");
 
     const parts: ContentPart[] = [];
     if (bodyText && bodyText !== `[${job.messageType}]`) {
       parts.push({ type: "text", text: bodyText });
     }
-    parts.push({
-      type: "image_url",
-      image_url: { url: `data:${mime};base64,${base64}` },
-    });
+    parts.push(
+      isImage
+        ? { type: "image_url", image_url: { url: `data:${mime};base64,${base64}` } }
+        : { type: "audio_url", audio_url: { url: `data:${mime};base64,${base64}` } }
+    );
     return parts;
   } catch (err) {
-    console.error("[bot-worker] No se pudo leer la imagen local:", err);
-    return bodyText || `[imagen recibida]`;
+    console.error(`[bot-worker] No se pudo leer el ${isImage ? "imagen" : "audio"} local:`, err);
+    return bodyText || fallbackLabel;
   }
 }
 
