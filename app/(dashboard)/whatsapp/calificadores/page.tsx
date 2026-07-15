@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { Plus, Target, Trash2, Pencil, Sparkles, Clock } from "lucide-react";
+import { Plus, Target, Trash2, Pencil, Sparkles, Clock, Download } from "lucide-react";
 import { Card, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Switch } from "@/app/components/ui/switch";
@@ -14,6 +14,7 @@ import { Button } from "@/app/components/ui/button";
 import { Select } from "@/app/components/ui/select";
 import { Modal } from "@/app/components/ui/modal";
 import { useToast } from "@/app/components/ui/toast";
+import { toCsv, downloadCsv } from "@/lib/csv";
 import { LeadScorerFormModal } from "./_form";
 
 interface LeadScorerBot {
@@ -327,6 +328,30 @@ function LeadsTab() {
 
   const detailRow = useMemo(() => rows.find((r) => r.id === detailId) ?? null, [rows, detailId]);
 
+  function handleExportCsv() {
+    const headers = ["Lead", "Teléfono", "Cuenta", "Calificación", "Score", "Calificador", "Resumen", "Motivos", "Actualizado"];
+    const csvRows = filtered.map((r) => {
+      let reasons: string[] = [];
+      try {
+        reasons = JSON.parse(r.reasons);
+      } catch {
+        reasons = [];
+      }
+      return [
+        r.chat.name || r.chat.remoteJid.split("@")[0],
+        r.chat.remoteJid.split("@")[0],
+        r.chat.account.name,
+        LABEL_TEXT[r.label],
+        String(r.score),
+        r.scorer.name,
+        r.summary,
+        reasons.join(" | "),
+        new Date(r.updatedAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }),
+      ];
+    });
+    downloadCsv(`leads-calificados-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(headers, csvRows));
+  }
+
   const columns: TableColumn<LeadScoreRow>[] = useMemo(() => [
     {
       key: "chat",
@@ -413,6 +438,16 @@ function LeadsTab() {
             ))}
           </Select>
         </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={Download}
+          onClick={handleExportCsv}
+          disabled={filtered.length === 0}
+          className="ml-auto"
+        >
+          Exportar CSV
+        </Button>
       </div>
 
       <Card>
