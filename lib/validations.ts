@@ -134,6 +134,9 @@ export const templateCreateSchema = z.object({
       exampleHandle: z.string().optional(),
     }).optional(),
     body: z.string().min(1, "El cuerpo es requerido").max(1024, "El cuerpo es demasiado largo"),
+    // Meta requires one example value per {{n}} variable in the body — without
+    // it the Graph API rejects template creation (error 132000).
+    bodyExamples: z.array(z.string().min(1, "Ejemplo requerido")).optional(),
     footer: z.string().max(60, "Máximo 60 caracteres").optional(),
     buttons: z.array(z.object({
       type: buttonTypeEnum,

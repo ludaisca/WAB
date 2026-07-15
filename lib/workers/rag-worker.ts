@@ -31,9 +31,14 @@ export async function processRagJob(job: RagJob) {
   const { title, content, botIds, provider, userId, sourceName } = job;
 
   const apiKey = await getUserApiKey(userId, provider);
-  if (!apiKey) return;
+  if (!apiKey) {
+    await notifyIndexFailure(userId, title, "No hay API key configurada para el proveedor de este bot.");
+    return;
+  }
 
   const chunks = chunkText(content);
+  let failedChunks = 0;
+  let lastError = "";
 
   for (let i = 0; i < chunks.length; i++) {
     try {
@@ -42,7 +47,7 @@ export async function processRagJob(job: RagJob) {
       const knowledgeId = crypto.randomUUID();
 
       await prisma.$executeRawUnsafe(
-        `INSERT INTO "wa_bot_knowledge" ("id", "title", "content", "embedding", "chunk_index", "source_name", "created_at")
+        `INSERT INTO "wa_bot_knowledge" ("id", "title", "content", "embedding", "chunkIndex", "sourceName", "created_at")
          VALUES ($1, $2, $3, $4::vector, $5, $6, NOW())`,
         knowledgeId,
         title,
@@ -60,7 +65,27 @@ export async function processRagJob(job: RagJob) {
 
       await new Promise((r) => setTimeout(r, 200));
     } catch (err) {
-      console.error(`[rag-worker] Error processing chunk ${i}:`, err instanceof Error ? err.message : err);
+      failedChunks++;
+      lastError = err instanceof Error ? err.message : String(err);
+      console.error(`[rag-worker] Error processing chunk ${i}:`, lastError);
     }
   }
+
+  // Every chunk failed (e.g. embedding model unavailable) — the document never got
+  // indexed but nothing else in the pipeline surfaces that to the user, so notify.
+  if (chunks.length > 0 && failedChunks === chunks.length) {
+    await notifyIndexFailure(userId, title, lastError);
+  }
+}
+
+async function notifyIndexFailure(userId: string, title: string, reason: string) {
+  await prisma.notification.create({
+    data: {
+      userId,
+      type: "BOT_ERROR",
+      title: `Error al indexar "${title}"`,
+      body: reason.slice(0, 500),
+      link: "/whatsapp/conocimiento",
+    },
+  });
 }

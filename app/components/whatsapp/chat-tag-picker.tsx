@@ -84,9 +84,19 @@ export function ChatTagPicker({ chatId }: { chatId: string }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al crear etiqueta");
-      setAllTags((prev) => [...prev, data]);
+      const newTag: TagOption = data;
+      setAllTags((prev) => [...prev, newTag]);
       setNewTagName("");
-      await handleTagsChange([...chatTags.map((t) => t.id), data.id]);
+      await fetch(`/api/whatsapp/chats/${chatId}/tags`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tagId: newTag.id }),
+      });
+      // Append the tag we already have in hand instead of routing through
+      // handleTagsChange, which rebuilds chatTags from `allTags` — that state
+      // update from setAllTags above hasn't flushed yet, so the new tag wouldn't
+      // be in it and the picker would show it missing despite saving fine.
+      setChatTags((prev) => [...prev, newTag]);
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Error al crear etiqueta");
     }

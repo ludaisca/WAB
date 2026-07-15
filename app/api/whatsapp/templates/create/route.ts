@@ -24,6 +24,14 @@ export async function POST(req: Request) {
 
     const { waAccountId, name, language, components } = parsed.data;
 
+    const bodyVariableCount = new Set(components.body.match(/\{\{(\d+)\}\}/g)).size;
+    if (bodyVariableCount > 0 && (components.bodyExamples?.length ?? 0) !== bodyVariableCount) {
+      return NextResponse.json(
+        { error: `Debes dar un ejemplo para cada variable del cuerpo (${bodyVariableCount} requerido(s))` },
+        { status: 400 }
+      );
+    }
+
     const account = await prisma.wAAccount.findFirst({
       where: { id: waAccountId, userId: session.user.id },
     });

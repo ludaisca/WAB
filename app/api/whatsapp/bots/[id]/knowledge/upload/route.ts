@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ragQueue } from "@/lib/queue";
+import { getUserApiKey } from "@/lib/ai/settings";
 import type { AIProvider } from "@/lib/ai/types";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -58,6 +59,14 @@ export async function POST(
     }
 
     const provider = bot.provider as AIProvider;
+
+    const apiKey = await getUserApiKey(session.user.id, provider);
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "No hay API key configurada para el proveedor de este bot" },
+        { status: 400 }
+      );
+    }
 
     const text = await extractText(file);
 

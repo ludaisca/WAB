@@ -68,13 +68,26 @@ export function MultiSelect({
 
   return (
     <div className={cn("relative", className)} ref={ref}>
-      <button
-        type="button"
+      {/* A real <button> can't contain the nested per-tag remove <button>s below
+          (invalid HTML — browsers reparent it out, causing a hydration mismatch),
+          so this trigger is a div with the same button semantics/keyboard support. */}
+      <div
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
         id={id}
-        disabled={disabled}
         onClick={() => !disabled && setOpen(!open)}
+        onKeyDown={(e) => {
+          if (disabled) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen(!open);
+          }
+        }}
         className={cn(
-          "w-full min-h-10 rounded-lg border bg-surface-light px-3 py-2 text-left text-sm transition-colors",
+          "w-full min-h-10 rounded-lg border bg-surface-light px-3 py-2 text-left text-sm transition-colors cursor-pointer",
           "focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30",
           error ? "border-danger-border" : "border-border",
           disabled && "opacity-50 cursor-not-allowed"
@@ -112,7 +125,7 @@ export function MultiSelect({
             )}
           />
         </div>
-      </button>
+      </div>
 
       {error && <p className="mt-1.5 text-xs text-danger">{error}</p>}
 

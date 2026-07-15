@@ -87,14 +87,16 @@ export async function PATCH(
     const fields = parsed.data;
 
     if (fields.name) data.name = fields.name;
-    if (fields.waAccountId) {
-      const account = await prisma.wAAccount.findFirst({
-        where: { id: fields.waAccountId, userId: session.user.id },
-      });
-      if (!account) {
-        return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
+    if (fields.waAccountId !== undefined) {
+      if (fields.waAccountId) {
+        const account = await prisma.wAAccount.findFirst({
+          where: { id: fields.waAccountId, userId: session.user.id },
+        });
+        if (!account) {
+          return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
+        }
       }
-      data.waAccountId = fields.waAccountId;
+      data.waAccountId = fields.waAccountId || null;
     }
     if (fields.provider) data.provider = fields.provider;
     if (fields.model) data.model = fields.model;

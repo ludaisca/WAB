@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import type { EmbedContentRequest } from "@google/generative-ai";
 import type {
   AICompletionParams,
   AICompletionResponse,
@@ -7,6 +8,16 @@ import type {
   AIMessage,
   ContentPart,
 } from "../types";
+
+// gemini-embedding-2 defaults to 3072 dims; outputDimensionality truncates it
+// (Matryoshka Representation Learning — the API re-normalizes automatically)
+// down to the 768 this project's pgvector column expects. The installed SDK
+// version's EmbedContentRequest type predates this field, but the REST API
+// accepts it — verified directly against the live embedContent endpoint.
+const EMBEDDING_OUTPUT_DIMENSIONALITY = 768;
+type EmbedContentRequestWithDimensionality = EmbedContentRequest & {
+  outputDimensionality?: number;
+};
 
 type GooglePart =
   | { text: string }
@@ -86,7 +97,11 @@ export function createGoogleClient(apiKey: string) {
     const embeddings: number[][] = [];
 
     for (const input of inputs) {
-      const result = await model.embedContent(input);
+      const request: EmbedContentRequestWithDimensionality = {
+        content: { role: "user", parts: [{ text: input }] },
+        outputDimensionality: EMBEDDING_OUTPUT_DIMENSIONALITY,
+      };
+      const result = await model.embedContent(request);
       embeddings.push(result.embedding.values ?? []);
     }
 

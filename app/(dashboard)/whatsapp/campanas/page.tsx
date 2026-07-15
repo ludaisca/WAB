@@ -97,7 +97,7 @@ export default function CampaignsPage() {
         renderTile={(c) => {
           const badge = STATUS_BADGE[c.status] ?? { label: c.status, tone: "neutral" as const };
           const progress = c.recipientCount > 0
-            ? Math.round(((c.sentCount + (c.deliveredCount || 0)) / c.recipientCount) * 100)
+            ? Math.round((c.sentCount / c.recipientCount) * 100)
             : 0;
           return (
             <div className="flex items-start justify-between gap-4">

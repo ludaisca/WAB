@@ -4,58 +4,6 @@ import type { AIProvider } from "./types";
 
 const SIMILARITY_THRESHOLD = 0.5;
 const MAX_CHUNKS = 5;
-const CHUNK_SIZE = 800;
-const CHUNK_OVERLAP = 100;
-
-export function chunkText(text: string): string[] {
-  const chunks: string[] = [];
-  let start = 0;
-
-  while (start < text.length) {
-    const end = Math.min(start + CHUNK_SIZE, text.length);
-    const chunk = text.slice(start, end).trim();
-    if (chunk) chunks.push(chunk);
-    start += CHUNK_SIZE - CHUNK_OVERLAP;
-  }
-
-  return chunks;
-}
-
-export async function indexDocument(
-  title: string,
-  content: string,
-  botIds: string[],
-  provider: AIProvider,
-  apiKey: string,
-  sourceName?: string
-) {
-  const chunks = chunkText(content);
-
-  for (let i = 0; i < chunks.length; i++) {
-    const embedding = await generateEmbedding(chunks[i], provider, apiKey);
-
-    const knowledgeId = `${Date.now()}_${chunks.length}_${i}`;
-
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO "wa_bot_knowledge" ("id", "title", "content", "embedding", "chunk_index", "source_name", "created_at")
-       VALUES ($1, $2, $3, $4::vector, $5, $6, NOW())`,
-      knowledgeId,
-      title,
-      chunks[i],
-      `[${embedding.join(",")}]`,
-      i,
-      sourceName ?? null
-    );
-
-    for (const botId of botIds) {
-      await prisma.wABotKnowledgeBot.create({
-        data: { knowledgeId, botId },
-      });
-    }
-
-    await new Promise((r) => setTimeout(r, 200));
-  }
-}
 
 export async function searchKnowledge(
   botId: string,
@@ -71,8 +19,8 @@ export async function searchKnowledge(
   >(
     `SELECT k.content, 1 - (k.embedding <=> $1::vector) AS similarity
      FROM "wa_bot_knowledge" k
-     JOIN "wa_bot_knowledge_bots" kb ON k.id = kb.knowledge_id
-     WHERE kb.bot_id = $2
+     JOIN "wa_bot_knowledge_bots" kb ON k.id = kb."knowledgeId"
+     WHERE kb."botId" = $2
        AND 1 - (k.embedding <=> $1::vector) > $3
      ORDER BY similarity DESC
      LIMIT $4`,

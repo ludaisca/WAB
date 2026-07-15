@@ -11,7 +11,6 @@ import {
   DollarSign,
   Zap,
   UserCheck,
-  Users,
   Mail,
 } from "lucide-react";
 import { CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
@@ -112,6 +111,7 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
   ], []);
 
   const maxCount = Math.max(...stats.dailyMessages.map((d) => d.count), 1);
+  const maxAccountChats = Math.max(...stats.accountBreakdown.map((a) => a.chats), 1);
 
   return (
     <div className="space-y-6">
@@ -249,24 +249,21 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
               <p className="text-sm text-muted py-4 text-center">Sin cuentas todavía</p>
             ) : (
               <div className="space-y-3">
-                {stats.accountBreakdown.map((a) => {
-                  const maxChats = Math.max(...stats.accountBreakdown.map((x) => x.chats), 1);
-                  return (
-                    <div key={a.id} className="flex items-center gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{a.name}</p>
-                        {a.phoneNumber && <p className="text-xs text-muted-darker truncate">{a.phoneNumber}</p>}
-                      </div>
-                      <div className="w-32 shrink-0 bg-surface rounded-full h-2 overflow-hidden">
-                        <div
-                          className="h-full bg-accent rounded-full transition-all"
-                          style={{ width: `${(a.chats / maxChats) * 100}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-muted-darker w-8 text-right shrink-0">{a.chats}</span>
+                {stats.accountBreakdown.map((a) => (
+                  <div key={a.id} className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{a.name}</p>
+                      {a.phoneNumber && <p className="text-xs text-muted-darker truncate">{a.phoneNumber}</p>}
                     </div>
-                  );
-                })}
+                    <div className="w-32 shrink-0 bg-surface rounded-full h-2 overflow-hidden">
+                      <div
+                        className="h-full bg-accent rounded-full transition-all"
+                        style={{ width: `${(a.chats / maxAccountChats) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-muted-darker w-8 text-right shrink-0">{a.chats}</span>
+                  </div>
+                ))}
               </div>
             )}
           </CardBody>

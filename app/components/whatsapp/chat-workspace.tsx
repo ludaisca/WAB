@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   Search,
   Send,
@@ -92,6 +92,51 @@ function formatTime(ts: string): string {
   if (isToday) return d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
   return d.toLocaleDateString("es-MX", { day: "2-digit", month: "short" });
 }
+
+// Bubbles always show a clock time (unlike the sidebar preview's formatTime,
+// which shows a date for older chats) — a day divider carries the date instead,
+// so a message from last week doesn't just silently lose its time-of-day.
+function formatBubbleTime(ts: string): string {
+  return new Date(ts).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+}
+
+function startOfDay(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+function formatDayDivider(ts: string): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
+  if (diffDays === 0) return "Hoy";
+  if (diffDays === 1) return "Ayer";
+  return d.toLocaleDateString("es-MX", {
+    day: "2-digit",
+    month: "long",
+    year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+  });
+}
+
+// Deterministic per-account color so the same number always reads with the
+// same tone across the sidebar groups and the thread header, letting an agent
+// juggling multiple WhatsApp numbers tell them apart at a glance.
+const ACCOUNT_TONES = ["info", "success", "warning", "danger", "accent"] as const;
+type AccountTone = (typeof ACCOUNT_TONES)[number];
+function accountTone(accountId: string): AccountTone {
+  let hash = 0;
+  for (let i = 0; i < accountId.length; i++) hash = (hash * 31 + accountId.charCodeAt(i)) >>> 0;
+  return ACCOUNT_TONES[hash % ACCOUNT_TONES.length];
+}
+
+// Tailwind v4 has no safelist/config for this project to pick up a dynamic
+// `bg-${tone}` string from — the dot indicator needs literal class names.
+const ACCOUNT_DOT_CLASS: Record<AccountTone, string> = {
+  info: "bg-info",
+  success: "bg-success",
+  warning: "bg-warning",
+  danger: "bg-danger",
+  accent: "bg-accent",
+};
 
 function formatBytes(bytes: number | null): string {
   if (!bytes) return "";
@@ -201,7 +246,7 @@ function MessageBubble({ msg }: { msg: Message }) {
         <div className={`flex items-center justify-end gap-1 mt-1 ${
           isInbound ? "text-muted-darker" : "text-on-accent/70"
         }`}>
-          <span className="text-[10px]">{formatTime(msg.timestamp)}</span>
+          <span className="text-[10px]">{formatBubbleTime(msg.timestamp)}</span>
           {!isInbound && msg.status && (
             <span className="text-[10px]">
               {msg.status === "sent" && <Check size={10} />}
@@ -222,7 +267,6 @@ interface ChatWorkspaceProps {
 
 export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspaceProps) {
   const router = useRouter();
-  const pathname = usePathname();
   const { error: toastError } = useToast();
 
   const [chats, setChats] = useState<ChatItem[]>([]);
@@ -230,7 +274,6 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
   const [loadingMoreChats, setLoadingMoreChats] = useState(false);
   const [chatsTotal, setChatsTotal] = useState(0);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(initialChatId || null);
-  const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [newMessage, setNewMessage] = useState("");
@@ -247,6 +290,7 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
   const [attachmentPreview, setAttachmentPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const buildChatsParams = useCallback((page: number, pageSize: number): URLSearchParams => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
@@ -285,15 +329,20 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
     }
   }, [chats.length, buildChatsParams, toastError]);
 
-  // Handle URL changes to update state
-  useEffect(() => {
-    if (initialChatId && initialChatId !== selectedChatId) {
-      setSelectedChatId(initialChatId);
-    }
-    if (initialAccountId && initialAccountId !== accountFilter) {
-      setAccountFilter(initialAccountId);
-    }
-  }, [initialChatId, initialAccountId, selectedChatId, accountFilter]);
+  // Handle URL changes to update state — tracked via a "previous prop" render-time
+  // comparison (same idiom as Modal/Drawer's open/prevOpen) instead of an effect,
+  // since calling setState directly in an effect body causes an extra cascading
+  // render for what's really just deriving state from a changed prop.
+  const [prevInitialChatId, setPrevInitialChatId] = useState(initialChatId);
+  const [prevInitialAccountId, setPrevInitialAccountId] = useState(initialAccountId);
+  if (initialChatId !== prevInitialChatId) {
+    setPrevInitialChatId(initialChatId);
+    if (initialChatId) setSelectedChatId(initialChatId);
+  }
+  if (initialAccountId !== prevInitialAccountId) {
+    setPrevInitialAccountId(initialAccountId);
+    if (initialAccountId) setAccountFilter(initialAccountId);
+  }
 
   // Load initial chats list
   useEffect(() => {
@@ -315,10 +364,9 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
     reset();
   }, [buildChatsParams, toastError]);
 
-  // Sync selected chat item
-  useEffect(() => {
-    setSelectedChat(chats.find((c) => c.id === selectedChatId) ?? null);
-  }, [selectedChatId, chats]);
+  // Derived, not its own state — chats stays the single source of truth so every
+  // mutation site only needs to update one place instead of keeping two in sync.
+  const selectedChat = chats.find((c) => c.id === selectedChatId) ?? null;
 
   // Fetch canned responses
   useEffect(() => {
@@ -329,11 +377,13 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
         if (Array.isArray(d)) setCannedResponses(d);
       })
       .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally narrowed to accountId so this doesn't refire on every chats[] update, only when the conversation's own account actually changes
   }, [selectedChat?.accountId]);
 
   // Fetch messages
   useEffect(() => {
     if (!selectedChatId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-chat-change
     setLoadingMessages(true);
 
     async function load() {
@@ -350,9 +400,16 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
     load();
   }, [selectedChatId, toastError]);
 
-  // Scroll to bottom on new messages
+  // Scroll to bottom on new messages — but only if the user was already near the
+  // bottom, so the 5s poll below doesn't yank someone reading older history back
+  // down every time it silently no-ops on an unchanged message list.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distanceFromBottom < 200) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages]);
 
   // Message polling
@@ -363,7 +420,10 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
         const res = await fetch(`/api/whatsapp/chats/${selectedChatId}/messages?limit=50`);
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
-          setMessages(data);
+          setMessages((prev) => {
+            const unchanged = prev.length === data.length && prev[prev.length - 1]?.id === data[data.length - 1]?.id;
+            return unchanged ? prev : data;
+          });
           refreshChats();
         }
       } catch {}
@@ -374,16 +434,22 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
   // Route updates on selection
   const handleChatSelect = useCallback((chat: ChatItem) => {
     setSelectedChatId(chat.id);
-    setSelectedChat(chat);
     router.push(`/whatsapp/chat/${chat.accountId}/${chat.id}`);
   }, [router]);
 
+  const clearAttachment = useCallback(() => {
+    setAttachment(null);
+    setAttachmentPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  }, []);
+
   const handleCloseChat = useCallback(() => {
     setSelectedChatId(null);
-    setSelectedChat(null);
     clearAttachment();
     router.push("/whatsapp/chat");
-  }, [router]);
+  }, [router, clearAttachment]);
 
   function detectMessageType(file: File): "image" | "audio" | "video" | "document" | "sticker" {
     const t = file.type.toLowerCase();
@@ -408,14 +474,6 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
     setAttachment(file);
     setAttachmentPreview(URL.createObjectURL(file));
     e.target.value = "";
-  }
-
-  function clearAttachment() {
-    setAttachment(null);
-    if (attachmentPreview) {
-      URL.revokeObjectURL(attachmentPreview);
-      setAttachmentPreview(null);
-    }
   }
 
   async function handleSend(e: React.FormEvent) {
@@ -486,7 +544,6 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al cambiar estado");
-      setSelectedChat((prev) => prev && { ...prev, status: data.status });
       setChats((prev) => prev.map((c) => (c.id === selectedChatId ? { ...c, status: data.status } : c)));
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Error al cambiar estado");
@@ -584,7 +641,8 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
             <div>
               {Object.entries(groupedChats).map(([accountId, accountChats]) => (
                 <div key={accountId}>
-                  <div className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-darker bg-surface/50 border-b border-border">
+                  <div className="flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-darker bg-surface/50 border-b border-border">
+                    <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${ACCOUNT_DOT_CLASS[accountTone(accountId)]}`} />
                     {accountChats[0]?.account?.name ?? accountId}
                   </div>
                   {accountChats.map((chat) => (
@@ -656,68 +714,82 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-surface shrink-0">
-              <button
-                onClick={handleCloseChat}
-                className="md:hidden text-muted-darker hover:text-foreground transition-colors"
-                aria-label="Volver a la lista de chats"
-              >
-                <ArrowLeft size={18} />
-              </button>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold truncate">
-                  {selectedChat?.name ?? selectedChat?.remoteJid ?? "Chat"}
-                </p>
-                {selectedChat?.account.phoneNumber && (
-                  <p className="text-[11px] text-muted-darker truncate">
-                    {selectedChat.account.name} · {selectedChat.account.phoneNumber}
-                  </p>
+            <div className="flex flex-col gap-2 px-4 py-3 border-b border-border bg-surface shrink-0">
+              {/* Row 1: identity — name/account always get room, icon actions stay put */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleCloseChat}
+                  className="md:hidden text-muted-darker hover:text-foreground transition-colors shrink-0"
+                  aria-label="Volver a la lista de chats"
+                >
+                  <ArrowLeft size={18} />
+                </button>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold truncate">
+                      {selectedChat?.name ?? selectedChat?.remoteJid ?? "Chat"}
+                    </p>
+                    {selectedChat && (
+                      <Badge tone={accountTone(selectedChat.accountId)} size="sm" className="shrink-0">
+                        {selectedChat.account.name}
+                      </Badge>
+                    )}
+                  </div>
+                  {selectedChat?.account.phoneNumber && (
+                    <p className="text-[11px] text-muted-darker truncate">
+                      {selectedChat.account.phoneNumber}
+                    </p>
+                  )}
+                </div>
+                {selectedChat && (
+                  <button
+                    onClick={() => setNotesDrawerOpen(true)}
+                    className="text-muted-darker hover:text-foreground transition-colors shrink-0"
+                    title="Notas internas"
+                  >
+                    <StickyNote size={18} />
+                  </button>
+                )}
+                {selectedChat?.contactId && (
+                  <button
+                    onClick={() => setContactDrawerOpen(true)}
+                    className="text-muted-darker hover:text-foreground transition-colors shrink-0"
+                    title="Ver contacto"
+                  >
+                    <User size={18} />
+                  </button>
                 )}
               </div>
+
+              {/* Row 2: conversation metadata controls — free to wrap, never fights the name for space */}
               {selectedChat && (
-                <select
-                  value={selectedChat.status}
-                  onChange={(e) => handleStatusChange(e.target.value as ChatStatus)}
-                  className="text-xs font-medium rounded-md border border-border bg-surface-light px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/40"
-                  title="Estado de la conversación"
-                >
-                  {(Object.keys(STATUS_BADGE) as ChatStatus[]).map((s) => (
-                    <option key={s} value={s}>{STATUS_BADGE[s].label}</option>
-                  ))}
-                </select>
-              )}
-              {selectedChat && <ChatTagPicker key={selectedChat.id} chatId={selectedChat.id} />}
-              {selectedChat && <LeadScoreBadge key={`score-${selectedChat.id}`} chatId={selectedChat.id} />}
-              {selectedChat && (
-                <ChatAssigneePicker
-                  chatId={selectedChat.id}
-                  assignedTo={selectedChat.assignedTo}
-                  onAssigned={(assignee) =>
-                    setSelectedChat((prev) => prev && ({ ...prev, assignedTo: assignee, assignedToId: assignee?.id ?? null }))
-                  }
-                />
-              )}
-              {selectedChat && (
-                <button
-                  onClick={() => setNotesDrawerOpen(true)}
-                  className="text-muted-darker hover:text-foreground transition-colors"
-                  title="Notas internas"
-                >
-                  <StickyNote size={18} />
-                </button>
-              )}
-              {selectedChat?.contactId && (
-                <button
-                  onClick={() => setContactDrawerOpen(true)}
-                  className="text-muted-darker hover:text-foreground transition-colors"
-                  title="Ver contacto"
-                >
-                  <User size={18} />
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select
+                    value={selectedChat.status}
+                    onChange={(e) => handleStatusChange(e.target.value as ChatStatus)}
+                    className="text-xs font-medium rounded-md border border-border bg-surface-light px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/40"
+                    title="Estado de la conversación"
+                  >
+                    {(Object.keys(STATUS_BADGE) as ChatStatus[]).map((s) => (
+                      <option key={s} value={s}>{STATUS_BADGE[s].label}</option>
+                    ))}
+                  </select>
+                  <ChatTagPicker key={selectedChat.id} chatId={selectedChat.id} />
+                  <LeadScoreBadge key={`score-${selectedChat.id}`} chatId={selectedChat.id} />
+                  <ChatAssigneePicker
+                    chatId={selectedChat.id}
+                    assignedTo={selectedChat.assignedTo}
+                    onAssigned={(assignee) =>
+                      setChats((prev) => prev.map((c) =>
+                        c.id === selectedChatId ? { ...c, assignedTo: assignee, assignedToId: assignee?.id ?? null } : c
+                      ))
+                    }
+                  />
+                </div>
               )}
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
               {loadingMessages ? (
                 <div className="flex items-center justify-center py-12">
                   <Spinner />
@@ -727,9 +799,22 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
                   <EmptyState icon={MessageSquare} title="Sin mensajes" description="Aún no hay mensajes en este chat." />
                 </div>
               ) : (
-                messages.map((msg) => (
-                  <MessageBubble key={msg.id} msg={msg} />
-                ))
+                messages.map((msg, i) => {
+                  const prev = messages[i - 1];
+                  const showDivider = !prev || new Date(prev.timestamp).toDateString() !== new Date(msg.timestamp).toDateString();
+                  return (
+                    <div key={msg.id}>
+                      {showDivider && (
+                        <div className="flex justify-center my-3">
+                          <span className="text-[11px] font-medium text-muted-darker bg-surface border border-border px-2.5 py-1 rounded-full">
+                            {formatDayDivider(msg.timestamp)}
+                          </span>
+                        </div>
+                      )}
+                      <MessageBubble msg={msg} />
+                    </div>
+                  );
+                })
               )}
               <div ref={messagesEndRef} />
             </div>

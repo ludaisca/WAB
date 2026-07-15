@@ -93,8 +93,8 @@ export async function PATCH(
     const { name, accessToken, verifyToken, appSecret, wabaId, appId } = parsed.data;
 
     if (name) data.name = name;
-    if (wabaId) data.wabaId = wabaId;
-    if (appId) data.appId = appId;
+    if (wabaId !== undefined) data.wabaId = wabaId || null;
+    if (appId !== undefined) data.appId = appId || null;
 
     if (typeof body?.autoAssignEnabled === "boolean") {
       data.autoAssignEnabled = body.autoAssignEnabled;

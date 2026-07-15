@@ -136,9 +136,39 @@ async function applyStatusUpdate(accountId: string, status: WebhookStatus): Prom
     updateData.readAt = new Date();
   }
 
+  const recipient = await prisma.wACampaignRecipient.findFirst({
+    where: { wamid: status.id },
+    select: { campaignId: true },
+  });
+  if (!recipient) return;
+
   await prisma.wACampaignRecipient.updateMany({
     where: { wamid: status.id },
     data: updateData,
+  });
+
+  await syncCampaignCounts(recipient.campaignId);
+}
+
+// Recomputed from current recipient statuses (not incremented) so duplicate
+// webhook deliveries for the same status stay idempotent. "Entregado" counts
+// as delivered-or-further since a READ recipient was necessarily delivered
+// first — WhatsApp overwrites status forward, it doesn't keep both.
+async function syncCampaignCounts(campaignId: string): Promise<void> {
+  const counts = await prisma.wACampaignRecipient.groupBy({
+    by: ["status"],
+    where: { campaignId },
+    _count: { _all: true },
+  });
+  const countOf = (s: string) => counts.find((c) => c.status === s)?._count._all ?? 0;
+
+  await prisma.wACampaign.update({
+    where: { id: campaignId },
+    data: {
+      deliveredCount: countOf("DELIVERED") + countOf("READ"),
+      readCount: countOf("READ"),
+      failedCount: countOf("FAILED"),
+    },
   });
 }
 

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Plus } from "lucide-react";
 import { Drawer } from "@/app/components/ui/drawer";
+import { Banner } from "@/app/components/ui/banner";
 import { Select } from "@/app/components/ui/select";
 import { MultiSelect } from "@/app/components/ui/multi-select";
 import { Textarea } from "@/app/components/ui/textarea";
@@ -57,9 +58,11 @@ export function ContactDrawer({
   const [newNote, setNewNote] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [newTagName, setNewTagName] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [contactRes, notesRes, tagsRes] = await Promise.all([
         fetch(`/api/whatsapp/contacts/${contactId}`),
@@ -67,13 +70,16 @@ export function ContactDrawer({
         fetch(`/api/whatsapp/tags`),
       ]);
       const contactData = await contactRes.json();
+      if (!contactRes.ok) throw new Error(contactData.error ?? "Error al cargar el contacto");
       const notesData = await notesRes.json();
       const tagsData = await tagsRes.json();
       setContact(contactData);
       if (Array.isArray(notesData)) setNotes(notesData);
       if (Array.isArray(tagsData)) setAllTags(tagsData);
-    } catch {
-      toastError("Error al cargar el contacto");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Error al cargar el contacto";
+      setLoadError(message);
+      toastError(message);
     } finally {
       setLoading(false);
     }
@@ -141,9 +147,22 @@ export function ContactDrawer({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al crear etiqueta");
-      setAllTags((prev) => [...prev, data]);
+      const newTag: TagOption = data;
+      setAllTags((prev) => [...prev, newTag]);
       setNewTagName("");
-      if (contact) await handleTagsChange([...contact.tags.map((t) => t.tag.id), data.id]);
+      if (contact) {
+        await fetch(`/api/whatsapp/contacts/${contactId}/tags`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tagId: newTag.id }),
+        });
+        // Append the tag object we already have in hand instead of routing through
+        // handleTagsChange, which rebuilds contact.tags from `allTags` — that state
+        // update from setAllTags above hasn't flushed yet, so the new tag wouldn't
+        // be in it and the drawer would show "Sin etiquetas" despite saving fine.
+        setContact((prev) => prev && { ...prev, tags: [...prev.tags, { tag: newTag }] });
+        onUpdated();
+      }
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Error al crear etiqueta");
     }
@@ -171,9 +190,13 @@ export function ContactDrawer({
 
   return (
     <Drawer open onClose={onClose} side="right" title={contact?.name ?? contact?.remoteJid ?? "Contacto"} width="w-96">
-      {loading || !contact ? (
+      {loading ? (
         <div className="flex items-center justify-center py-12">
           <Spinner />
+        </div>
+      ) : loadError || !contact ? (
+        <div className="p-4">
+          <Banner tone="danger">{loadError ?? "No se pudo cargar el contacto"}</Banner>
         </div>
       ) : (
         <div className="p-4 space-y-5">

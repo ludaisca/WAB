@@ -4,6 +4,43 @@ import { getUserAccountIds } from "@/lib/shared-accounts";
 const statsCache = new Map<string, { data: Estadisticas; expiresAt: number }>();
 const STATS_TTL_MS = 60_000;
 
+// The app server runs in UTC (containers have no TZ set) but every user-facing
+// date in this app renders as es-MX. Bucketing dailyMessages/chartStart/monthStart
+// by raw UTC would misfile evening messages under tomorrow's date — up to 6h/day
+// of drift. These helpers compute boundaries against Mexico City wall-clock time
+// instead, without pulling in a date library for one call site.
+const STATS_TZ = "America/Mexico_City";
+
+function tzOffsetMinutes(date: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "0";
+  const asUTC = Date.UTC(
+    Number(get("year")), Number(get("month")) - 1, Number(get("day")),
+    Number(get("hour")) % 24, Number(get("minute")), Number(get("second"))
+  );
+  return (asUTC - date.getTime()) / 60000;
+}
+
+function dateKeyInTz(date: Date, timeZone: string = STATS_TZ): string {
+  return date.toLocaleDateString("en-CA", { timeZone });
+}
+
+// Given a calendar date (year/month/day as seen in timeZone), returns the UTC
+// instant that is midnight on that date in timeZone.
+function utcInstantForLocalMidnight(year: number, month: number, day: number, timeZone: string = STATS_TZ): Date {
+  const naiveUTCMidnight = new Date(Date.UTC(year, month - 1, day));
+  return new Date(naiveUTCMidnight.getTime() - tzOffsetMinutes(naiveUTCMidnight, timeZone) * 60000);
+}
+
+function startOfDayInTz(date: Date, timeZone: string = STATS_TZ): Date {
+  const [y, m, d] = dateKeyInTz(date, timeZone).split("-").map(Number);
+  return utcInstantForLocalMidnight(y, m, d, timeZone);
+}
+
 export interface Estadisticas {
   accounts: number;
   chats: number;
@@ -50,11 +87,11 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
 
   const accountIds = await getUserAccountIds(userId);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const chartStart = new Date(today);
-  chartStart.setDate(chartStart.getDate() - 13);
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const now = new Date();
+  const today = startOfDayInTz(now);
+  const chartStart = new Date(today.getTime() - 13 * 86400000);
+  const [todayYear, todayMonth] = dateKeyInTz(now).split("-").map(Number);
+  const monthStart = utcInstantForLocalMidnight(todayYear, todayMonth, 1);
 
   const accountWhere = { id: { in: accountIds } };
   const chatWhere = {
@@ -163,7 +200,7 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
 
   const dailyMap: Record<string, number> = {};
   for (const m of recentMessages) {
-    const date = m.createdAt.toISOString().split("T")[0];
+    const date = dateKeyInTz(m.createdAt);
     dailyMap[date] = (dailyMap[date] || 0) + 1;
   }
 

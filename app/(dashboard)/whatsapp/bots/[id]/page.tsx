@@ -130,10 +130,16 @@ export default function BotDetailPage() {
 
   async function handleDelete() {
     try {
-      await fetch(`/api/whatsapp/bots/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/whatsapp/bots/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Error al eliminar");
+      }
       success("Bot eliminado");
       router.push("/whatsapp/bots");
-    } catch { toastError("Error al eliminar"); } finally { setDeleteOpen(false); }
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al eliminar");
+    } finally { setDeleteOpen(false); }
   }
 
   async function handleUpload() {
@@ -164,10 +170,16 @@ export default function BotDetailPage() {
   async function handleDeleteDoc(kid: string) {
     setDeletingDocId(kid);
     try {
-      await fetch(`/api/whatsapp/bots/${id}/knowledge/${kid}`, { method: "DELETE" });
+      const res = await fetch(`/api/whatsapp/bots/${id}/knowledge/${kid}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Error al eliminar");
+      }
       setKnowledge((prev) => prev.filter((k) => k.id !== kid));
       success("Documento eliminado");
-    } catch { toastError("Error al eliminar"); } finally { setDeletingDocId(null); }
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al eliminar");
+    } finally { setDeletingDocId(null); }
   }
 
   async function handleTest() {
@@ -295,7 +307,7 @@ export default function BotDetailPage() {
                 <FormField label="Título">
                   {(id) => <Input id={id} value={docTitle} onChange={(e) => setDocTitle(e.target.value)} placeholder="Ej: Manual de soporte" />}
                 </FormField>
-                <FormField label="Archivo" hint=".txt, .md, .csv, .json, .pdf (máx 10MB)">
+                <FormField label="Archivo" hint=".txt, .md, .csv, .json (máx 10MB)">
                   {(id) => (
                     <input
                       id={id}

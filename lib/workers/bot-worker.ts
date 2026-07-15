@@ -136,13 +136,14 @@ async function handleBotMessage(job: BotMessageJob) {
     // (historical images are NOT forwarded to keep token cost bounded).
     for (const msg of history.reverse()) {
       const textPart = msg.caption ?? msg.body;
-      if (!textPart) continue;
-      if (msg.messageType && msg.messageType !== "text" && !textPart) {
-        // Pure legacy media without caption — describe it briefly so the bot has context.
-        messages.push({
-          role: msg.direction === "INBOUND" ? "user" : "assistant",
-          content: `[${msg.messageType}]`,
-        });
+      if (!textPart) {
+        if (msg.messageType && msg.messageType !== "text") {
+          // Pure media without caption — describe it briefly so the bot has context.
+          messages.push({
+            role: msg.direction === "INBOUND" ? "user" : "assistant",
+            content: `[${msg.messageType}]`,
+          });
+        }
         continue;
       }
       messages.push({

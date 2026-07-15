@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { Type, Plus, X, Upload } from "lucide-react";
 import { Modal } from "@/app/components/ui/modal";
 import { Button } from "@/app/components/ui/button";
@@ -75,6 +75,7 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
   const [headerFileName, setHeaderFileName] = useState<string | null>(null);
   const [headerUploading, setHeaderUploading] = useState(false);
   const [body, setBody] = useState("");
+  const [bodyExamples, setBodyExamples] = useState<string[]>([]);
   const [footer, setFooter] = useState("");
   const [buttons, setButtons] = useState<ButtonDef[]>([]);
   const [saving, setSaving] = useState(false);
@@ -92,11 +93,20 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
     setHeaderPreviewUrl(null);
     setHeaderFileName(null);
     setBody("");
+    setBodyExamples([]);
     setFooter("");
     setButtons([]);
     setError("");
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resets on close, header cleanup is intentionally not a dependency
   }, [defaultAccountId]);
+
+  // Modal stays mounted (see Modal's `visible` pattern) so waAccountId's initial
+  // useState value goes stale if the page's selected account changes between opens.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-sync stale defaultAccountId on the open transition
+    if (open) setWaAccountId(defaultAccountId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-sync on the open transition
+  }, [open]);
 
   function handleHeaderFormatChange(format: typeof headerFormat) {
     setHeaderFormat(format);
@@ -137,6 +147,24 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
     }
   }
 
+  const bodyVariableCount = useMemo(
+    () => new Set(body.match(/\{\{\d+\}\}/g) ?? []).size,
+    [body]
+  );
+
+  // Meta requires one example value per {{n}} variable — resize the array to
+  // match whenever the body text changes (called from both the textarea's
+  // onChange and insertVariable, so it stays derived rather than an effect).
+  function syncBodyExamplesCount(newBody: string) {
+    const count = new Set(newBody.match(/\{\{\d+\}\}/g) ?? []).size;
+    setBodyExamples((prev) => {
+      if (prev.length === count) return prev;
+      const next = prev.slice(0, count);
+      while (next.length < count) next.push("");
+      return next;
+    });
+  }
+
   function insertVariable() {
     const textarea = bodyRef.current;
     if (!textarea) return;
@@ -145,7 +173,9 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
     const before = body.slice(0, cursor);
     const after = body.slice(textarea.selectionEnd ?? cursor);
     const v = `{{${count + 1}}}`;
-    setBody(before + v + after);
+    const newBody = before + v + after;
+    setBody(newBody);
+    syncBodyExamplesCount(newBody);
     setTimeout(() => {
       textarea.focus();
       textarea.selectionStart = cursor + v.length;
@@ -193,15 +223,22 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
       setError(`Sube un archivo de ${headerFormat.toLowerCase()} de ejemplo para la cabecera`);
       return;
     }
+    if (bodyVariableCount > 0 && bodyExamples.some((v) => !v.trim())) {
+      setError("Meta exige un valor de ejemplo para cada variable del cuerpo");
+      return;
+    }
 
     const components: {
       header?: { format: string; text?: string; exampleHandle?: string };
       body: string;
+      bodyExamples?: string[];
       footer?: string;
       buttons?: ButtonDef[];
     } = {
       body: body.trim(),
     };
+
+    if (bodyVariableCount > 0) components.bodyExamples = bodyExamples.map((v) => v.trim());
 
     if (footer.trim()) components.footer = footer.trim();
 
@@ -255,7 +292,15 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
           <Button variant="secondary" onClick={() => { resetForm(); onClose(); }}>
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} disabled={saving || !name.trim() || !body.trim()}>
+          <Button
+            onClick={handleSubmit}
+            disabled={
+              saving ||
+              !name.trim() ||
+              !body.trim() ||
+              (bodyVariableCount > 0 && bodyExamples.some((v) => !v.trim()))
+            }
+          >
             {saving ? <Spinner /> : "Crear y enviar a revisión"}
           </Button>
         </>
@@ -357,7 +402,7 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
                   ref={bodyRef}
                   id={id}
                   value={body}
-                  onChange={(e) => setBody(e.target.value)}
+                  onChange={(e) => { setBody(e.target.value); syncBodyExamplesCount(e.target.value); }}
                   placeholder="Hola {{1}}, tu pedido {{2}} está listo."
                   rows={4}
                 />
@@ -371,6 +416,25 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
                     <Type size={12} /> + Variable
                   </Button>
                 </div>
+                {bodyVariableCount > 0 && (
+                  <div className="space-y-2 pt-1">
+                    <p className="text-xs text-muted-darker">
+                      Meta exige un valor de ejemplo por variable para revisar la plantilla
+                    </p>
+                    {bodyExamples.map((value, idx) => (
+                      <Input
+                        key={idx}
+                        value={value}
+                        onChange={(e) =>
+                          setBodyExamples((prev) =>
+                            prev.map((v, i) => (i === idx ? e.target.value : v))
+                          )
+                        }
+                        placeholder={`Ejemplo para {{${idx + 1}}}`}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </FormField>

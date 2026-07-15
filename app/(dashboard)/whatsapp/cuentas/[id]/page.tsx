@@ -310,11 +310,9 @@ export default function CuentaDetailPage() {
         <Link href={`/whatsapp/plantillas?accountId=${account.id}`}>
           <Button variant="secondary" icon={FileText}>Gestionar plantillas</Button>
         </Link>
-        <Link href={`/whatsapp/cuentas/${account.id}`}>
-          <Button variant="secondary" icon={RefreshCw} onClick={fetchAccount}>
-            Actualizar
-          </Button>
-        </Link>
+        <Button variant="secondary" icon={RefreshCw} onClick={fetchAccount}>
+          Actualizar
+        </Button>
         <Button
           variant="danger"
           icon={Trash2}

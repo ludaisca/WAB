@@ -28,7 +28,11 @@ export function Drawer({
   children,
 }: DrawerProps) {
   const mounted = useHasMounted();
-  const [visible, setVisible] = useState(false);
+  // Must seed from `open`, not false — components that conditionally mount the
+  // Drawer already open (e.g. `{selectedId && <ContactDrawer open .../>}`) never
+  // get an open:false→true transition to react to, so visible would stay stuck
+  // at false and the drawer would never render at all (see Modal's identical fix).
+  const [visible, setVisible] = useState(open);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<Element | null>(null);
   const titleId = React.useId();

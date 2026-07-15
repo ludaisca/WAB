@@ -6,7 +6,7 @@ interface MetaTemplateComponent {
   type: string;
   format?: string;
   text?: string;
-  example?: { header_handle: string[] };
+  example?: { header_handle: string[] } | { body_text: string[][] };
   buttons?: MetaButton[];
 }
 
@@ -43,7 +43,16 @@ function buildPayload(input: TemplateCreateInput): MetaTemplatePayload {
     }
   }
 
-  components.push({ type: "BODY", text: input.components.body });
+  const bodyVariableCount = new Set(input.components.body.match(/\{\{(\d+)\}\}/g)).size;
+  if (bodyVariableCount > 0) {
+    components.push({
+      type: "BODY",
+      text: input.components.body,
+      example: { body_text: [input.components.bodyExamples ?? []] },
+    });
+  } else {
+    components.push({ type: "BODY", text: input.components.body });
+  }
 
   if (input.components.footer) {
     components.push({ type: "FOOTER", text: input.components.footer });

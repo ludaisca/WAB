@@ -112,11 +112,15 @@ export default function ConocimientoPage() {
 
   const handleDelete = useCallback(async (docId: string, botId: string) => {
     try {
-      await fetch(`/api/whatsapp/bots/${botId}/knowledge/${docId}`, { method: "DELETE" });
+      const res = await fetch(`/api/whatsapp/bots/${botId}/knowledge/${docId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Error al eliminar");
+      }
       success("Documento eliminado");
       fetchData();
-    } catch {
-      toastError("Error al eliminar");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al eliminar");
     }
   }, [success, toastError, fetchData]);
 
