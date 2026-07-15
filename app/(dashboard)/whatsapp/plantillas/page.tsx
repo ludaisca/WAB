@@ -13,6 +13,7 @@ import { PageHeader } from "@/app/components/ui/page-header";
 import { TileGrid } from "@/app/components/ui/tile-grid";
 import { useToast } from "@/app/components/ui/toast";
 import { TemplateFormModal } from "./_form";
+import { TemplateMetricsModal } from "@/app/components/whatsapp/template-metrics-modal";
 
 interface Account { id: string; name: string; channel: string; wabaId: string | null; status: string; }
 
@@ -49,6 +50,7 @@ function TemplatesContent() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [metricsTemplateId, setMetricsTemplateId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/whatsapp/accounts")
@@ -178,6 +180,7 @@ function TemplatesContent() {
           emptyIcon={MessageSquareText}
           emptyTitle="Sin plantillas"
           emptyDescription="No hay plantillas en esta cuenta. Sincroniza desde Meta o crea una nueva."
+          onRowClick={(t) => setMetricsTemplateId(t.id)}
           renderTile={(t) => {
             const badge = STATUS_BADGE[t.status] ?? { label: t.status, tone: "neutral" as const };
             return (
@@ -194,6 +197,7 @@ function TemplatesContent() {
                 <p className="text-xs text-muted-darker">
                   Sincronizada: {new Date(t.syncedAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                 </p>
+                <p className="text-xs text-accent">Ver métricas →</p>
               </div>
             );
           }}
@@ -207,6 +211,8 @@ function TemplatesContent() {
         defaultAccountId={selectedAccountId}
         onCreated={fetchTemplates}
       />
+
+      <TemplateMetricsModal templateId={metricsTemplateId} onClose={() => setMetricsTemplateId(null)} />
     </div>
   );
 }
