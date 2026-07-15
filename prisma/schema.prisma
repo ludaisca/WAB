@@ -219,6 +219,12 @@ model WALeadScore {
   label     String
   summary   String
   reasons   String
+  // Structured extraction beyond score/label (señales de compra, objeciones,
+  // próximos pasos, producto de interés, etc.) — kept as a single flexible
+  // JSON blob instead of a dozen typed columns since its shape is dictated by
+  // the prompt contract in lib/whatsapp/lead-scoring.ts, not by relational
+  // needs elsewhere in the schema. Null for scores generated before this field.
+  details   Json?
   model     String
   createdAt DateTime        @default(now()) @map("created_at")
   updatedAt DateTime        @updatedAt @map("updated_at")

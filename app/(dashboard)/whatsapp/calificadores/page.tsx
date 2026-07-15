@@ -29,12 +29,30 @@ interface LeadScorerBot {
   updatedAt: string;
 }
 
+interface ScoreDetails {
+  tipo_lead: string | null;
+  necesidad_principal: string | null;
+  contexto_negocio: string | null;
+  senales_compra: string[];
+  objeciones_dudas: string[];
+  nivel_interaccion: string | null;
+  tono_interes: string | null;
+  proximos_pasos: string[];
+  nombre_real: string | null;
+  producto_interes: string | null;
+  urgencia: string | null;
+  presupuesto: string | null;
+}
+
 interface LeadScoreRow {
   id: string;
   score: number;
-  label: "frio" | "tibio" | "caliente";
+  // Untyped at the source — scores from before the 5-phase relabel may still
+  // carry an old frio/tibio/caliente value.
+  label: string;
   summary: string;
   reasons: string;
+  details: ScoreDetails | null;
   updatedAt: string;
   scorer: { id: string; name: string };
   chat: {
@@ -62,17 +80,34 @@ const INTERVAL_LABEL: Record<number, string> = {
   1440: "24 h",
 };
 
-const LABEL_TONE: Record<LeadScoreRow["label"], "info" | "warning" | "danger"> = {
+const LABEL_TONE: Record<string, "neutral" | "info" | "warning" | "accent" | "danger"> = {
+  descartado: "neutral",
   frio: "info",
+  interesado: "warning",
+  oportunidad: "accent",
+  prioridad_alta: "danger",
+  // Legacy 3-tier labels, kept until every existing score gets re-run.
   tibio: "warning",
   caliente: "danger",
 };
 
-const LABEL_TEXT: Record<LeadScoreRow["label"], string> = {
+const LABEL_TEXT: Record<string, string> = {
+  descartado: "Descartado",
   frio: "Frío",
+  interesado: "Interesado",
+  oportunidad: "Oportunidad",
+  prioridad_alta: "Prioridad alta",
   tibio: "Tibio",
   caliente: "Caliente",
 };
+
+function labelTone(label: string) {
+  return LABEL_TONE[label] ?? "neutral";
+}
+
+function labelText(label: string) {
+  return LABEL_TEXT[label] ?? label;
+}
 
 const TABS = ["calificadores", "leads"] as const;
 type Tab = (typeof TABS)[number];
@@ -329,7 +364,7 @@ function LeadsTab() {
   const detailRow = useMemo(() => rows.find((r) => r.id === detailId) ?? null, [rows, detailId]);
 
   function handleExportCsv() {
-    const headers = ["Lead", "Teléfono", "Cuenta", "Calificación", "Score", "Calificador", "Resumen", "Motivos", "Actualizado"];
+    const headers = ["Lead", "Teléfono", "Cuenta", "Calificación", "Score", "Calificador", "Resumen", "Motivos", "Producto de interés", "Urgencia", "Presupuesto", "Próximos pasos", "Actualizado"];
     const csvRows = filtered.map((r) => {
       let reasons: string[] = [];
       try {
@@ -341,11 +376,15 @@ function LeadsTab() {
         r.chat.name || r.chat.remoteJid.split("@")[0],
         r.chat.remoteJid.split("@")[0],
         r.chat.account.name,
-        LABEL_TEXT[r.label],
+        labelText(r.label),
         String(r.score),
         r.scorer.name,
         r.summary,
         reasons.join(" | "),
+        r.details?.producto_interes ?? "",
+        r.details?.urgencia ?? "",
+        r.details?.presupuesto ?? "",
+        (r.details?.proximos_pasos ?? []).join(" | "),
         new Date(r.updatedAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }),
       ];
     });
@@ -379,7 +418,7 @@ function LeadsTab() {
     {
       key: "label",
       header: "Calificación",
-      render: (r) => <Badge tone={LABEL_TONE[r.label]} size="sm">{LABEL_TEXT[r.label]} · {r.score}/100</Badge>,
+      render: (r) => <Badge tone={labelTone(r.label)} size="sm">{labelText(r.label)} · {r.score}/100</Badge>,
     },
     {
       key: "scorer",
@@ -425,9 +464,11 @@ function LeadsTab() {
         <div className="w-48">
           <Select value={labelFilter} onChange={(e) => setLabelFilter(e.target.value)}>
             <option value="all">Todas las calificaciones</option>
-            <option value="caliente">Caliente</option>
-            <option value="tibio">Tibio</option>
+            <option value="prioridad_alta">Prioridad alta</option>
+            <option value="oportunidad">Oportunidad</option>
+            <option value="interesado">Interesado</option>
             <option value="frio">Frío</option>
+            <option value="descartado">Descartado</option>
           </Select>
         </div>
         <div className="w-56">
@@ -476,7 +517,7 @@ function LeadsTab() {
         {detailRow && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <Badge tone={LABEL_TONE[detailRow.label]}>{LABEL_TEXT[detailRow.label]} · {detailRow.score}/100</Badge>
+              <Badge tone={labelTone(detailRow.label)}>{labelText(detailRow.label)} · {detailRow.score}/100</Badge>
               <span className="text-xs text-muted-darker">
                 {new Date(detailRow.updatedAt).toLocaleString("es-MX", { dateStyle: "long", timeStyle: "short" })}
               </span>
@@ -494,6 +535,36 @@ function LeadsTab() {
                 <dt className="text-xs text-muted-darker">Calificador</dt>
                 <dd>{detailRow.scorer.name}</dd>
               </div>
+              {detailRow.details?.nombre_real && (
+                <div>
+                  <dt className="text-xs text-muted-darker">Nombre real</dt>
+                  <dd>{detailRow.details.nombre_real}</dd>
+                </div>
+              )}
+              {detailRow.details?.producto_interes && (
+                <div>
+                  <dt className="text-xs text-muted-darker">Producto de interés</dt>
+                  <dd>{detailRow.details.producto_interes}</dd>
+                </div>
+              )}
+              {detailRow.details?.urgencia && (
+                <div>
+                  <dt className="text-xs text-muted-darker">Urgencia</dt>
+                  <dd>{detailRow.details.urgencia}</dd>
+                </div>
+              )}
+              {detailRow.details?.presupuesto && (
+                <div>
+                  <dt className="text-xs text-muted-darker">Presupuesto</dt>
+                  <dd>{detailRow.details.presupuesto}</dd>
+                </div>
+              )}
+              {detailRow.details?.tono_interes && (
+                <div>
+                  <dt className="text-xs text-muted-darker">Tono de interés</dt>
+                  <dd className="capitalize">{detailRow.details.tono_interes}</dd>
+                </div>
+              )}
             </dl>
             <div>
               <p className="text-xs text-muted-darker mb-1">Resumen del análisis</p>
@@ -505,6 +576,36 @@ function LeadsTab() {
                 <ul className="text-sm text-foreground list-disc pl-4 space-y-1">
                   {detailReasons.map((r, i) => (
                     <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {detailRow.details && detailRow.details.senales_compra.length > 0 && (
+              <div>
+                <p className="text-xs text-success mb-1">Señales de compra</p>
+                <ul className="text-sm text-foreground list-disc pl-4 space-y-1">
+                  {detailRow.details.senales_compra.map((s, i) => (
+                    <li key={i}>{s}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {detailRow.details && detailRow.details.objeciones_dudas.length > 0 && (
+              <div>
+                <p className="text-xs text-danger mb-1">Objeciones / dudas</p>
+                <ul className="text-sm text-foreground list-disc pl-4 space-y-1">
+                  {detailRow.details.objeciones_dudas.map((o, i) => (
+                    <li key={i}>{o}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {detailRow.details && detailRow.details.proximos_pasos.length > 0 && (
+              <div>
+                <p className="text-xs text-accent mb-1">Próximos pasos sugeridos</p>
+                <ul className="text-sm text-foreground list-disc pl-4 space-y-1">
+                  {detailRow.details.proximos_pasos.map((s, i) => (
+                    <li key={i}>{s}</li>
                   ))}
                 </ul>
               </div>

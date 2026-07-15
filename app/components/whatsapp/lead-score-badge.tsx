@@ -9,14 +9,33 @@ import { Button } from "@/app/components/ui/button";
 import { Select } from "@/app/components/ui/select";
 import { useToast } from "@/app/components/ui/toast";
 
+interface ScoreDetails {
+  tipo_lead: string | null;
+  necesidad_principal: string | null;
+  contexto_negocio: string | null;
+  senales_compra: string[];
+  objeciones_dudas: string[];
+  nivel_interaccion: string | null;
+  tono_interes: string | null;
+  proximos_pasos: string[];
+  nombre_real: string | null;
+  producto_interes: string | null;
+  urgencia: string | null;
+  presupuesto: string | null;
+}
+
 interface LeadScore {
   id: string;
   scorerId: string;
   scorer: { id: string; name: string };
   score: number;
-  label: "frio" | "tibio" | "caliente";
+  // Untyped at the source (whatever the AI + parser produced) — scores from
+  // before the 5-phase relabel (frio/tibio/caliente) may still carry an old
+  // value, so this can't be trusted as the current label union.
+  label: string;
   summary: string;
   reasons: string;
+  details: ScoreDetails | null;
   updatedAt: string;
 }
 
@@ -25,17 +44,34 @@ interface ScorerOption {
   name: string;
 }
 
-const LABEL_TONE: Record<LeadScore["label"], "info" | "warning" | "danger"> = {
+const LABEL_TONE: Record<string, "neutral" | "info" | "warning" | "accent" | "danger"> = {
+  descartado: "neutral",
   frio: "info",
+  interesado: "warning",
+  oportunidad: "accent",
+  prioridad_alta: "danger",
+  // Legacy 3-tier labels, kept until every existing score gets re-run.
   tibio: "warning",
   caliente: "danger",
 };
 
-const LABEL_TEXT: Record<LeadScore["label"], string> = {
+const LABEL_TEXT: Record<string, string> = {
+  descartado: "Descartado",
   frio: "Frío",
+  interesado: "Interesado",
+  oportunidad: "Oportunidad",
+  prioridad_alta: "Prioridad alta",
   tibio: "Tibio",
   caliente: "Caliente",
 };
+
+function labelTone(label: string) {
+  return LABEL_TONE[label] ?? "neutral";
+}
+
+function labelText(label: string) {
+  return LABEL_TEXT[label] ?? label;
+}
 
 export function LeadScoreBadge({ chatId }: { chatId: string }) {
   const { error: toastError } = useToast();
@@ -118,7 +154,7 @@ export function LeadScoreBadge({ chatId }: { chatId: string }) {
       trigger={
         selectedScore ? (
           <DropdownButton
-            label={`${LABEL_TEXT[selectedScore.label]} · ${selectedScore.score}`}
+            label={`${labelText(selectedScore.label)} · ${selectedScore.score}`}
             icon={Sparkles}
             size="sm"
           />
@@ -127,7 +163,7 @@ export function LeadScoreBadge({ chatId }: { chatId: string }) {
         )
       }
     >
-      <div className="p-3 w-80 space-y-3">
+      <div className="p-3 w-80 space-y-3 max-h-[70vh] overflow-y-auto">
         {scorers.length === 0 ? (
           <p className="text-sm text-muted">
             Aún no tienes calificadores creados.{" "}
@@ -159,7 +195,7 @@ export function LeadScoreBadge({ chatId }: { chatId: string }) {
             {selectedScore ? (
               <>
                 <div className="flex items-center justify-between">
-                  <Badge tone={LABEL_TONE[selectedScore.label]}>{LABEL_TEXT[selectedScore.label]} · {selectedScore.score}/100</Badge>
+                  <Badge tone={labelTone(selectedScore.label)}>{labelText(selectedScore.label)} · {selectedScore.score}/100</Badge>
                   <span className="text-[11px] text-muted-darker">
                     {new Date(selectedScore.updatedAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })}
                   </span>
@@ -172,6 +208,48 @@ export function LeadScoreBadge({ chatId }: { chatId: string }) {
                       <li key={i}>{r}</li>
                     ))}
                   </ul>
+                )}
+                {selectedScore.details && (
+                  <div className="space-y-2 pt-1 border-t border-border">
+                    {(selectedScore.details.producto_interes || selectedScore.details.urgencia) && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedScore.details.producto_interes && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent/10 text-accent">
+                            {selectedScore.details.producto_interes}
+                          </span>
+                        )}
+                        {selectedScore.details.urgencia && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-warning-bg text-warning">
+                            Urgencia: {selectedScore.details.urgencia}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {selectedScore.details.senales_compra.length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-medium text-success">Señales de compra</p>
+                        <ul className="text-xs text-muted-darker list-disc pl-4">
+                          {selectedScore.details.senales_compra.map((s, i) => <li key={i}>{s}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {selectedScore.details.objeciones_dudas.length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-medium text-danger">Objeciones / dudas</p>
+                        <ul className="text-xs text-muted-darker list-disc pl-4">
+                          {selectedScore.details.objeciones_dudas.map((o, i) => <li key={i}>{o}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {selectedScore.details.proximos_pasos.length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-medium text-accent">Próximos pasos sugeridos</p>
+                        <ul className="text-xs text-muted-darker list-disc pl-4">
+                          {selectedScore.details.proximos_pasos.map((s, i) => <li key={i}>{s}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
                 )}
               </>
             ) : (
