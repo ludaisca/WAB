@@ -233,6 +233,24 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
               rowKey={(b) => b.id}
               emptyIcon={Bot}
               emptyTitle="Sin bots todavía"
+              mobileCard={(b) => {
+                const status = botColumns.find((c) => c.key === "status")!;
+                const cost = botColumns.find((c) => c.key === "totalCost")!;
+                return (
+                  <div className="space-y-1 min-w-0 w-full">
+                    <div className="flex items-center justify-between gap-2">
+                      <Link href={`/whatsapp/bots/${b.id}`} className="font-medium text-sm hover:text-accent transition-colors truncate">
+                        {b.name}
+                      </Link>
+                      {status.render(b)}
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-xs text-muted-darker">
+                      <span>{b.interactions} interacciones</span>
+                      {cost.render(b)}
+                    </div>
+                  </div>
+                );
+              }}
             />
           </CardBody>
         </BentoTile>
@@ -284,6 +302,22 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
               emptyIcon={UserCheck}
               emptyTitle="Sin datos todavía"
               emptyDescription="Aparecerán agentes aquí una vez que se asignen y respondan chats."
+              mobileCard={(a) => {
+                const firstResponse = agentColumns.find((c) => c.key === "avgFirstResponseMinutes")!;
+                const resolution = agentColumns.find((c) => c.key === "avgResolutionMinutes")!;
+                return (
+                  <div className="space-y-1 min-w-0 w-full">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-sm truncate">{a.userName ?? "Sin nombre"}</span>
+                      <span className="text-xs text-muted-darker shrink-0">{a.resolvedCount} resueltos</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-darker">
+                      <span>1ra: {firstResponse.render(a)}</span>
+                      <span>Res: {resolution.render(a)}</span>
+                    </div>
+                  </div>
+                );
+              }}
             />
           </CardBody>
         </BentoTile>

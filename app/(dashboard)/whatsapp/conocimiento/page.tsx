@@ -11,6 +11,7 @@ import { Badge } from "@/app/components/ui/badge";
 import { PageHeader } from "@/app/components/ui/page-header";
 import { Select } from "@/app/components/ui/select";
 import { Table, type TableColumn } from "@/app/components/ui/table";
+import { DropdownItem } from "@/app/components/ui/dropdown";
 import { useToast } from "@/app/components/ui/toast";
 
 interface Bot {
@@ -163,19 +164,7 @@ export default function ConocimientoPage() {
       ),
       hideBelow: "md",
     },
-    {
-      key: "actions",
-      header: "",
-      headerClassName: "text-right",
-      cellClassName: "text-right",
-      render: (doc) => {
-        const firstBotId = bots.find((b) => doc.bots.includes(b.name))?.id;
-        return firstBotId ? (
-          <Button variant="ghost" size="sm" icon={Trash2} onClick={() => handleDelete(doc.id, firstBotId)} />
-        ) : null;
-      },
-    },
-  ], [bots, handleDelete]);
+  ], []);
 
   return (
     <div className="space-y-6">
@@ -241,6 +230,32 @@ export default function ConocimientoPage() {
             emptyIcon={Database}
             emptyTitle="Sin documentos"
             emptyDescription="Sube archivos para empezar."
+            mobileCard={(doc) => {
+              const botsCol = docColumns.find((c) => c.key === "bots")!;
+              const createdAt = docColumns.find((c) => c.key === "createdAt")!;
+              return (
+                <div className="space-y-1.5 min-w-0">
+                  <div>
+                    <span className="font-medium text-sm">{doc.title}</span>
+                    {doc.sourceName && <span className="text-xs text-muted-darker ml-2">{doc.sourceName}</span>}
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-mono text-muted-darker">Chunk {doc.chunkIndex}</span>
+                    {createdAt.render(doc)}
+                  </div>
+                  {botsCol.render(doc)}
+                </div>
+              );
+            }}
+            rowActions={(doc) => {
+              const firstBotId = bots.find((b) => doc.bots.includes(b.name))?.id;
+              if (!firstBotId) return null;
+              return (
+                <DropdownItem icon={Trash2} onClick={() => handleDelete(doc.id, firstBotId)}>
+                  Eliminar
+                </DropdownItem>
+              );
+            }}
           />
         </CardBody>
       </Card>

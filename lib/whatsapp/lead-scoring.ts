@@ -79,6 +79,13 @@ export async function scoreChatWithScorer(chatId: string, scorer: WALeadScorerBo
     throw new LeadScoringError("La conversación no tiene mensajes");
   }
 
+  // A chat with only campaign/outbound messages and no reply yet has nothing for the
+  // AI to judge — it would always land on "descartado" (score 0), which is noise, not
+  // a real qualification. Shared by both callers (manual button + scheduled tick).
+  if (!messages.some((m) => m.direction === "INBOUND")) {
+    throw new LeadScoringError("El lead todavía no ha respondido — no se puede calificar todavía");
+  }
+
   const provider = scorer.provider as AIProvider;
   const apiKey = await getUserApiKey(scorer.userId, provider);
   if (!apiKey) {

@@ -71,8 +71,8 @@ export default function CampaignDetailPage() {
   const [sending, setSending] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const fetchCampaign = useCallback(async (p = 1) => {
-    setLoading(true);
+  const fetchCampaign = useCallback(async (p = 1, opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     try {
       const res = await fetch(`/api/whatsapp/campaigns/${id}?page=${p}&limit=50`);
       const data = await res.json();
@@ -84,12 +84,21 @@ export default function CampaignDetailPage() {
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Error");
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, [id, toastError]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/page-change; fetchCampaign also used for manual refresh
   useEffect(() => { fetchCampaign(page); }, [fetchCampaign, page]);
+
+  // While the campaign is actively sending, poll silently (no loading spinner flash) so
+  // the progress bar and recipient statuses animate live instead of requiring a manual
+  // page refresh. Stops as soon as the campaign leaves SENDING.
+  useEffect(() => {
+    if (campaign?.status !== "SENDING") return;
+    const interval = setInterval(() => fetchCampaign(page, { silent: true }), 2000);
+    return () => clearInterval(interval);
+  }, [campaign?.status, fetchCampaign, page]);
 
   async function handleSend() {
     setSending(true);
@@ -177,11 +186,25 @@ export default function CampaignDetailPage() {
         <Card>
           <CardBody>
             <div className="flex items-center gap-3">
-              <div className="flex-1 bg-surface rounded-full h-2 overflow-hidden">
-                <div className="h-full bg-accent rounded-full transition-all" style={{ width: `${progress}%` }} />
+              <div className="flex-1 bg-surface rounded-full h-2 overflow-hidden relative">
+                <div
+                  className="h-full bg-accent rounded-full transition-all duration-700 ease-out"
+                  style={{ width: `${progress}%` }}
+                />
+                {campaign.status === "SENDING" && (
+                  <div
+                    className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-transparent via-white/50 to-transparent bg-[length:200%_100%] animate-[shimmer_1.5s_linear_infinite] transition-all duration-700 ease-out"
+                    style={{ width: `${progress}%` }}
+                  />
+                )}
               </div>
-              <span className="text-sm font-medium">{progress}%</span>
-              <Badge tone={statusBadge.tone}>{statusBadge.label}</Badge>
+              <span className="text-sm font-medium tabular-nums">{progress}%</span>
+              <Badge tone={statusBadge.tone}>
+                {campaign.status === "SENDING" && (
+                  <span className="inline-block size-1.5 rounded-full bg-current animate-pulse mr-1.5" />
+                )}
+                {statusBadge.label}
+              </Badge>
             </div>
           </CardBody>
         </Card>
@@ -198,6 +221,19 @@ export default function CampaignDetailPage() {
             rowKey={(r) => r.id}
             emptyIcon={Users}
             emptyTitle="Sin destinatarios"
+            mobileCard={(r) => {
+              const status = recipientColumns.find((c) => c.key === "status")!;
+              return (
+                <div className="space-y-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-sm truncate">{r.phoneNumber}</span>
+                    {status.render(r)}
+                  </div>
+                  {r.contactName && <div className="text-xs text-muted-darker truncate">{r.contactName}</div>}
+                  {r.errorMessage && <div className="text-xs text-danger truncate">{r.errorMessage}</div>}
+                </div>
+              );
+            }}
           />
           {totalPages > 1 && (
             <div className="flex justify-center mt-4 pt-4 border-t border-border">

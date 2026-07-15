@@ -500,6 +500,20 @@ export default function NewCampaignPage() {
                           rowKey={(r) => r.id}
                           emptyIcon={Upload}
                           emptyTitle="Sin destinatarios"
+                          mobileCard={(r) => {
+                            const params = csvColumns.find((c) => c.key === "params")!;
+                            const status = csvColumns.find((c) => c.key === "status")!;
+                            return (
+                              <div className="space-y-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-mono text-sm font-medium truncate">{r.phoneNumber}</span>
+                                  {status.render(r)}
+                                </div>
+                                {r.contactName && <div className="text-xs text-muted-darker truncate">{r.contactName}</div>}
+                                <div className="text-xs text-muted-darker truncate">{params.render(r)}</div>
+                              </div>
+                            );
+                          }}
                         />
 
                         {csvTotalPages > 1 && (

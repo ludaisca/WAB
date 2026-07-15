@@ -55,6 +55,12 @@ async function runScheduledScorer(scorer: WALeadScorerBot, now: Date) {
       accountId: { in: scopedAccountIds },
       status: { in: ["OPEN", "PENDING"] },
       lastMessageAt: { not: null },
+      // Otherwise a campaign-only chat the lead never replied to would be reselected as
+      // "due" on every single tick forever (scoreChatWithScorer throws before creating a
+      // score, so it never satisfies the `!lastScore` exemption below) — crowding out
+      // real candidates from the batch. scoreChatWithScorer enforces this same rule for
+      // the manual "Calificar" button; this mirrors it here purely for efficiency.
+      messages: { some: { direction: "INBOUND" } },
     },
     select: {
       id: true,

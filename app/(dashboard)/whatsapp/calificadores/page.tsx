@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { DropdownItem } from "@/app/components/ui/dropdown";
 import { PageHeader } from "@/app/components/ui/page-header";
 import { Table, type TableColumn } from "@/app/components/ui/table";
+import { Pagination } from "@/app/components/ui/pagination";
 import { Button } from "@/app/components/ui/button";
 import { Select } from "@/app/components/ui/select";
 import { Modal } from "@/app/components/ui/modal";
@@ -148,6 +149,8 @@ const EXPORT_COLUMNS: ExportColumnDef[] = [
   { key: "nivel_interaccion", label: "Nivel de interacción", get: (r) => r.details?.nivel_interaccion ?? "" },
   { key: "updatedAt", label: "Actualizado", get: (r) => new Date(r.updatedAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }) },
 ];
+
+const LEADS_PAGE_SIZE = 25;
 
 function isoDaysAgo(days: number): string {
   const d = new Date();
@@ -321,6 +324,21 @@ function CalificadoresTab() {
             emptyIcon={Target}
             emptyTitle="Sin calificadores"
             emptyDescription="Crea tu primer calificador para empezar a calificar leads desde los chats."
+            mobileCard={(r) => {
+              const provider = columns.find((c) => c.key === "provider")!;
+              const schedule = columns.find((c) => c.key === "schedule")!;
+              const active = columns.find((c) => c.key === "isActive")!;
+              return (
+                <div className="space-y-1.5 min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-foreground truncate">{r.name}</span>
+                    <div onClick={(e) => e.stopPropagation()}>{active.render(r)}</div>
+                  </div>
+                  {provider.render(r)}
+                  {schedule.render(r)}
+                </div>
+              );
+            }}
             rowActions={(r) => (
               <>
                 <DropdownItem icon={Pencil} onClick={() => { setEditId(r.id); setModalOpen(true); }}>
@@ -366,6 +384,7 @@ function LeadsTab() {
   const [dateFrom, setDateFrom] = useState(() => isoDaysAgo(30));
   const [dateTo, setDateTo] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [exportScope, setExportScope] = useState<"current" | "selected">("current");
@@ -415,6 +434,15 @@ function LeadsTab() {
       return true;
     });
   }, [rows, scorerFilter, labelFilter, accountFilter, dateFrom, dateTo]);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- keeps pagination valid when filters narrow/widen the result set
+  useEffect(() => { setPage(1); }, [scorerFilter, labelFilter, accountFilter, dateFrom, dateTo]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / LEADS_PAGE_SIZE));
+  const pageRows = useMemo(
+    () => filtered.slice((page - 1) * LEADS_PAGE_SIZE, page * LEADS_PAGE_SIZE),
+    [filtered, page]
+  );
 
   const toggleSelected = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -584,7 +612,7 @@ function LeadsTab() {
         <CardBody>
           <Table
             columns={columns}
-            rows={filtered}
+            rows={pageRows}
             rowKey={(r) => r.id}
             loading={loading}
             error={fetchError}
@@ -593,7 +621,39 @@ function LeadsTab() {
             emptyIcon={Sparkles}
             emptyTitle="Sin leads calificados"
             emptyDescription="Los chats que califiques manualmente o mediante ejecución automática aparecerán aquí."
+            mobileCard={(r) => {
+              const label = columns.find((c) => c.key === "label")!;
+              return (
+                <div className="flex items-start gap-3 min-w-0 w-full">
+                  <div onClick={(e) => e.stopPropagation()} className="pt-0.5 shrink-0">
+                    <Checkbox checked={selectedIds.has(r.id)} onChange={() => toggleSelected(r.id)} />
+                  </div>
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-sm truncate">{r.chat.name || r.chat.remoteJid.split("@")[0]}</span>
+                      {label.render(r)}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-darker">
+                      <span>{r.chat.remoteJid.split("@")[0]}</span>
+                      <span>·</span>
+                      <span className="truncate">{r.chat.account.name}</span>
+                      <span>·</span>
+                      <span className="truncate">{r.scorer.name}</span>
+                    </div>
+                    <p className="text-xs text-muted-darker line-clamp-2">{r.summary}</p>
+                    <p className="text-[11px] text-muted-darker">
+                      {new Date(r.updatedAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })}
+                    </p>
+                  </div>
+                </div>
+              );
+            }}
           />
+          {totalPages > 1 && (
+            <div className="flex justify-center mt-4 pt-4 border-t border-border">
+              <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+            </div>
+          )}
         </CardBody>
       </Card>
 
