@@ -5,7 +5,8 @@ import { processRagJob } from "./rag-worker";
 import { processMediaDownloadJob } from "./media-worker";
 import { processMediaCleanupJob } from "./media-cleanup-worker";
 import { processBotSendJob } from "./bot-send-worker";
-import { mediaCleanupQueue } from "@/lib/queue";
+import { processLeadScoringTick } from "./lead-scoring-worker";
+import { mediaCleanupQueue, leadScoringQueue } from "@/lib/queue";
 
 const connection = {
   url: process.env.REDIS_URL || "redis://redis:6379",
@@ -42,7 +43,11 @@ export function startWorkers() {
     await processBotSendJob(job.data);
   }, { connection, concurrency: 5 });
 
-  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, botSendWorker);
+  const leadScoringWorker = new Worker("lead-scoring", async () => {
+    await processLeadScoringTick();
+  }, { connection, concurrency: 1 });
+
+  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, botSendWorker, leadScoringWorker);
 
   mediaCleanupQueue
     .add(
@@ -51,6 +56,17 @@ export function startWorkers() {
       { jobId: "media-cleanup-daily", repeat: { pattern: "0 3 * * *" } }
     )
     .catch((err) => console.error("[workers] No se pudo programar media-cleanup:", err));
+
+  // The shortest schedulable interval a scorer can pick is 15 minutes (see
+  // LEAD_SCORER_SCHEDULE_INTERVALS) — ticking every 5 minutes gives enough
+  // resolution to honor that without polling Redis unnecessarily often.
+  leadScoringQueue
+    .add(
+      "tick",
+      {},
+      { jobId: "lead-scoring-tick", repeat: { pattern: "*/5 * * * *" } }
+    )
+    .catch((err) => console.error("[workers] No se pudo programar lead-scoring:", err));
 
   console.log("[workers] BullMQ workers started");
 }

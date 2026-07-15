@@ -12,8 +12,19 @@ import { Switch } from "@/app/components/ui/switch";
 import { Banner } from "@/app/components/ui/banner";
 import { Spinner } from "@/app/components/ui/spinner";
 import { useToast } from "@/app/components/ui/toast";
+import { LEAD_SCORER_SCHEDULE_INTERVALS } from "@/lib/validations";
 
 interface ModelOption { id: string; name: string; }
+
+const INTERVAL_LABEL: Record<number, string> = {
+  15: "Cada 15 minutos",
+  30: "Cada 30 minutos",
+  60: "Cada hora",
+  180: "Cada 3 horas",
+  360: "Cada 6 horas",
+  720: "Cada 12 horas",
+  1440: "Cada 24 horas",
+};
 
 const FALLBACK_MODELS: Record<string, ModelOption[]> = {
   openrouter: [
@@ -44,6 +55,8 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
   const [model, setModel] = useState("google/gemini-2.5-flash");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduleIntervalMinutes, setScheduleIntervalMinutes] = useState(30);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -58,6 +71,8 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
     setModel("google/gemini-2.5-flash");
     setSystemPrompt("");
     setIsActive(true);
+    setScheduleEnabled(false);
+    setScheduleIntervalMinutes(30);
     setErrors({});
     setError("");
   }, []);
@@ -110,6 +125,8 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
           setModel(d.model);
           setSystemPrompt(d.systemPrompt);
           setIsActive(d.isActive);
+          setScheduleEnabled(d.scheduleEnabled ?? false);
+          setScheduleIntervalMinutes(d.scheduleIntervalMinutes ?? 30);
         }
       })
       .catch(() => toastError("Error al cargar el calificador"))
@@ -137,6 +154,8 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
         model,
         systemPrompt: systemPrompt.trim(),
         isActive,
+        scheduleEnabled,
+        scheduleIntervalMinutes: scheduleEnabled ? scheduleIntervalMinutes : null,
       };
 
       const url = isEditing ? `/api/whatsapp/lead-scorers/${editId}` : "/api/whatsapp/lead-scorers";
@@ -234,6 +253,36 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
               <p className="text-xs text-muted-darker">Solo los calificadores activos aparecen para elegir al calificar un chat.</p>
             </div>
             <Switch checked={isActive} onCheckedChange={setIsActive} />
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-border p-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Ejecución automática</p>
+                <p className="text-xs text-muted-darker">
+                  Vuelve a calificar los chats abiertos/pendientes con mensajes nuevos, de forma periódica, sin intervención manual.
+                </p>
+              </div>
+              <Switch checked={scheduleEnabled} onCheckedChange={setScheduleEnabled} />
+            </div>
+            {scheduleEnabled && (
+              <FormField label="Frecuencia" required error={errors.scheduleIntervalMinutes}>
+                {(id) => (
+                  <Select
+                    id={id}
+                    value={String(scheduleIntervalMinutes)}
+                    onChange={(e) => setScheduleIntervalMinutes(Number(e.target.value))}
+                  >
+                    {LEAD_SCORER_SCHEDULE_INTERVALS.map((m) => (
+                      <option key={m} value={m}>{INTERVAL_LABEL[m]}</option>
+                    ))}
+                  </Select>
+                )}
+              </FormField>
+            )}
+            <p className="text-[11px] text-muted-darker">
+              Respeta el presupuesto mensual de IA configurado en Configuración: si ya se superó, las ejecuciones automáticas se omiten hasta el mes siguiente.
+            </p>
           </div>
         </div>
       )}

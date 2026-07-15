@@ -20,7 +20,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const { name, provider, model, systemPrompt, isActive } = parsed.data;
+    const { name, provider, model, systemPrompt, isActive, scheduleEnabled, scheduleIntervalMinutes } = parsed.data;
 
     await prisma.appSettings.upsert({
       where: { userId: session.user.id },
@@ -36,11 +36,16 @@ export async function POST(req: Request) {
         model,
         systemPrompt,
         isActive: isActive ?? true,
+        scheduleEnabled: scheduleEnabled ?? false,
+        scheduleIntervalMinutes: scheduleEnabled ? scheduleIntervalMinutes : null,
       },
     });
 
     return NextResponse.json(scorer, { status: 201 });
   } catch (error) {
+    if (error instanceof Error && "code" in error && (error as { code?: string }).code === "P2002") {
+      return NextResponse.json({ error: "Ya tienes un calificador con ese nombre" }, { status: 409 });
+    }
     const message =
       error instanceof Error ? error.message : "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -85,15 +85,36 @@ export const botSchema = z.object({
 
 export const botUpdateSchema = botSchema.partial();
 
+export const LEAD_SCORER_SCHEDULE_INTERVALS = [15, 30, 60, 180, 360, 720, 1440] as const;
+
 export const leadScorerBotSchema = z.object({
   name: z.string().min(1, "El nombre es requerido").max(100),
   provider: z.enum(["openrouter", "google"], { message: "Proveedor inválido" }),
   model: z.string().min(1, "El modelo es requerido"),
   systemPrompt: z.string().min(1, "El prompt es requerido"),
   isActive: z.boolean().optional(),
-});
+  scheduleEnabled: z.boolean().optional(),
+  scheduleIntervalMinutes: z
+    .union(LEAD_SCORER_SCHEDULE_INTERVALS.map((n) => z.literal(n)) as [z.ZodLiteral<number>, ...z.ZodLiteral<number>[]])
+    .nullable()
+    .optional(),
+}).refine(
+  (data) => !data.scheduleEnabled || data.scheduleIntervalMinutes != null,
+  { message: "Selecciona cada cuánto debe ejecutarse el calificador", path: ["scheduleIntervalMinutes"] }
+);
 
-export const leadScorerBotUpdateSchema = leadScorerBotSchema.partial();
+export const leadScorerBotUpdateSchema = z.object({
+  name: z.string().min(1, "El nombre es requerido").max(100).optional(),
+  provider: z.enum(["openrouter", "google"], { message: "Proveedor inválido" }).optional(),
+  model: z.string().min(1, "El modelo es requerido").optional(),
+  systemPrompt: z.string().min(1, "El prompt es requerido").optional(),
+  isActive: z.boolean().optional(),
+  scheduleEnabled: z.boolean().optional(),
+  scheduleIntervalMinutes: z
+    .union(LEAD_SCORER_SCHEDULE_INTERVALS.map((n) => z.literal(n)) as [z.ZodLiteral<number>, ...z.ZodLiteral<number>[]])
+    .nullable()
+    .optional(),
+});
 
 export const campaignSchema = z.object({
   name: z.string().min(1, "El nombre es requerido").max(200),

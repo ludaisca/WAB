@@ -171,21 +171,41 @@ model WAChat {
 }
 
 model WALeadScorerBot {
-  id           String   @id @default(cuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name         String
-  provider     String
-  model        String
-  systemPrompt String   @db.Text
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id                      String    @id @default(cuid())
+  userId                  String
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                    String
+  provider                String
+  model                   String
+  systemPrompt            String    @db.Text
+  isActive                Boolean   @default(true)
+  scheduleEnabled         Boolean   @default(false)
+  scheduleIntervalMinutes Int?
+  lastRunAt               DateTime?
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
 
   scores WALeadScore[]
+  usage  WALeadScorerUsage[]
 
   @@unique([userId, name])
   @@map("wa_lead_scorer_bots")
+}
+
+model WALeadScorerUsage {
+  id               String          @id @default(cuid())
+  scorerId         String
+  scorer           WALeadScorerBot @relation(fields: [scorerId], references: [id], onDelete: Cascade)
+  waChatId         String?
+  model            String
+  promptTokens     Int
+  completionTokens Int
+  totalTokens      Int
+  estimatedCost    Float
+  createdAt        DateTime        @default(now()) @map("created_at")
+
+  @@index([scorerId, createdAt])
+  @@map("wa_lead_scorer_usage")
 }
 
 model WALeadScore {

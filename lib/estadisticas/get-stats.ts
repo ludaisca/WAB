@@ -108,6 +108,7 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     bots,
     campaigns,
     usage,
+    scorerUsage,
     recentMessages,
     activeBots,
     campaignsCompleted,
@@ -116,6 +117,7 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     accountsList,
     chatCountsByAccount,
     monthlyUsage,
+    monthlyScorerUsage,
     appSettings,
     assignedChats,
     chatStatusCounts,
@@ -134,6 +136,10 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     prisma.wACampaign.count({ where: { userId } }),
     prisma.wABotUsage.aggregate({
       where: { bot: { userId } },
+      _sum: { totalTokens: true, estimatedCost: true },
+    }),
+    prisma.wALeadScorerUsage.aggregate({
+      where: { scorer: { userId } },
       _sum: { totalTokens: true, estimatedCost: true },
     }),
     prisma.wAMessage.findMany({
@@ -171,6 +177,10 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     }),
     prisma.wABotUsage.aggregate({
       where: { bot: { userId }, createdAt: { gte: monthStart } },
+      _sum: { estimatedCost: true },
+    }),
+    prisma.wALeadScorerUsage.aggregate({
+      where: { scorer: { userId }, createdAt: { gte: monthStart } },
       _sum: { estimatedCost: true },
     }),
     prisma.appSettings.findUnique({ where: { userId }, select: { monthlyBudgetUsd: true } }),
@@ -270,14 +280,14 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     campaigns,
     activeBots,
     campaignsCompleted,
-    totalTokens: usage._sum.totalTokens ?? 0,
-    totalCost: Math.round((usage._sum.estimatedCost ?? 0) * 10000) / 10000,
+    totalTokens: (usage._sum.totalTokens ?? 0) + (scorerUsage._sum.totalTokens ?? 0),
+    totalCost: Math.round(((usage._sum.estimatedCost ?? 0) + (scorerUsage._sum.estimatedCost ?? 0)) * 10000) / 10000,
     dailyMessages,
     chatStatusCounts: chatStatusCounts.map((c) => ({ status: c.status, count: c._count._all })),
     botBreakdown,
     accountBreakdown,
     agentPerformance,
-    monthlyCost: Math.round((monthlyUsage._sum.estimatedCost ?? 0) * 10000) / 10000,
+    monthlyCost: Math.round(((monthlyUsage._sum.estimatedCost ?? 0) + (monthlyScorerUsage._sum.estimatedCost ?? 0)) * 10000) / 10000,
     monthlyBudgetUsd: appSettings?.monthlyBudgetUsd ?? null,
   };
 

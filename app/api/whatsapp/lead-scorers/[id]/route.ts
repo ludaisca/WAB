@@ -69,6 +69,13 @@ export async function PATCH(
     if (fields.model) data.model = fields.model;
     if (fields.systemPrompt) data.systemPrompt = fields.systemPrompt;
     if (fields.isActive !== undefined) data.isActive = fields.isActive;
+    if (fields.scheduleEnabled !== undefined) data.scheduleEnabled = fields.scheduleEnabled;
+    if (fields.scheduleIntervalMinutes !== undefined) data.scheduleIntervalMinutes = fields.scheduleIntervalMinutes;
+
+    // Turning scheduling off (or leaving it off) always clears the interval —
+    // avoids a stale minutes value lingering once re-enabled with no explicit choice.
+    const willBeEnabled = fields.scheduleEnabled ?? existing.scheduleEnabled;
+    if (!willBeEnabled) data.scheduleIntervalMinutes = null;
 
     const updated = await prisma.wALeadScorerBot.update({
       where: { id },
@@ -77,6 +84,9 @@ export async function PATCH(
 
     return NextResponse.json(updated);
   } catch (error) {
+    if (error instanceof Error && "code" in error && (error as { code?: string }).code === "P2002") {
+      return NextResponse.json({ error: "Ya tienes un calificador con ese nombre" }, { status: 409 });
+    }
     const message =
       error instanceof Error ? error.message : "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });
