@@ -95,7 +95,23 @@ export async function processCampaignJob(job: CampaignJob) {
     }
   }
 
+  // Contactos que se dieron de baja de mensajes de marketing vía el mecanismo
+  // nativo de WhatsApp (webhook user_preferences) — se excluyen de esta y toda
+  // campaña futura, sin importar que el CSV/lista manual los incluya.
+  const optedOutContacts = await prisma.contact.findMany({
+    where: { accountId: campaign.waAccountId, optedOutMarketing: true },
+    select: { remoteJid: true },
+  });
+  const optedOutSet = new Set(optedOutContacts.map((c) => c.remoteJid));
+
   for (const recipient of campaign.recipients) {
+    if (optedOutSet.has(recipient.phoneNumber)) {
+      await prisma.wACampaignRecipient.update({
+        where: { id: recipient.id },
+        data: { status: "FAILED", errorMessage: "El contacto optó por no recibir mensajes de marketing" },
+      });
+      continue;
+    }
     try {
       const body: Record<string, unknown> = {
         messaging_product: "whatsapp",

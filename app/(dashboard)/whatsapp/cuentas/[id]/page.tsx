@@ -28,6 +28,9 @@ interface AccountDetail {
   errorMessage: string | null;
   lastActivity: string | null;
   autoAssignEnabled: boolean;
+  qualityRating: string | null;
+  messagingTier: string | null;
+  qualityUpdatedAt: string | null;
   createdAt: string;
   updatedAt: string;
   _count: { chats: number; templates: number };
@@ -39,6 +42,17 @@ const STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" 
   ERROR:        { label: "Error",        tone: "danger" },
   DISCONNECTED: { label: "Desconectado", tone: "neutral" },
 };
+
+// Tono por valor crudo de Meta — cubre tanto ratings tipo "GREEN"/"YELLOW"/"RED"
+// como nombres de evento tipo "FLAGGED"/"UNFLAGGED", según lo que reporte el
+// webhook phone_number_quality_update.
+function qualityTone(rating: string): "success" | "warning" | "danger" | "neutral" {
+  const r = rating.toUpperCase();
+  if (r.includes("RED") || (r.includes("FLAG") && !r.includes("UNFLAG"))) return "danger";
+  if (r.includes("YELLOW") || r.includes("DOWNGRADE")) return "warning";
+  if (r.includes("GREEN") || r.includes("UNFLAG") || r.includes("UPGRADE")) return "success";
+  return "neutral";
+}
 
 const WEBHOOK_PATH = "/api/whatsapp/webhook";
 
@@ -305,6 +319,17 @@ export default function CuentaDetailPage() {
                 </dd>
               )}
             </div>
+            {account.qualityRating && (
+              <div className="flex justify-between border-b border-border pb-3">
+                <dt className="text-sm text-muted-darker">Calidad del número</dt>
+                <dd className="flex items-center gap-2">
+                  <Badge tone={qualityTone(account.qualityRating)} size="sm">{account.qualityRating}</Badge>
+                  {account.messagingTier && (
+                    <span className="text-xs text-muted-darker">{account.messagingTier}</span>
+                  )}
+                </dd>
+              </div>
+            )}
             <div className="flex justify-between border-b border-border pb-3">
               <dt className="text-sm text-muted-darker">Chats activos</dt>
               <dd className="text-sm font-medium">{account._count.chats}</dd>

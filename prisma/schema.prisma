@@ -86,6 +86,14 @@ model WAAccount {
   errorMessage      String?
   lastActivity      DateTime?
   autoAssignEnabled Boolean          @default(false)
+  // Reportados por el webhook `phone_number_quality_update` de Meta — no se
+  // consultan por API, solo llegan de forma reactiva (push). qualityRating es
+  // el valor crudo que manda Meta (p. ej. "GREEN"/"YELLOW"/"RED" o el nombre
+  // del evento "FLAGGED"/"UNFLAGGED"); messagingTier es el límite de envío por
+  // 24h vigente (p. ej. "TIER_1K"). Ambos null hasta el primer evento recibido.
+  qualityRating     String?
+  messagingTier     String?
+  qualityUpdatedAt  DateTime?
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
 
@@ -503,6 +511,13 @@ model Contact {
   remoteJid  String
   name       String?
   leadStatus LeadStatus @default(NEW)
+  // Reportado por el webhook `user_preferences` de Meta cuando el lead usa el
+  // mecanismo nativo de WhatsApp para darse de baja de mensajes de marketing
+  // (category "marketing_messages", value "stop"/"resume"). campaign-worker.ts
+  // excluye a estos contactos de futuros envíos de campaña — no afecta
+  // respuestas manuales/bot en un chat ya iniciado por el lead.
+  optedOutMarketing Boolean   @default(false)
+  optedOutAt        DateTime?
   createdAt  DateTime   @default(now()) @map("created_at")
   updatedAt  DateTime   @updatedAt @map("updated_at")
 
@@ -568,6 +583,9 @@ enum NotificationType {
   CAMPAIGN_FAILED
   BOT_ERROR
   BUDGET_EXCEEDED
+  // Meta reportó un cambio relevante en la cuenta vía webhook: restricción/baneo
+  // (account_update) o baja de calidad/límite de envío (phone_number_quality_update).
+  ACCOUNT_STATUS
 }
 
 model Notification {

@@ -25,6 +25,8 @@ export async function GET(
         remoteJid: true,
         name: true,
         leadStatus: true,
+        optedOutMarketing: true,
+        optedOutAt: true,
         createdAt: true,
         updatedAt: true,
         tags: { select: { tag: { select: { id: true, name: true, color: true } } } },

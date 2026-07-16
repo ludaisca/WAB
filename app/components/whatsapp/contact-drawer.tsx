@@ -17,6 +17,7 @@ interface ContactDetail {
   name: string | null;
   remoteJid: string;
   leadStatus: string;
+  optedOutMarketing: boolean;
   tags: Array<{ tag: { id: string; name: string; color: string } }>;
 }
 
@@ -200,6 +201,12 @@ export function ContactDrawer({
         </div>
       ) : (
         <div className="p-4 space-y-5">
+          {contact.optedOutMarketing && (
+            <Banner tone="warning">
+              Este contacto se dio de baja de mensajes de marketing por WhatsApp — no recibirá futuras campañas.
+            </Banner>
+          )}
+
           <div>
             <label className="block text-xs font-medium text-muted-darker mb-1.5">Estado de lead</label>
             <Select value={contact.leadStatus} onChange={(e) => handleLeadStatusChange(e.target.value)}>
