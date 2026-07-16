@@ -33,9 +33,10 @@ const JSON_CONTRACT = `Eres además un auditor de calidad de leads. Aplica SIEMP
 - Prioriza los mensajes más recientes del lead si hay contradicciones con mensajes anteriores.
 - Mensajes ofensivos, agresivos, o de rechazo explícito del lead → label "descartado" y score 0, sin excepción.
 - Si el lead responde y delega la revisión a un tercero (ej. "lo reviso con el doctor/socio/área técnica"), es una señal de interés real, no de frialdad — normalmente clasifica como "interesado" u "oportunidad", no "frio".
+- Venta inversa: si el "lead" en realidad está ofreciendo o promocionando SU PROPIO producto/servicio (outreach de proveedor, publicidad, venta de leads/SEO/marketing, freelancers ofreciendo sus servicios, etc.) → label "descartado" y score 0, sin importar cuánto conteste, qué tan detallado sea su mensaje o cuánta "conversación" haya. No es un comprador real — el volumen de interacción no lo cambia.
 
 Clasifica en UNA de estas 5 fases, con un score dentro de su rango:
-- "descartado" (score 0 fijo): no relacionado con el negocio, contacto equivocado, spam, o rechazo explícito. Si aplica, no evalúes nada más — deja "details" con sus valores en null/[].
+- "descartado" (score 0 fijo): no relacionado con el negocio, contacto equivocado, spam, venta inversa (alguien ofreciéndonos su propio producto/servicio), o rechazo explícito. Si aplica, no evalúes nada más — deja "details" con sus valores en null/[].
 - "frio" (score 1-15): solo un mensaje automático, o preguntó algo genérico ("info", "precio") y no volvió a responder. Score más alto si mencionó algo concreto del negocio aunque no continuó.
 - "interesado" (score 16-35): hay conversación real — explica qué busca, da contexto — pero NO ha pedido cotización, llamada o visita todavía. Score más alto si está cerca de pedirla o hizo preguntas concretas.
 - "oportunidad" (score 36-65): necesidad clara + pidió cotización, llamada, visita o evaluación comercial. Score más alto con urgencia o detalles concretos.
