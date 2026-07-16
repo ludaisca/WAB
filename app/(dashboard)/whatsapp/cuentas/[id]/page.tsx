@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Copy, Check, Trash2, RefreshCw, MessageCircle, FileText, Pencil } from "lucide-react";
+import { ArrowLeft, Copy, Check, Trash2, RefreshCw, MessageCircle, FileText, Pencil, UserPlus, X } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
+import { Select } from "@/app/components/ui/select";
 import { Spinner } from "@/app/components/ui/spinner";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { Banner } from "@/app/components/ui/banner";
@@ -16,6 +18,7 @@ import { useToast } from "@/app/components/ui/toast";
 
 interface AccountDetail {
   id: string;
+  userId: string;
   name: string;
   phoneNumber: string | null;
   phoneNumberId: string;
@@ -39,9 +42,24 @@ const STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" 
 
 const WEBHOOK_PATH = "/api/whatsapp/webhook";
 
+interface UserOption {
+  id: string;
+  name: string | null;
+  email: string;
+  role: string;
+}
+
+const ROLE_LABEL: Record<string, string> = {
+  admin: "Admin",
+  user: "Usuario",
+  ejecutivo: "Ejecutivo",
+};
+
 export default function CuentaDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "admin";
   const { success, error: toastError } = useToast();
   const id = params.id as string;
 
@@ -53,6 +71,11 @@ export default function CuentaDetailPage() {
   const [editingAppId, setEditingAppId] = useState(false);
   const [appIdDraft, setAppIdDraft] = useState("");
   const [savingAppId, setSavingAppId] = useState(false);
+
+  const [sharedUsers, setSharedUsers] = useState<UserOption[]>([]);
+  const [allUsers, setAllUsers] = useState<UserOption[]>([]);
+  const [shareUserId, setShareUserId] = useState("");
+  const [sharing, setSharing] = useState(false);
 
   const fetchAccount = useCallback(async () => {
     setLoading(true);
@@ -72,6 +95,59 @@ export default function CuentaDetailPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount
     fetchAccount();
   }, [fetchAccount]);
+
+  const fetchSharing = useCallback(async () => {
+    try {
+      const [sharedRes, usersRes] = await Promise.all([
+        fetch(`/api/whatsapp/accounts/${id}/share`),
+        fetch(`/api/usuarios`),
+      ]);
+      const sharedData = await sharedRes.json();
+      const usersData = await usersRes.json();
+      if (Array.isArray(sharedData)) setSharedUsers(sharedData);
+      if (Array.isArray(usersData)) setAllUsers(usersData);
+    } catch {
+      // silencioso — la tarjeta de compartir es secundaria a la info principal de la cuenta
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount, gated by role
+    fetchSharing();
+  }, [isAdmin, fetchSharing]);
+
+  async function handleShare() {
+    if (!shareUserId) return;
+    setSharing(true);
+    try {
+      const res = await fetch(`/api/whatsapp/accounts/${id}/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: shareUserId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Error al compartir");
+      setShareUserId("");
+      await fetchSharing();
+      success("Cuenta compartida");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al compartir la cuenta");
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  async function handleUnshare(userId: string) {
+    try {
+      const res = await fetch(`/api/whatsapp/accounts/${id}/share?userId=${userId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      setSharedUsers((prev) => prev.filter((u) => u.id !== userId));
+      success("Acceso removido");
+    } catch {
+      toastError("Error al quitar el acceso");
+    }
+  }
 
   async function handleDelete() {
     setDeleting(true);
@@ -159,9 +235,7 @@ export default function CuentaDetailPage() {
         <Banner tone="danger" title="Cuenta no encontrada">
           La cuenta solicitada no existe o no tienes acceso.
         </Banner>
-        <Link href="/whatsapp/cuentas">
-          <Button icon={ArrowLeft} variant="secondary">Volver</Button>
-        </Link>
+        <Button href="/whatsapp/cuentas" icon={ArrowLeft} variant="secondary">Volver</Button>
       </div>
     );
   }
@@ -303,13 +377,57 @@ export default function CuentaDetailPage() {
         </CardBody>
       </Card>
 
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Compartir cuenta</CardTitle>
+          </CardHeader>
+          <CardBody>
+            <p className="text-sm text-muted mb-3">
+              Los usuarios con acceso pueden ver los chats, contactos y campañas de esta cuenta — dentro de lo que su propio rol ya permite ver. Compartir no cambia sus permisos de menú.
+            </p>
+
+            {sharedUsers.length > 0 ? (
+              <div className="flex flex-wrap gap-2 mb-4">
+                {sharedUsers.map((u) => (
+                  <Badge key={u.id} tone="neutral" size="sm" className="gap-1.5">
+                    {u.name ?? u.email} · {ROLE_LABEL[u.role] ?? u.role}
+                    <button
+                      onClick={() => handleUnshare(u.id)}
+                      className="hover:text-danger transition-colors"
+                      aria-label={`Quitar acceso a ${u.name ?? u.email}`}
+                    >
+                      <X size={12} />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-darker mb-4">Todavía no compartes esta cuenta con nadie.</p>
+            )}
+
+            <div className="flex items-center gap-2">
+              <Select value={shareUserId} onChange={(e) => setShareUserId(e.target.value)} className="flex-1">
+                <option value="">Seleccionar usuario...</option>
+                {allUsers
+                  .filter((u) => u.id !== account.userId && !sharedUsers.some((s) => s.id === u.id))
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name ?? u.email} ({ROLE_LABEL[u.role] ?? u.role})
+                    </option>
+                  ))}
+              </Select>
+              <Button size="sm" icon={sharing ? undefined : UserPlus} onClick={handleShare} disabled={sharing || !shareUserId}>
+                {sharing ? <Spinner /> : "Compartir"}
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
       <div className="flex gap-3 flex-wrap">
-        <Link href={`/whatsapp/chat?accountId=${account.id}`}>
-          <Button icon={MessageCircle}>Abrir chats</Button>
-        </Link>
-        <Link href={`/whatsapp/plantillas?accountId=${account.id}`}>
-          <Button variant="secondary" icon={FileText}>Gestionar plantillas</Button>
-        </Link>
+        <Button href={`/whatsapp/chat?accountId=${account.id}`} icon={MessageCircle}>Abrir chats</Button>
+        <Button href={`/whatsapp/plantillas?accountId=${account.id}`} variant="secondary" icon={FileText}>Gestionar plantillas</Button>
         <Button variant="secondary" icon={RefreshCw} onClick={fetchAccount}>
           Actualizar
         </Button>

@@ -12,6 +12,9 @@ export async function DELETE(
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    if (session.user.role !== "admin") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
 
     const { id, kid } = await params;
 

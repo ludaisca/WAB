@@ -47,7 +47,7 @@ export function UserFormModal({ open, onClose, onCreated }: Props) {
     const errors: Record<string, string> = {};
     if (!name.trim()) errors.name = "Requerido";
     if (!email.trim()) errors.email = "Requerido";
-    if (!password || password.length < 6) errors.password = "Mínimo 6 caracteres";
+    if (!password || password.length < 8) errors.password = "Mínimo 8 caracteres";
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
 
@@ -133,7 +133,7 @@ export function UserFormModal({ open, onClose, onCreated }: Props) {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Mínimo 8 caracteres"
                 error={fieldErrors.password}
               />
             )}

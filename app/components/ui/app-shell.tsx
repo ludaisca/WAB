@@ -145,7 +145,13 @@ function SidebarContent({
       )}>
         {!collapsed && bottomActions}
         <button
-          onClick={() => signOut({ callbackUrl: "/" })}
+          // redirect: false + navegación relativa: la URL absoluta que arma el
+          // servidor usa el origen interno del contenedor (0.0.0.0:5000) y
+          // mandaba al usuario fuera de la app tras cerrar sesión.
+          onClick={async () => {
+            await signOut({ redirect: false });
+            window.location.href = "/login";
+          }}
           title={collapsed ? "Cerrar sesión" : undefined}
           className={cn(
             "flex items-center text-sm font-medium text-muted transition-colors hover:bg-surface-light hover:text-danger rounded-lg",

@@ -27,6 +27,7 @@ export async function GET(
       },
       select: {
         id: true,
+        userId: true,
         name: true,
         channel: true,
         phoneNumber: true,

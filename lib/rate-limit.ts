@@ -24,6 +24,13 @@ export async function rateLimit(
     const count = (current?.[1] as number) || 0;
     return { allowed: count < maxRequests, remaining: Math.max(0, maxRequests - count - 1) };
   } catch {
+    // Poda de claves muertas: sin esto, con Redis caído un rato el Map crece
+    // sin límite (una entrada por IP/usuario que jamás se libera).
+    if (memoryStore.size > 500) {
+      for (const [key, ts] of memoryStore) {
+        if (ts.every((t) => t <= windowStart)) memoryStore.delete(key);
+      }
+    }
     const timestamps = memoryStore.get(fullKey) ?? [];
     const valid = timestamps.filter((t) => t > windowStart);
     valid.push(now);

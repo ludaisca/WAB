@@ -33,7 +33,11 @@ export async function GET(
 
     const where: Record<string, unknown> = { chatId };
     if (before) {
-      where.timestamp = { lt: new Date(before) };
+      const beforeDate = new Date(before);
+      if (isNaN(beforeDate.getTime())) {
+        return NextResponse.json({ error: "Parámetro 'before' inválido" }, { status: 400 });
+      }
+      where.timestamp = { lt: beforeDate };
     }
 
     const messages = await prisma.wAMessage.findMany({

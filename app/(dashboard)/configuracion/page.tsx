@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
-import Link from "next/link";
 import { User, Lock, Shield, CalendarDays, Brain, Users, MessageSquareDashed } from "lucide-react";
 import { Card, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
@@ -220,20 +219,22 @@ export default function SettingsPage() {
         </CardBody>
       </Card>
 
-      <Card>
-        <CardBody>
-          <div className="flex items-center gap-2 mb-4">
-            <Brain size={16} className="text-accent" />
-            <CardTitle>Inteligencia Artificial</CardTitle>
-          </div>
-          <p className="text-sm text-muted-darker mb-4">
-            Configura las API keys de OpenRouter y Google Gemini para usar los bots IA, RAG y embeddings.
-          </p>
-          <Button href="/configuracion/ia" variant="secondary" size="sm" icon={Brain}>
-            Configurar IA
-          </Button>
-        </CardBody>
-      </Card>
+      {isAdmin && (
+        <Card>
+          <CardBody>
+            <div className="flex items-center gap-2 mb-4">
+              <Brain size={16} className="text-accent" />
+              <CardTitle>Inteligencia Artificial</CardTitle>
+            </div>
+            <p className="text-sm text-muted-darker mb-4">
+              Configura las API keys de OpenRouter y Google Gemini para usar los bots IA, RAG y embeddings.
+            </p>
+            <Button href="/configuracion/ia" variant="secondary" size="sm" icon={Brain}>
+              Configurar IA
+            </Button>
+          </CardBody>
+        </Card>
+      )}
 
       <Card>
         <CardBody>

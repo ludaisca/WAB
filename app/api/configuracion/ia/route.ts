@@ -9,6 +9,9 @@ export async function GET() {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    if (session.user.role !== "admin") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
 
     let settings = await prisma.appSettings.findUnique({
       where: { userId: session.user.id },
@@ -45,6 +48,9 @@ export async function PATCH(req: Request) {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+    if (session.user.role !== "admin") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
     const body = (await req.json()) as {

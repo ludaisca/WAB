@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/crypto";
 import { templateCreateSchema } from "@/lib/validations";
 import { createTemplate } from "@/lib/whatsapp/templates";
+import { getUserAccountIds } from "@/lib/shared-accounts";
 
 export async function POST(req: Request) {
   try {
@@ -32,8 +33,14 @@ export async function POST(req: Request) {
       );
     }
 
+    const accountIds = await getUserAccountIds(session.user.id);
+
+    if (!accountIds.includes(waAccountId)) {
+      return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
+    }
+
     const account = await prisma.wAAccount.findFirst({
-      where: { id: waAccountId, userId: session.user.id },
+      where: { id: waAccountId },
     });
 
     if (!account) {

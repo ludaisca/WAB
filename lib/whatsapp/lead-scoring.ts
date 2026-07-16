@@ -68,12 +68,17 @@ export class LeadScoringError extends Error {}
 // log usage the same way — usage logging matters here because the scheduled
 // path runs unattended and its cost needs to show up in budget checks.
 export async function scoreChatWithScorer(chatId: string, scorer: WALeadScorerBot) {
-  const messages = await prisma.wAMessage.findMany({
-    where: { chatId },
-    orderBy: { timestamp: "asc" },
-    take: 200,
-    select: { direction: true, body: true, caption: true, messageType: true },
-  });
+  // Los ÚLTIMOS 200 mensajes (desc + reverse), no los primeros: el contrato
+  // JSON pide priorizar lo más reciente, y en chats largos los mensajes nuevos
+  // son justo los que traen las señales de compra.
+  const messages = (
+    await prisma.wAMessage.findMany({
+      where: { chatId },
+      orderBy: { timestamp: "desc" },
+      take: 200,
+      select: { direction: true, body: true, caption: true, messageType: true },
+    })
+  ).reverse();
 
   if (messages.length === 0) {
     throw new LeadScoringError("La conversación no tiene mensajes");
@@ -107,7 +112,9 @@ export async function scoreChatWithScorer(chatId: string, scorer: WALeadScorerBo
     messages: [
       { role: "system", content: wrapUserPrompt(scorer.systemPrompt) },
       { role: "system", content: JSON_CONTRACT },
-      { role: "user", content: transcript.slice(0, 12000) },
+      // slice(-12000): si hay que recortar, se pierde el inicio de la
+      // conversación, nunca el final (lo más reciente).
+      { role: "user", content: transcript.slice(-12000) },
     ],
   });
 

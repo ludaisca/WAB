@@ -1,13 +1,13 @@
 import { Worker } from "bullmq";
 import { processBotMessageJob } from "./bot-worker";
-import { processCampaignJob } from "./campaign-worker";
+import { processCampaignJob, processScheduledCampaignsTick } from "./campaign-worker";
 import { processRagJob } from "./rag-worker";
 import { processMediaDownloadJob } from "./media-worker";
 import { processMediaCleanupJob } from "./media-cleanup-worker";
 import { processBotSendJob } from "./bot-send-worker";
 import { processLeadScoringTick } from "./lead-scoring-worker";
 import { processLeadRecoveryTick } from "./lead-recovery-worker";
-import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue } from "@/lib/queue";
+import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue, campaignQueue } from "@/lib/queue";
 
 const connection = {
   url: process.env.REDIS_URL || "redis://redis:6379",
@@ -28,6 +28,13 @@ export function startWorkers() {
   }, { connection, concurrency: 3 });
 
   const campaignWorker = new Worker("campaign-send", async (job) => {
+    // La misma cola lleva los envíos ("send") y el tick repetible que reclama
+    // campañas SCHEDULED vencidas ("scheduled-tick") — concurrency 1 garantiza
+    // que el tick nunca corre en paralelo con un envío en curso.
+    if (job.name === "scheduled-tick") {
+      await processScheduledCampaignsTick();
+      return;
+    }
     await processCampaignJob(job.data);
   }, { connection, concurrency: 1 });
 
@@ -75,6 +82,16 @@ export function startWorkers() {
       { jobId: "lead-scoring-tick", repeat: { pattern: "*/5 * * * *" } }
     )
     .catch((err) => console.error("[workers] No se pudo programar lead-scoring:", err));
+
+  // Las campañas programadas se agendan a minuto exacto en la UI — un tick
+  // por minuto es la resolución mínima para honrar esa promesa.
+  campaignQueue
+    .add(
+      "scheduled-tick",
+      {},
+      { jobId: "campaign-scheduled-tick", repeat: { pattern: "* * * * *" } }
+    )
+    .catch((err) => console.error("[workers] No se pudo programar campaign-scheduled-tick:", err));
 
   // Umbrales en horas (mínimo configurable: horas enteras) — un tick cada 15
   // minutos da resolución de sobra sin sondear Redis de más.

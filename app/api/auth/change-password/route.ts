@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { rateLimit } from "@/lib/rate-limit";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -18,6 +19,15 @@ export async function POST(req: Request) {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
+    // Frena la fuerza bruta de la contraseña actual desde una sesión robada.
+    const { allowed } = await rateLimit(`change-password:${session.user.id}`, 5, 60);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: "Demasiados intentos. Intenta de nuevo en un minuto." },
+        { status: 429 }
+      );
     }
 
     const body = await req.json();

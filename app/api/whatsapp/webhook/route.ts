@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createHmac, createHash } from "crypto";
+import type { RecipientStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ingestInboundMessage } from "@/lib/whatsapp/ingest-message";
 
@@ -27,6 +28,12 @@ interface WebhookStatus {
   status: string;
   timestamp: string;
   recipient_id: string;
+  errors?: Array<{
+    code?: number;
+    title?: string;
+    message?: string;
+    error_data?: { details?: string };
+  }>;
 }
 
 interface WebhookValue {
@@ -105,13 +112,33 @@ async function validateSignature(
   }
 }
 
+// sent < delivered < read — Meta no garantiza el orden de entrega de los
+// webhooks, así que un "delivered" rezagado no debe pisar un "read" ya aplicado.
+const STATUS_RANK: Record<string, number> = { sent: 1, delivered: 2, read: 3 };
+
+function statusErrorDetail(status: WebhookStatus): string | null {
+  const err = status.errors?.[0];
+  if (!err) return null;
+  return err.error_data?.details ?? err.message ?? err.title ?? (err.code ? `Error ${err.code}` : null);
+}
+
 async function applyStatusUpdate(accountId: string, status: WebhookStatus): Promise<void> {
   if (!status.id) return;
+
+  const rank = STATUS_RANK[status.status];
+  const lowerStatuses = rank
+    ? Object.keys(STATUS_RANK).filter((s) => STATUS_RANK[s] < rank)
+    : null;
 
   await prisma.wAMessage.updateMany({
     where: {
       wamid: status.id,
       chat: { accountId },
+      // Solo avanza: para sent/delivered/read exige que el estado actual sea
+      // inferior (o inexistente). "failed" y estados desconocidos siempre aplican.
+      ...(lowerStatuses
+        ? { OR: [{ status: { in: [...lowerStatuses, "pending"] } }, { status: null }] }
+        : {}),
     },
     data: {
       status: status.status,
@@ -128,6 +155,10 @@ async function applyStatusUpdate(accountId: string, status: WebhookStatus): Prom
   if (!mapped) return;
 
   const updateData: Record<string, unknown> = { status: mapped.status };
+  if (mapped.status === "FAILED") {
+    const detail = statusErrorDetail(status);
+    if (detail) updateData.errorMessage = detail;
+  }
   if (mapped.field === "sentAt") {
     updateData.sentAt = new Date();
   } else if (mapped.field === "deliveredAt") {
@@ -142,8 +173,17 @@ async function applyStatusUpdate(accountId: string, status: WebhookStatus): Prom
   });
   if (!recipient) return;
 
+  const RECIPIENT_RANK: Record<string, number> = { SENT: 1, DELIVERED: 2, READ: 3 };
+  const recipientRank = RECIPIENT_RANK[mapped.status];
+  const recipientLower = recipientRank
+    ? (["PENDING", ...Object.keys(RECIPIENT_RANK).filter((s) => RECIPIENT_RANK[s] < recipientRank)] as RecipientStatus[])
+    : null;
+
   await prisma.wACampaignRecipient.updateMany({
-    where: { wamid: status.id },
+    where: {
+      wamid: status.id,
+      ...(recipientLower ? { status: { in: recipientLower } } : {}),
+    },
     data: updateData,
   });
 
@@ -246,11 +286,17 @@ export async function POST(req: Request) {
                 const contact = value.contacts!.find((c) => c.wa_id === msg.from);
                 const contactName = contact?.profile?.name ?? msg.from;
                 const { mediaId, mimeType, filename, caption } = getMediaInfo(msg);
+                // Meta puede omitir timestamp — un Invalid Date rompería el
+                // create de Prisma; se usa "ahora" como respaldo.
+                const tsNum = Number(msg.timestamp);
+                const timestamp = Number.isFinite(tsNum) && tsNum > 0
+                  ? new Date(tsNum * 1000)
+                  : new Date();
 
                 await ingestInboundMessage(account.id, {
                   remoteJid: msg.from,
                   wamid: msg.id ?? null,
-                  timestamp: new Date(Number(msg.timestamp) * 1000),
+                  timestamp,
                   type: msg.type,
                   body: getMessageBody(msg),
                   contactName,

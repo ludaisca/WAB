@@ -9,6 +9,9 @@ export async function POST(req: Request) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    if (session.user.role !== "admin") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
 
     const body = await req.json();
     const parsed = botSchema.safeParse(body);
@@ -97,6 +100,9 @@ export async function GET(req: Request) {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+    if (session.user.role !== "admin") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
     const { searchParams } = new URL(req.url);

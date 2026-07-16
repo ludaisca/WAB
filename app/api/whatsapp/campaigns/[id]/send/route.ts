@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { campaignQueue } from "@/lib/queue";
+import { getUserAccountIds } from "@/lib/shared-accounts";
 
 export async function POST(
   _req: Request,
@@ -15,8 +16,9 @@ export async function POST(
 
     const { id } = await params;
 
+    const accountIds = await getUserAccountIds(session.user.id);
     const campaign = await prisma.wACampaign.findFirst({
-      where: { id, userId: session.user.id },
+      where: { id, waAccountId: { in: accountIds } },
     });
 
     if (!campaign) {
@@ -33,10 +35,18 @@ export async function POST(
       );
     }
 
-    await prisma.wACampaign.update({
-      where: { id },
+    // Claim atómico condicionado al estado: dos clics simultáneos en "Enviar"
+    // ya no encolan dos veces la misma campaña.
+    const claimed = await prisma.wACampaign.updateMany({
+      where: { id, status: { notIn: ["SENDING", "COMPLETED"] } },
       data: { status: "SENDING", sentAt: new Date() },
     });
+    if (claimed.count === 0) {
+      return NextResponse.json(
+        { error: "La campaña ya está en envío o completada" },
+        { status: 400 }
+      );
+    }
 
     await campaignQueue.add("send", { campaignId: id });
 

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/crypto";
+import { campaignQueue } from "@/lib/queue";
 import { getTemplateVariables, renderTemplateText } from "@/lib/whatsapp/template-variables";
 import { saveMediaFromMeta, isImageMime, isVideoMime } from "@/lib/whatsapp/media-store";
 
@@ -11,6 +12,28 @@ function mediaMessageTypeFromMime(mimeType: string): string {
 
 interface CampaignJob {
   campaignId: string;
+}
+
+// Campañas creadas con scheduledAt quedan en SCHEDULED; este tick (repetible,
+// cada minuto — ver workers/index.ts) las reclama cuando vence su hora y las
+// encola como un envío normal. El updateMany condicionado a status SCHEDULED
+// evita el doble encolado si dos ticks se solapan.
+export async function processScheduledCampaignsTick() {
+  const now = new Date();
+  const due = await prisma.wACampaign.findMany({
+    where: { status: "SCHEDULED", scheduledAt: { lte: now } },
+    select: { id: true },
+    take: 20,
+  });
+
+  for (const { id } of due) {
+    const claimed = await prisma.wACampaign.updateMany({
+      where: { id, status: "SCHEDULED" },
+      data: { status: "SENDING", sentAt: now },
+    });
+    if (claimed.count === 0) continue;
+    await campaignQueue.add("send", { campaignId: id });
+  }
 }
 
 export async function processCampaignJob(job: CampaignJob) {
@@ -71,9 +94,6 @@ export async function processCampaignJob(job: CampaignJob) {
       headerMedia = null;
     }
   }
-
-  let totalSuccess = 0;
-  let totalFailed = 0;
 
   for (const recipient of campaign.recipients) {
     try {
@@ -233,8 +253,6 @@ export async function processCampaignJob(job: CampaignJob) {
           create: { chatId: chat.id, tagId: campaignTag.id },
           update: {},
         });
-
-        totalSuccess++;
       } else {
         const errorBody = await res.json().catch(() => ({}));
         await prisma.wACampaignRecipient.update({
@@ -246,7 +264,6 @@ export async function processCampaignJob(job: CampaignJob) {
                 ?.message ?? `Error HTTP ${res.status}`,
           },
         });
-        totalFailed++;
       }
     } catch (err) {
       await prisma.wACampaignRecipient.update({
@@ -256,23 +273,32 @@ export async function processCampaignJob(job: CampaignJob) {
           errorMessage: err instanceof Error ? err.message : "Error desconocido",
         },
       });
-      totalFailed++;
     }
 
     await new Promise((r) => setTimeout(r, 100));
   }
 
-  const pendingCount = await prisma.wACampaignRecipient.count({
-    where: { campaignId, status: "PENDING" },
+  // Recontado desde los estados reales de los destinatarios (no acumulado en
+  // memoria) para que un reintento de BullMQ a mitad de campaña no sobrescriba
+  // los totales con el parcial de la corrida actual — mismo criterio que
+  // syncCampaignCounts() en el webhook.
+  const counts = await prisma.wACampaignRecipient.groupBy({
+    by: ["status"],
+    where: { campaignId },
+    _count: { _all: true },
   });
+  const countOf = (s: string) => counts.find((c) => c.status === s)?._count._all ?? 0;
+  const pendingCount = countOf("PENDING");
+  const sentTotal = countOf("SENT") + countOf("DELIVERED") + countOf("READ");
+  const failedTotal = countOf("FAILED");
 
   const finalStatus = pendingCount === 0 ? "COMPLETED" : "FAILED";
 
   await prisma.wACampaign.update({
     where: { id: campaignId },
     data: {
-      sentCount: totalSuccess,
-      failedCount: totalFailed,
+      sentCount: sentTotal,
+      failedCount: failedTotal,
       status: finalStatus,
       completedAt: new Date(),
     },
@@ -283,7 +309,7 @@ export async function processCampaignJob(job: CampaignJob) {
       userId: campaign.userId,
       type: finalStatus === "COMPLETED" ? "CAMPAIGN_COMPLETED" : "CAMPAIGN_FAILED",
       title: `Campaña "${campaign.name}"`,
-      body: `${totalSuccess} enviados, ${totalFailed} fallidos`,
+      body: `${sentTotal} enviados, ${failedTotal} fallidos`,
       link: `/whatsapp/campanas/${campaignId}`,
     },
   });

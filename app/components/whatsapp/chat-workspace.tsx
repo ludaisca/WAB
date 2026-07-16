@@ -301,7 +301,7 @@ function MessageBubble({ msg, onPreview }: { msg: Message; onPreview: (media: Pr
             <span className="text-[10px]">
               {msg.status === "sent" && <Check size={10} />}
               {msg.status === "delivered" && <CheckCheck size={10} />}
-              {msg.status === "read" && <CheckCheck size={10} className="text-blue-300" />}
+              {msg.status === "read" && <CheckCheck size={10} className="text-info" />}
             </span>
           )}
         </div>
@@ -357,16 +357,25 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
   const [selectedChatId, setSelectedChatId] = useState<string | null>(initialChatId || null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [search, setSearch] = useState("");
+  // La búsqueda va al servidor (la lista está paginada — filtrar solo lo
+  // cargado escondía chats antiguos); el debounce evita un fetch por tecla.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [accountFilter, setAccountFilter] = useState(initialAccountId || "");
   const [campaignFilter, setCampaignFilter] = useState("");
   const [hasRepliedFilter, setHasRepliedFilter] = useState<"" | "yes" | "no">("");
   const [campaigns, setCampaigns] = useState<CampaignOption[]>([]);
+  const [accounts, setAccounts] = useState<Array<{ id: string; name: string; phoneNumber: string | null }>>([]);
   const [contactDrawerOpen, setContactDrawerOpen] = useState(false);
   const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
   const [cannedResponses, setCannedResponses] = useState<CannedResponseItem[]>([]);
+  // Sugerencia de respuesta rápida resaltada — navegable con ↑/↓, se inserta
+  // con Enter o Tab.
+  const [cannedIndex, setCannedIndex] = useState(0);
 
   // Media attachments state
   const [attachment, setAttachment] = useState<File | null>(null);
@@ -374,13 +383,23 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  // scrollHeight previo a un prepend de historial — permite restaurar la
+  // posición de lectura en vez de que el contenido "salte" hacia abajo.
+  const prependHeightRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const buildChatsParams = useCallback((page: number, pageSize: number): URLSearchParams => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (campaignFilter) params.set("campaignId", campaignFilter);
     if (hasRepliedFilter) params.set("hasReplied", hasRepliedFilter);
+    if (accountFilter) params.set("accountId", accountFilter);
+    if (debouncedSearch) params.set("search", debouncedSearch);
     return params;
-  }, [campaignFilter, hasRepliedFilter]);
+  }, [campaignFilter, hasRepliedFilter, accountFilter, debouncedSearch]);
 
   const refreshChats = useCallback(async () => {
     try {
@@ -439,6 +458,22 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
       .catch(() => {});
   }, []);
 
+  // Cuentas para el selector — de la API, no derivadas de los chats cargados:
+  // con el filtro de cuenta server-side, los chats en memoria pueden ser de
+  // una sola cuenta y el selector perdería las demás opciones.
+  useEffect(() => {
+    fetch("/api/whatsapp/accounts")
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d)) {
+          setAccounts(d.map((a: { id: string; name: string; phoneNumber: string | null }) => ({
+            id: a.id, name: a.name, phoneNumber: a.phoneNumber ?? null,
+          })));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Load initial chats list
   useEffect(() => {
     async function reset() {
@@ -485,7 +520,10 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
       try {
         const res = await fetch(`/api/whatsapp/chats/${selectedChatId}/messages?limit=50`);
         const data = await res.json();
-        if (Array.isArray(data)) setMessages(data);
+        if (Array.isArray(data)) {
+          setMessages(data);
+          setHasOlderMessages(data.length >= 50);
+        }
       } catch {
         toastError("Error al cargar mensajes");
       } finally {
@@ -495,12 +533,40 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
     load();
   }, [selectedChatId, toastError]);
 
+  const loadOlderMessages = useCallback(async () => {
+    const oldest = messages[0];
+    if (!selectedChatId || !oldest) return;
+    setLoadingOlder(true);
+    try {
+      const res = await fetch(
+        `/api/whatsapp/chats/${selectedChatId}/messages?limit=50&before=${encodeURIComponent(oldest.timestamp)}`
+      );
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        prependHeightRef.current = messagesContainerRef.current?.scrollHeight ?? null;
+        setMessages((prev) => [...data, ...prev]);
+        setHasOlderMessages(data.length >= 50);
+      }
+    } catch {
+      toastError("Error al cargar mensajes anteriores");
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [selectedChatId, messages, toastError]);
+
   // Scroll to bottom on new messages — but only if the user was already near the
   // bottom, so the 5s poll below doesn't yank someone reading older history back
   // down every time it silently no-ops on an unchanged message list.
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
+    // Tras prepender historial, se restaura la posición de lectura en lugar
+    // de auto-scrollear al fondo.
+    if (prependHeightRef.current !== null) {
+      container.scrollTop += container.scrollHeight - prependHeightRef.current;
+      prependHeightRef.current = null;
+      return;
+    }
     const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
     if (distanceFromBottom < 200) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -513,13 +579,30 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/api/whatsapp/chats/${selectedChatId}/messages?limit=50`);
-        const data = await res.json();
+        const data = (await res.json()) as Message[];
         if (Array.isArray(data) && data.length > 0) {
+          let anyChange = false;
           setMessages((prev) => {
-            const unchanged = prev.length === data.length && prev[prev.length - 1]?.id === data[data.length - 1]?.id;
-            return unchanged ? prev : data;
+            // Merge en lugar de reemplazo: el reemplazo total descartaba el
+            // historial cargado con "Ver anteriores". Se actualizan status y
+            // mediaUrl de los conocidos y se anexan solo los nuevos.
+            const byId = new Map(data.map((m) => [m.id, m]));
+            let changed = false;
+            const merged = prev.map((m) => {
+              const fresh = byId.get(m.id);
+              if (fresh && (fresh.status !== m.status || fresh.mediaUrl !== m.mediaUrl)) {
+                changed = true;
+                return fresh;
+              }
+              return m;
+            });
+            const known = new Set(prev.map((m) => m.id));
+            const appended = data.filter((m) => !known.has(m.id));
+            if (!changed && appended.length === 0) return prev;
+            anyChange = true;
+            return [...merged, ...appended];
           });
-          refreshChats();
+          if (anyChange) refreshChats();
         }
       } catch {}
     }, 5000);
@@ -645,10 +728,13 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
     }
   }
 
-  const accountOptions = Array.from(
-    new Map(chats.map((c) => [c.account.id, c.account])).values()
-  );
+  const accountOptions = accounts.length > 0
+    ? accounts
+    : Array.from(new Map(chats.map((c) => [c.account.id, c.account])).values());
 
+  // El servidor ya aplica cuenta + búsqueda (debounced); este filtro replica el
+  // criterio en el cliente solo para dar respuesta instantánea mientras el
+  // debounce/fetch está en vuelo.
   const filteredChats = chats.filter((c) => {
     if (accountFilter && c.accountId !== accountFilter) return false;
     if (!search) return true;
@@ -676,6 +762,7 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
 
   function insertCannedResponse(content: string) {
     setNewMessage(content);
+    setCannedIndex(0);
   }
 
   return (
@@ -794,7 +881,7 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
                   ))}
                 </div>
               ))}
-              {!search && !accountFilter && chats.length < chatsTotal && (
+              {chats.length < chatsTotal && (
                 <div className="p-3">
                   <Button
                     variant="secondary"
@@ -901,7 +988,20 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
                   <EmptyState icon={MessageSquare} title="Sin mensajes" description="Aún no hay mensajes en este chat." />
                 </div>
               ) : (
-                messages.map((msg, i) => {
+                <>
+                {hasOlderMessages && (
+                  <div className="flex justify-center pb-1">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={loadOlderMessages}
+                      disabled={loadingOlder}
+                    >
+                      {loadingOlder ? <Spinner /> : "Ver mensajes anteriores"}
+                    </Button>
+                  </div>
+                )}
+                {messages.map((msg, i) => {
                   const prev = messages[i - 1];
                   const showDivider = !prev || new Date(prev.timestamp).toDateString() !== new Date(msg.timestamp).toDateString();
                   return (
@@ -916,7 +1016,8 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
                       <MessageBubble msg={msg} onPreview={setPreviewMedia} />
                     </div>
                   );
-                })
+                })}
+                </>
               )}
               <div ref={messagesEndRef} />
             </div>
@@ -924,12 +1025,15 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
             <form onSubmit={handleSend} className="flex flex-col gap-2 px-4 py-3 border-t border-border bg-surface shrink-0 relative">
               {cannedSuggestions.length > 0 && (
                 <div className="absolute bottom-full left-4 right-4 mb-1.5 rounded-lg border border-border bg-surface shadow-lg overflow-hidden z-20">
-                  {cannedSuggestions.map((c) => (
+                  {cannedSuggestions.map((c, i) => (
                     <button
                       key={c.id}
                       type="button"
                       onClick={() => insertCannedResponse(c.content)}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-surface-light transition-colors border-b border-border last:border-b-0"
+                      onMouseEnter={() => setCannedIndex(i)}
+                      className={`w-full text-left px-3 py-2 text-sm transition-colors border-b border-border last:border-b-0 ${
+                        i === cannedIndex ? "bg-surface-light" : "hover:bg-surface-light"
+                      }`}
                     >
                       <span className="font-mono text-accent">/{c.shortcut}</span>
                       <span className="text-muted-darker ml-2 truncate">{c.content}</span>
@@ -986,15 +1090,31 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
                 </button>
                 <input
                   value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
+                  onChange={(e) => { setNewMessage(e.target.value); setCannedIndex(0); }}
                   onKeyDown={(e) => {
+                    if (cannedSuggestions.length > 0) {
+                      const max = cannedSuggestions.length;
+                      if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        setCannedIndex((i) => (i + 1) % max);
+                        return;
+                      }
+                      if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        setCannedIndex((i) => (i - 1 + max) % max);
+                        return;
+                      }
+                      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+                        // Con el dropdown abierto, Enter selecciona la sugerencia
+                        // resaltada en lugar de enviar el atajo a medias.
+                        e.preventDefault();
+                        insertCannedResponse(cannedSuggestions[Math.min(cannedIndex, max - 1)].content);
+                        return;
+                      }
+                    }
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
                       handleSend(e as unknown as React.FormEvent);
-                    }
-                    if (e.key === "Tab" && cannedSuggestions.length > 0) {
-                      e.preventDefault();
-                      insertCannedResponse(cannedSuggestions[0].content);
                     }
                   }}
                   placeholder={attachment ? "Añadir comentario (opcional)..." : "Escribe un mensaje... (usa /atajo para respuestas rápidas)"}

@@ -9,6 +9,13 @@ export async function GET(req: Request) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    // El rol "user" tiene /whatsapp/contactos bloqueado en proxy.ts — este 403
+    // cierra el acceso directo a la API (defensa en profundidad, mismo patrón
+    // que /api/usuarios). El detalle /contacts/[id] queda abierto: lo usa el
+    // ContactDrawer desde el chat, que "user" sí puede ver.
+    if (session.user.role === "user") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
 
     const accountIds = await getUserAccountIds(session.user.id);
 

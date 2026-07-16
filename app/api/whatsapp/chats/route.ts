@@ -23,6 +23,17 @@ export async function GET(req: Request) {
       accountId: accountId ? accountId : { in: accountIds },
     };
 
+    // Búsqueda server-side: con la lista paginada, filtrar solo lo ya cargado
+    // en el cliente hacía imposible encontrar chats antiguos.
+    const search = searchParams.get("search")?.trim();
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { remoteJid: { contains: search } },
+        { lastMessage: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
     const statusParam = searchParams.get("status");
     if (statusParam) {
       const statuses = statusParam.split(",").filter((s) => ["OPEN", "PENDING", "RESOLVED"].includes(s));

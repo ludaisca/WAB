@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Plus, Target, Trash2, Pencil, Sparkles, Clock, Download } from "lucide-react";
 import { Card, CardBody } from "@/app/components/ui/card";
@@ -162,6 +163,10 @@ const TABS = ["calificadores", "leads"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function CalificadoresPage() {
+  const { data: session } = useSession();
+  // El rol "user" solo puede ver leads ya calificados, no crear/editar/programar
+  // calificadores — esa pestaña ni siquiera se ofrece como opción.
+  const canManageScorers = session?.user?.role !== "user";
   const [tab, setTab] = useState<Tab>("calificadores");
 
   return (
@@ -171,21 +176,23 @@ export default function CalificadoresPage() {
         description="Crea agentes de IA que analizan una conversación y la califican con tu propio criterio — cada uno con su prompt libre, para el negocio que vendas."
       />
 
-      <div className="flex gap-1 border-b border-border">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              tab === t ? "border-accent text-accent" : "border-transparent text-muted hover:text-foreground"
-            }`}
-          >
-            {t === "calificadores" ? "Calificadores" : "Leads calificados"}
-          </button>
-        ))}
-      </div>
+      {canManageScorers && (
+        <div className="flex gap-1 border-b border-border">
+          {TABS.map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                tab === t ? "border-accent text-accent" : "border-transparent text-muted hover:text-foreground"
+              }`}
+            >
+              {t === "calificadores" ? "Calificadores" : "Leads calificados"}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {tab === "calificadores" ? <CalificadoresTab /> : <LeadsTab />}
+      {canManageScorers && tab === "calificadores" ? <CalificadoresTab /> : <LeadsTab />}
     </div>
   );
 }

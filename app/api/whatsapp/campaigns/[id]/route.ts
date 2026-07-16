@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getUserAccountIds } from "@/lib/shared-accounts";
 
 export async function GET(
   req: Request,
@@ -14,8 +15,9 @@ export async function GET(
 
     const { id } = await params;
 
+    const accountIds = await getUserAccountIds(session.user.id);
     const campaign = await prisma.wACampaign.findFirst({
-      where: { id, userId: session.user.id },
+      where: { id, waAccountId: { in: accountIds } },
       select: {
         id: true,
         name: true,
@@ -86,8 +88,9 @@ export async function DELETE(
 
     const { id } = await params;
 
+    const accountIds = await getUserAccountIds(session.user.id);
     const campaign = await prisma.wACampaign.findFirst({
-      where: { id, userId: session.user.id },
+      where: { id, waAccountId: { in: accountIds } },
     });
 
     if (!campaign) {

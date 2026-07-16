@@ -58,15 +58,15 @@ export function DashboardShell({
           title: "Mensajería",
           items: [
             { href: "/whatsapp/chat",           label: "Bandeja de Chats", icon: MessageSquare },
-            { href: "/whatsapp/contactos",      label: "Contactos",        icon: Contact },
+            ...(isAdmin ? [{ href: "/whatsapp/contactos" as const, label: "Contactos", icon: Contact as React.ElementType }] : []),
           ],
         },
         {
           title: "Automatización",
           items: [
-            { href: "/whatsapp/bots",           label: "Bots IA",          icon: Bot },
+            ...(isAdmin ? [{ href: "/whatsapp/bots" as const, label: "Bots IA", icon: Bot as React.ElementType }] : []),
             { href: "/whatsapp/calificadores",  label: "Calificadores de Leads", icon: Target },
-            { href: "/whatsapp/conocimiento",   label: "Base de Conocimiento", icon: Database },
+            ...(isAdmin ? [{ href: "/whatsapp/conocimiento" as const, label: "Base de Conocimiento", icon: Database as React.ElementType }] : []),
           ],
         },
         {

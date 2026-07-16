@@ -53,7 +53,9 @@ export const waAccountUpdateSchema = z.object({
 
 export const sendMessageSchema = z.object({
   type: z.enum(["text", "image", "audio", "video", "document"]),
-  body: z.string().optional(),
+  // 4096 es el límite de WhatsApp para texto libre — mejor un 400 claro aquí
+  // que un error opaco de la Graph API.
+  body: z.string().max(4096, "El mensaje supera el límite de 4096 caracteres de WhatsApp").optional(),
   mediaId: z.string().nullable().optional(),
   caption: z.string().optional(),
   mimeType: z.string().optional(),

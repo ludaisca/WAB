@@ -6,7 +6,7 @@ import { searchKnowledge } from "@/lib/ai/rag";
 import { getUserApiKey } from "@/lib/ai/settings";
 import { estimateCost } from "@/lib/ai/pricing";
 import { wrapUserPrompt, SCOPE_GUARDRAIL } from "@/lib/ai/prompt-sanitizer";
-import { checkBudgetAlert } from "@/lib/ai/budget";
+import { checkBudgetAlert, isMonthlyBudgetExceeded } from "@/lib/ai/budget";
 import { resolveAbsolutePath } from "@/lib/whatsapp/media-store";
 import { extractDocumentText } from "@/lib/whatsapp/extract-document-text";
 import { splitReply, computeTypingDelay } from "@/lib/whatsapp/humanize";
@@ -126,6 +126,15 @@ async function handleBotMessage(job: BotMessageJob) {
   });
 
   if (!bot || !bot.isActive || bot.status !== "ACTIVE" || !bot.waAccount) return;
+
+  // Mismo gate que lead-scoring y lead-recovery: con el presupuesto mensual ya
+  // agotado, el bot deja de responder (sin marcar ERROR — no es una falla del
+  // bot) en lugar de seguir gastando sin límite. La notificación BUDGET_EXCEEDED
+  // ya avisó al dueño cuando se cruzó el umbral.
+  if (await isMonthlyBudgetExceeded(bot.userId, new Date())) {
+    console.log(`[bot-worker] Presupuesto mensual de IA superado — el bot "${bot.name}" no responde este mensaje`);
+    return;
+  }
 
   const provider = bot.provider as AIProvider;
   const apiKey = await getUserApiKey(bot.userId, provider);
@@ -301,7 +310,13 @@ async function handleBotMessage(job: BotMessageJob) {
         lastInteraction: now,
         ...(bot.memoryType === "SUMMARY"
           ? {
-              summary: summarizeText(result.content, conversation.summary),
+              // El resumen debe acumular AMBOS lados del turno — solo con las
+              // respuestas del bot, la "memoria" olvidaba todo lo que el
+              // cliente dijo.
+              summary: summarizeText(
+                `Cliente: ${job.caption ?? incomingMessage}\nAsistente: ${result.content}`,
+                conversation.summary
+              ),
             }
           : {}),
       },

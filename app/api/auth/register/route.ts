@@ -28,14 +28,9 @@ export async function POST(req: Request) {
 
     const { name, email, password } = parsed.data;
 
-    const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) {
-      return NextResponse.json(
-        { error: "Este email ya está registrado." },
-        { status: 409 }
-      );
-    }
-
+    // El check de registro deshabilitado va ANTES que el de email existente —
+    // al revés, el endpoint confirmaba qué emails existen (enumeración) incluso
+    // con el registro cerrado.
     const config = await prisma.systemConfig.upsert({
       where: { id: "default" },
       create: { id: "default" },
@@ -46,6 +41,14 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "El registro de usuarios está deshabilitado." },
         { status: 403 }
+      );
+    }
+
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return NextResponse.json(
+        { error: "Este email ya está registrado." },
+        { status: 409 }
       );
     }
 

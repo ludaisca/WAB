@@ -72,7 +72,12 @@ export function UserDropdown() {
 
             <div className="border-t border-border py-1">
               <button
-                onClick={() => signOut({ callbackUrl: "/" })}
+                // redirect: false + navegación relativa — ver app-shell.tsx: la
+                // redirección del servidor usa el origen interno del contenedor.
+                onClick={async () => {
+                  await signOut({ redirect: false });
+                  window.location.href = "/login";
+                }}
                 className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-muted hover:bg-surface-light hover:text-foreground transition-colors"
               >
                 <LogOut size={15} className="shrink-0" />

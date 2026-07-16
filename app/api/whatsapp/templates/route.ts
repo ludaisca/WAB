@@ -74,8 +74,14 @@ export async function POST(req: Request) {
 
     const { waAccountId } = (await req.json()) as { waAccountId: string };
 
+    const accountIds = await getUserAccountIds(session.user.id);
+
+    if (!accountIds.includes(waAccountId)) {
+      return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
+    }
+
     const account = await prisma.wAAccount.findFirst({
-      where: { id: waAccountId, userId: session.user.id },
+      where: { id: waAccountId },
     });
 
     if (!account) {

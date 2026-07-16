@@ -8,6 +8,7 @@ import { Card, CardBody, CardFooter } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
+import { SearchableSelect } from "@/app/components/ui/searchable-select";
 import { Badge } from "@/app/components/ui/badge";
 import { FormField } from "@/app/components/ui/form-field";
 import { DatePicker } from "@/app/components/ui/date-picker";
@@ -239,15 +240,39 @@ export default function NewCampaignPage() {
       newErrors.buttonParam = "El botón de esta plantilla requiere un valor";
     }
 
+    if (!sendNow) {
+      if (!scheduledAt) {
+        newErrors.scheduledAt = "Selecciona la fecha y hora de envío";
+      } else if (new Date(scheduledAt).getTime() < Date.now() - 60_000) {
+        newErrors.scheduledAt = "La fecha ya pasó — elige una fecha futura";
+      }
+    }
+
     const manualRecipients = recipients.filter(r => r.phoneNumber.trim());
-    const allRecipients = [...manualRecipients, ...csvRows];
+    // Duplicados (manual + CSV) se colapsan a la primera aparición — sin esto
+    // el mismo lead recibía la plantilla dos veces.
+    const seenPhones = new Set<string>();
+    const allRecipients = [...manualRecipients, ...csvRows].filter(r => {
+      const phone = r.phoneNumber.trim();
+      if (seenPhones.has(phone)) return false;
+      seenPhones.add(phone);
+      return true;
+    });
+    const duplicateCount = manualRecipients.length + csvRows.length - allRecipients.length;
 
     if (allRecipients.length === 0) {
       newErrors.recipients = "Al menos un destinatario es requerido";
-    } else if (bodyParamCount > 0) {
-      const incomplete = allRecipients.some(r => r.params.filter(Boolean).length !== bodyParamCount);
-      if (incomplete) {
-        newErrors.recipients = `Todos los destinatarios deben tener los ${bodyParamCount} parámetro(s) del cuerpo`;
+    } else {
+      // El backend rechaza TODA la campaña si un solo teléfono no es numérico —
+      // mejor señalarlo aquí que fallar con un mensaje genérico.
+      const invalidPhones = allRecipients.filter(r => !/^\d{8,15}$/.test(r.phoneNumber.trim())).length;
+      if (invalidPhones > 0) {
+        newErrors.recipients = `Hay ${invalidPhones} teléfono(s) inválido(s) — usa solo dígitos (8 a 15), con código de país y sin espacios ni "+"`;
+      } else if (bodyParamCount > 0) {
+        const incomplete = allRecipients.some(r => r.params.filter(Boolean).length !== bodyParamCount);
+        if (incomplete) {
+          newErrors.recipients = `Todos los destinatarios deben tener los ${bodyParamCount} parámetro(s) del cuerpo`;
+        }
       }
     }
 
@@ -279,10 +304,19 @@ export default function NewCampaignPage() {
       if (!res.ok) throw new Error(data.error ?? "Error");
 
       if (sendNow) {
-        await fetch(`/api/whatsapp/campaigns/${data.id}/send`, { method: "POST" });
+        const sendRes = await fetch(`/api/whatsapp/campaigns/${data.id}/send`, { method: "POST" });
+        if (!sendRes.ok) {
+          // La campaña ya existe — no relanzar el submit (duplicaría la
+          // campaña); avisar y mandar al usuario a la lista para reintentar.
+          const sendData = await sendRes.json().catch(() => ({}));
+          toastError(sendData.error ?? "La campaña se creó pero no pudo iniciarse — usa \"Enviar\" desde la lista");
+          router.push("/whatsapp/campanas");
+          return;
+        }
       }
 
-      success(sendNow ? "Campaña iniciada" : "Campaña programada");
+      const dupNote = duplicateCount > 0 ? ` (${duplicateCount} duplicado(s) omitido(s))` : "";
+      success((sendNow ? "Campaña iniciada" : "Campaña programada") + dupNote);
       router.push("/whatsapp/campanas");
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Error");
@@ -324,13 +358,20 @@ export default function NewCampaignPage() {
                     hint="Solo las plantillas aprobadas por Meta pueden usarse en una campaña."
                   >
                     {(id) => (
-                      <Select id={id} value={waTemplateId} onChange={e => handleTemplateChange(e.target.value)} placeholder={loadingTemplates ? "Cargando..." : "Seleccionar"} error={errors.waTemplateId} disabled={!waAccountId || loadingTemplates}>
-                        {templates.map(t => (
-                          <option key={t.id} value={t.id} disabled={t.status !== "APPROVED"}>
-                            {t.name} ({t.language}) — {TEMPLATE_STATUS_LABEL[t.status] ?? t.status}
-                          </option>
-                        ))}
-                      </Select>
+                      <SearchableSelect
+                        id={id}
+                        value={waTemplateId}
+                        onChange={handleTemplateChange}
+                        placeholder={loadingTemplates ? "Cargando..." : "Seleccionar"}
+                        searchPlaceholder="Buscar plantilla..."
+                        error={errors.waTemplateId}
+                        disabled={!waAccountId || loadingTemplates}
+                        options={templates.map(t => ({
+                          value: t.id,
+                          label: `${t.name} (${t.language}) — ${TEMPLATE_STATUS_LABEL[t.status] ?? t.status}`,
+                          disabled: t.status !== "APPROVED",
+                        }))}
+                      />
                     )}
                   </FormField>
                 </div>
@@ -423,7 +464,7 @@ export default function NewCampaignPage() {
                 </div>
 
                 {!sendNow && (
-                  <FormField label="Programar para" hint="Fecha y hora de inicio">
+                  <FormField label="Programar para" required hint="Fecha y hora de inicio" error={errors.scheduledAt}>
                     {(id) => <DatePicker id={id} value={scheduledAt} onChange={setScheduledAt} placeholder="Seleccionar fecha" />}
                   </FormField>
                 )}

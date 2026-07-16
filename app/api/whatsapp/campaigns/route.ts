@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { campaignSchema } from "@/lib/validations";
+import { getUserAccountIds } from "@/lib/shared-accounts";
 
 export async function POST(req: Request) {
   try {
@@ -23,9 +24,24 @@ export async function POST(req: Request) {
     const { name, waAccountId, waTemplateId, scheduledAt, headerParam, buttonParam, recipients } =
       parsed.data;
 
+    // Tolerancia de 1 min para no rechazar un "programar para ahora mismo"
+    // que cruzó el minuto mientras el usuario llenaba el formulario.
+    if (scheduledAt && new Date(scheduledAt).getTime() < Date.now() - 60_000) {
+      return NextResponse.json(
+        { error: "La fecha programada ya pasó — elige una fecha futura" },
+        { status: 400 }
+      );
+    }
+
+    const accountIds = await getUserAccountIds(session.user.id);
+
+    if (!accountIds.includes(waAccountId)) {
+      return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
+    }
+
     const [account, template] = await Promise.all([
       prisma.wAAccount.findFirst({
-        where: { id: waAccountId, userId: session.user.id },
+        where: { id: waAccountId },
       }),
       prisma.wATemplate.findFirst({
         where: { id: waTemplateId, waAccountId, status: "APPROVED" },
@@ -88,8 +104,13 @@ export async function GET(_req: Request) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
+    // Visibilidad por cuenta, no por creador: quien comparte una cuenta debe
+    // ver las campañas que otros lanzan sobre su número (y viceversa) — misma
+    // regla que chats/contactos/plantillas.
+    const accountIds = await getUserAccountIds(session.user.id);
+
     const campaigns = await prisma.wACampaign.findMany({
-      where: { userId: session.user.id },
+      where: { waAccountId: { in: accountIds } },
       select: {
         id: true,
         name: true,

@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { botQueue, mediaDownloadQueue } from "@/lib/queue";
 import { autoAssignChat } from "@/lib/whatsapp/auto-assign";
@@ -102,25 +103,36 @@ export async function ingestInboundMessage(
     },
   });
 
-  const createdMessage = await prisma.wAMessage.create({
-    data: {
-      wamid: msg.wamid,
-      chatId: chat.id,
-      direction: "INBOUND",
-      messageType: msg.type,
-      body: msg.body,
-      caption: msg.caption ?? null,
-      mediaId: msg.mediaId ?? null,
-      mediaUrl: msg.localMediaPath ?? null,
-      mimeType: msg.mimeType ?? null,
-      filename: msg.filename ?? null,
-      bytesSize: msg.bytesSize ?? null,
-      width: msg.width ?? null,
-      height: msg.height ?? null,
-      duration: msg.duration ?? null,
-      timestamp: msg.timestamp,
-    },
-  });
+  let createdMessage;
+  try {
+    createdMessage = await prisma.wAMessage.create({
+      data: {
+        wamid: msg.wamid,
+        chatId: chat.id,
+        direction: "INBOUND",
+        messageType: msg.type,
+        body: msg.body,
+        caption: msg.caption ?? null,
+        mediaId: msg.mediaId ?? null,
+        mediaUrl: msg.localMediaPath ?? null,
+        mimeType: msg.mimeType ?? null,
+        filename: msg.filename ?? null,
+        bytesSize: msg.bytesSize ?? null,
+        width: msg.width ?? null,
+        height: msg.height ?? null,
+        duration: msg.duration ?? null,
+        timestamp: msg.timestamp,
+      },
+    });
+  } catch (err) {
+    // Carrera entre entregas duplicadas del webhook: el findFirst de arriba no
+    // vio el duplicado pero el @@unique([chatId, wamid]) sí — tratarlo como el
+    // dedupe normal en lugar de reventar con un 500.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return null;
+    }
+    throw err;
+  }
 
   // Only Meta needs the async download (Baileys already produced bytes inline).
   if (msg.mediaId && !msg.localMediaPath && msg.type !== "text") {
