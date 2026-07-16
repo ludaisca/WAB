@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import {
   Search,
   Send,
@@ -344,10 +344,20 @@ function MediaPreviewModal({ media, onClose }: { media: PreviewMedia | null; onC
 interface ChatWorkspaceProps {
   initialAccountId?: string;
   initialChatId?: string;
+  initialCampaignId?: string;
+  initialHasReplied?: "" | "yes" | "no";
+  initialSearch?: string;
 }
 
-export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspaceProps) {
+export function ChatWorkspace({
+  initialAccountId,
+  initialChatId,
+  initialCampaignId,
+  initialHasReplied,
+  initialSearch,
+}: ChatWorkspaceProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { error: toastError } = useToast();
 
   const [chats, setChats] = useState<ChatItem[]>([]);
@@ -361,13 +371,13 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch || "");
   // La búsqueda va al servidor (la lista está paginada — filtrar solo lo
   // cargado escondía chats antiguos); el debounce evita un fetch por tecla.
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState(initialSearch || "");
   const [accountFilter, setAccountFilter] = useState(initialAccountId || "");
-  const [campaignFilter, setCampaignFilter] = useState("");
-  const [hasRepliedFilter, setHasRepliedFilter] = useState<"" | "yes" | "no">("");
+  const [campaignFilter, setCampaignFilter] = useState(initialCampaignId || "");
+  const [hasRepliedFilter, setHasRepliedFilter] = useState<"" | "yes" | "no">(initialHasReplied || "");
   const [campaigns, setCampaigns] = useState<CampaignOption[]>([]);
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string; phoneNumber: string | null }>>([]);
   const [contactDrawerOpen, setContactDrawerOpen] = useState(false);
@@ -438,6 +448,9 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
   // render for what's really just deriving state from a changed prop.
   const [prevInitialChatId, setPrevInitialChatId] = useState(initialChatId);
   const [prevInitialAccountId, setPrevInitialAccountId] = useState(initialAccountId);
+  const [prevInitialCampaignId, setPrevInitialCampaignId] = useState(initialCampaignId);
+  const [prevInitialHasReplied, setPrevInitialHasReplied] = useState(initialHasReplied);
+  const [prevInitialSearch, setPrevInitialSearch] = useState(initialSearch);
   if (initialChatId !== prevInitialChatId) {
     setPrevInitialChatId(initialChatId);
     if (initialChatId) setSelectedChatId(initialChatId);
@@ -446,6 +459,38 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
     setPrevInitialAccountId(initialAccountId);
     if (initialAccountId) setAccountFilter(initialAccountId);
   }
+  if (initialCampaignId !== prevInitialCampaignId) {
+    setPrevInitialCampaignId(initialCampaignId);
+    setCampaignFilter(initialCampaignId || "");
+  }
+  if (initialHasReplied !== prevInitialHasReplied) {
+    setPrevInitialHasReplied(initialHasReplied);
+    setHasRepliedFilter(initialHasReplied || "");
+  }
+  if (initialSearch !== prevInitialSearch) {
+    setPrevInitialSearch(initialSearch);
+    setSearch(initialSearch || "");
+    setDebouncedSearch(initialSearch || "");
+  }
+
+  // Refleja los filtros activos en la URL (query string) para que sobrevivan
+  // tanto al botón "volver" propio (handleCloseChat) como al atrás del
+  // navegador — antes vivían solo en useState y se perdían apenas se navegaba
+  // a la ruta del chat individual, que monta una instancia nueva del componente.
+  const buildFilterSearchParams = useCallback((): URLSearchParams => {
+    const params = new URLSearchParams();
+    if (accountFilter) params.set("accountId", accountFilter);
+    if (campaignFilter) params.set("campaignId", campaignFilter);
+    if (hasRepliedFilter) params.set("hasReplied", hasRepliedFilter);
+    if (debouncedSearch) params.set("search", debouncedSearch);
+    return params;
+  }, [accountFilter, campaignFilter, hasRepliedFilter, debouncedSearch]);
+
+  useEffect(() => {
+    const qs = buildFilterSearchParams().toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo resincroniza cuando cambian los filtros, no en cada render por pathname/router
+  }, [accountFilter, campaignFilter, hasRepliedFilter, debouncedSearch]);
 
   // Campaign list for the filter dropdown — fetched once, doesn't depend on the
   // current chat filters.
@@ -612,8 +657,9 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
   // Route updates on selection
   const handleChatSelect = useCallback((chat: ChatItem) => {
     setSelectedChatId(chat.id);
-    router.push(`/whatsapp/chat/${chat.accountId}/${chat.id}`);
-  }, [router]);
+    const qs = buildFilterSearchParams().toString();
+    router.push(`/whatsapp/chat/${chat.accountId}/${chat.id}${qs ? `?${qs}` : ""}`);
+  }, [router, buildFilterSearchParams]);
 
   const clearAttachment = useCallback(() => {
     setAttachment(null);
@@ -626,8 +672,9 @@ export function ChatWorkspace({ initialAccountId, initialChatId }: ChatWorkspace
   const handleCloseChat = useCallback(() => {
     setSelectedChatId(null);
     clearAttachment();
-    router.push("/whatsapp/chat");
-  }, [router, clearAttachment]);
+    const qs = buildFilterSearchParams().toString();
+    router.push(`/whatsapp/chat${qs ? `?${qs}` : ""}`);
+  }, [router, clearAttachment, buildFilterSearchParams]);
 
   function detectMessageType(file: File): "image" | "audio" | "video" | "document" | "sticker" {
     const t = file.type.toLowerCase();
