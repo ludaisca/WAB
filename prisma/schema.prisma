@@ -22,6 +22,7 @@ model User {
   waBots         WABot[]
   leadScorerBots WALeadScorerBot[]
   appSettings    AppSettings?
+  googleAccount  GoogleAccount?
   sharedAccounts WAAccountShare[]
   notes          WANote[]
   assignedChats  WAChat[]         @relation("ChatAssignments")
@@ -63,6 +64,30 @@ model AppSettings {
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   @@map("app_settings")
+}
+
+// Conexión OAuth por usuario a Google (Sheets). A diferencia de WAAccount/AppSettings
+// (secretos estáticos que no expiran), accessToken/refreshToken son un par OAuth que
+// se refresca en runtime — ver lib/google/sheets-client.ts. Ambos se guardan cifrados
+// con lib/crypto.ts, igual que los demás secretos del proyecto.
+model GoogleAccount {
+  id                   String    @id @default(cuid())
+  userId               String    @unique
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  googleEmail          String
+  accessToken          String
+  refreshToken         String
+  accessTokenExpiresAt DateTime
+  scope                String
+  spreadsheetId        String?
+  enabled              Boolean   @default(true)
+  lastSyncedAt         DateTime?
+  lastSyncError        String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("google_accounts")
 }
 
 model WAAccount {

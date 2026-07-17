@@ -20,6 +20,7 @@ import { Checkbox } from "@/app/components/ui/checkbox";
 import { RadioGroup } from "@/app/components/ui/radio";
 import { useToast } from "@/app/components/ui/toast";
 import { toCsv, downloadCsv } from "@/lib/csv";
+import { EXPORT_COLUMNS, labelText, type LeadScoreRow } from "@/lib/whatsapp/export-columns";
 import { LeadScorerFormModal } from "./_form";
 
 interface LeadScorerBot {
@@ -32,42 +33,6 @@ interface LeadScorerBot {
   scheduleEnabled: boolean;
   scheduleIntervalMinutes: number | null;
   updatedAt: string;
-}
-
-interface ScoreDetails {
-  tipo_lead: string | null;
-  necesidad_principal: string | null;
-  contexto_negocio: string | null;
-  senales_compra: string[];
-  objeciones_dudas: string[];
-  nivel_interaccion: string | null;
-  tono_interes: string | null;
-  proximos_pasos: string[];
-  nombre_real: string | null;
-  producto_interes: string | null;
-  urgencia: string | null;
-  presupuesto: string | null;
-}
-
-interface LeadScoreRow {
-  id: string;
-  score: number;
-  // Untyped at the source — scores from before the 5-phase relabel may still
-  // carry an old frio/tibio/caliente value.
-  label: string;
-  summary: string;
-  reasons: string;
-  details: ScoreDetails | null;
-  updatedAt: string;
-  scorer: { id: string; name: string };
-  chat: {
-    id: string;
-    name: string | null;
-    remoteJid: string;
-    status: string;
-    accountId: string;
-    account: { id: string; name: string };
-  };
 }
 
 const PROVIDER_BADGE: Record<string, { label: string; tone: "accent" | "info" }> = {
@@ -96,60 +61,9 @@ const LABEL_TONE: Record<string, "neutral" | "info" | "warning" | "accent" | "da
   caliente: "danger",
 };
 
-const LABEL_TEXT: Record<string, string> = {
-  descartado: "Descartado",
-  frio: "Frío",
-  interesado: "Interesado",
-  oportunidad: "Oportunidad",
-  prioridad_alta: "Prioridad alta",
-  tibio: "Tibio",
-  caliente: "Caliente",
-};
-
 function labelTone(label: string) {
   return LABEL_TONE[label] ?? "neutral";
 }
-
-function labelText(label: string) {
-  return LABEL_TEXT[label] ?? label;
-}
-
-function reasonsList(reasons: string): string[] {
-  try {
-    return JSON.parse(reasons);
-  } catch {
-    return [];
-  }
-}
-
-interface ExportColumnDef {
-  key: string;
-  label: string;
-  get: (r: LeadScoreRow) => string;
-}
-
-const EXPORT_COLUMNS: ExportColumnDef[] = [
-  { key: "lead", label: "Lead", get: (r) => r.chat.name || r.chat.remoteJid.split("@")[0] },
-  { key: "phone", label: "Teléfono", get: (r) => r.chat.remoteJid.split("@")[0] },
-  { key: "account", label: "Cuenta", get: (r) => r.chat.account.name },
-  { key: "label", label: "Calificación", get: (r) => labelText(r.label) },
-  { key: "score", label: "Score", get: (r) => String(r.score) },
-  { key: "scorer", label: "Calificador", get: (r) => r.scorer.name },
-  { key: "summary", label: "Resumen", get: (r) => r.summary },
-  { key: "reasons", label: "Motivos", get: (r) => reasonsList(r.reasons).join(" | ") },
-  { key: "producto_interes", label: "Producto de interés", get: (r) => r.details?.producto_interes ?? "" },
-  { key: "urgencia", label: "Urgencia", get: (r) => r.details?.urgencia ?? "" },
-  { key: "presupuesto", label: "Presupuesto", get: (r) => r.details?.presupuesto ?? "" },
-  { key: "necesidad_principal", label: "Necesidad principal", get: (r) => r.details?.necesidad_principal ?? "" },
-  { key: "contexto_negocio", label: "Contexto de negocio", get: (r) => r.details?.contexto_negocio ?? "" },
-  { key: "senales_compra", label: "Señales de compra", get: (r) => (r.details?.senales_compra ?? []).join(" | ") },
-  { key: "objeciones_dudas", label: "Objeciones / dudas", get: (r) => (r.details?.objeciones_dudas ?? []).join(" | ") },
-  { key: "proximos_pasos", label: "Próximos pasos", get: (r) => (r.details?.proximos_pasos ?? []).join(" | ") },
-  { key: "nombre_real", label: "Nombre real", get: (r) => r.details?.nombre_real ?? "" },
-  { key: "tono_interes", label: "Tono de interés", get: (r) => r.details?.tono_interes ?? "" },
-  { key: "nivel_interaccion", label: "Nivel de interacción", get: (r) => r.details?.nivel_interaccion ?? "" },
-  { key: "updatedAt", label: "Actualizado", get: (r) => new Date(r.updatedAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }) },
-];
 
 const LEADS_PAGE_SIZE = 25;
 

@@ -7,7 +7,8 @@ import { processMediaCleanupJob } from "./media-cleanup-worker";
 import { processBotSendJob } from "./bot-send-worker";
 import { processLeadScoringTick } from "./lead-scoring-worker";
 import { processLeadRecoveryTick } from "./lead-recovery-worker";
-import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue, campaignQueue } from "@/lib/queue";
+import { processSheetsSyncTick } from "./sheets-sync-worker";
+import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue, campaignQueue, sheetsSyncQueue } from "@/lib/queue";
 
 const connection = {
   url: process.env.REDIS_URL || "redis://redis:6379",
@@ -62,7 +63,11 @@ export function startWorkers() {
     await processLeadRecoveryTick();
   }, { connection, concurrency: 1 });
 
-  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker);
+  const sheetsSyncWorker = new Worker("sheets-sync", async () => {
+    await processSheetsSyncTick();
+  }, { connection, concurrency: 1 });
+
+  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker, sheetsSyncWorker);
 
   mediaCleanupQueue
     .add(
@@ -102,6 +107,16 @@ export function startWorkers() {
       { jobId: "lead-recovery-tick", repeat: { pattern: "*/15 * * * *" } }
     )
     .catch((err) => console.error("[workers] No se pudo programar lead-recovery:", err));
+
+  // Mismo cron que lead-recovery — resolución de sobra para una sync que no
+  // necesita ser casi en tiempo real.
+  sheetsSyncQueue
+    .add(
+      "tick",
+      {},
+      { jobId: "sheets-sync-tick", repeat: { pattern: "*/15 * * * *" } }
+    )
+    .catch((err) => console.error("[workers] No se pudo programar sheets-sync:", err));
 
   console.log("[workers] BullMQ workers started");
 }

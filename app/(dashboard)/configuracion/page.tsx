@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import { User, Lock, Shield, CalendarDays, Brain, Users, MessageSquareDashed } from "lucide-react";
+import { User, Lock, Shield, CalendarDays, Brain, Users, MessageSquareDashed, FileSpreadsheet, ExternalLink, RefreshCw, Unlink } from "lucide-react";
 import { Card, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -13,7 +13,17 @@ import { Banner } from "@/app/components/ui/banner";
 import { Badge } from "@/app/components/ui/badge";
 import { Switch } from "@/app/components/ui/switch";
 import { PageHeader } from "@/app/components/ui/page-header";
+import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { useToast } from "@/app/components/ui/toast";
+
+interface GoogleSheetsStatus {
+  connected: boolean;
+  googleEmail?: string;
+  spreadsheetId?: string;
+  lastSyncedAt?: string | null;
+  lastSyncError?: string | null;
+  enabled?: boolean;
+}
 
 export default function SettingsPage() {
   const { data: session, update } = useSession();
@@ -50,6 +60,74 @@ export default function SettingsPage() {
       })
       .catch(() => toastError("Error al cargar configuración"));
   }, [isAdmin, toastError]);
+
+  const [googleStatus, setGoogleStatus] = useState<GoogleSheetsStatus>({ connected: false });
+  const [loadingGoogleStatus, setLoadingGoogleStatus] = useState(true);
+  const [syncingNow, setSyncingNow] = useState(false);
+  const [disconnectConfirmOpen, setDisconnectConfirmOpen] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  const fetchGoogleStatus = useCallback(() => {
+    setLoadingGoogleStatus(true);
+    fetch("/api/integrations/google-sheets/status")
+      .then((r) => r.json())
+      .then((d) => setGoogleStatus(d))
+      .catch(() => toastError("Error al cargar el estado de Google Sheets"))
+      .finally(() => setLoadingGoogleStatus(false));
+  }, [toastError]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchGoogleStatus también se usa para refrescar manualmente
+    fetchGoogleStatus();
+    // Lectura directa de window.location en vez de useSearchParams para no
+    // tener que envolver esta página en Suspense (regla del proyecto para
+    // páginas que sí usan ese hook) — aquí solo necesitamos leerlo una vez
+    // al montar, tras volver del flujo OAuth.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("google_connected") === "1") {
+      success("Cuenta de Google conectada correctamente");
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (params.get("google_error")) {
+      const reason = params.get("google_error");
+      toastError(
+        reason === "denied"
+          ? "Cancelaste la conexión con Google"
+          : "No se pudo conectar con Google, intenta de nuevo"
+      );
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar, para leer el retorno del OAuth una sola vez
+  }, []);
+
+  async function handleSyncNow() {
+    setSyncingNow(true);
+    try {
+      const res = await fetch("/api/integrations/google-sheets/sync-now", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al sincronizar");
+      success("Sincronización completada");
+      fetchGoogleStatus();
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al sincronizar");
+    } finally {
+      setSyncingNow(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    setDisconnecting(true);
+    try {
+      const res = await fetch("/api/integrations/google-sheets/disconnect", { method: "POST" });
+      if (!res.ok) throw new Error("Error al desconectar");
+      success("Cuenta de Google desconectada");
+      setDisconnectConfirmOpen(false);
+      fetchGoogleStatus();
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al desconectar");
+    } finally {
+      setDisconnecting(false);
+    }
+  }
 
   const createdAt = (session?.user as { createdAt?: string })?.createdAt;
 
@@ -295,6 +373,75 @@ export default function SettingsPage() {
           </CardBody>
         </Card>
       )}
+
+      <Card>
+        <CardBody>
+          <div className="flex items-center gap-2 mb-4">
+            <FileSpreadsheet size={16} className="text-accent" />
+            <CardTitle>Google Sheets</CardTitle>
+          </div>
+          <p className="text-sm text-muted-darker mb-4">
+            Sincroniza automáticamente tus leads calificados y resultados de campaña a una hoja de Google, cada 15 minutos.
+          </p>
+
+          {!loadingGoogleStatus && !googleStatus.connected && (
+            <Button
+              size="sm"
+              icon={FileSpreadsheet}
+              onClick={() => { window.location.href = "/api/integrations/google-sheets/connect"; }}
+            >
+              Conectar con Google
+            </Button>
+          )}
+
+          {!loadingGoogleStatus && googleStatus.connected && (
+            <div className="space-y-3">
+              {googleStatus.lastSyncError && (
+                <Banner tone="danger">{googleStatus.lastSyncError}</Banner>
+              )}
+              <p className="text-sm text-foreground">
+                Conectado como <span className="font-medium">{googleStatus.googleEmail}</span>
+              </p>
+              <p className="text-xs text-muted-darker">
+                Última sincronización:{" "}
+                {googleStatus.lastSyncedAt
+                  ? new Date(googleStatus.lastSyncedAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })
+                  : "Nunca"}
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {googleStatus.spreadsheetId && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon={ExternalLink}
+                    href={`https://docs.google.com/spreadsheets/d/${googleStatus.spreadsheetId}`}
+                    external
+                  >
+                    Abrir hoja
+                  </Button>
+                )}
+                <Button size="sm" variant="secondary" icon={RefreshCw} onClick={handleSyncNow} loading={syncingNow}>
+                  Sincronizar ahora
+                </Button>
+                <Button size="sm" variant="danger" icon={Unlink} onClick={() => setDisconnectConfirmOpen(true)}>
+                  Desconectar
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
+      <ConfirmDialog
+        open={disconnectConfirmOpen}
+        onClose={() => setDisconnectConfirmOpen(false)}
+        onConfirm={handleDisconnect}
+        title="¿Desconectar Google Sheets?"
+        description="Se detendrá la sincronización automática. Podrás volver a conectar tu cuenta cuando quieras."
+        confirmLabel="Desconectar"
+        tone="danger"
+        loading={disconnecting}
+      />
 
       <Card>
         <CardBody>
