@@ -1,5 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
+import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
+
+// Mismo orden que VALID_LABELS en lib/whatsapp/lead-scoring.ts, invertido para
+// mostrar primero lo más urgente/accionable.
+const LABEL_ORDER = ["prioridad_alta", "oportunidad", "interesado", "frio", "descartado"] as const;
 
 const statsCache = new Map<string, { data: Estadisticas; expiresAt: number }>();
 const STATS_TTL_MS = 60_000;
@@ -52,7 +57,6 @@ export interface Estadisticas {
   totalTokens: number;
   totalCost: number;
   dailyMessages: Array<{ date: string; count: number }>;
-  chatStatusCounts: Array<{ status: string; count: number }>;
   botBreakdown: Array<{
     id: string;
     name: string;
@@ -77,6 +81,45 @@ export interface Estadisticas {
   }>;
   monthlyCost: number;
   monthlyBudgetUsd: number | null;
+  // Estado de entrega de mensajes de campaña, separado por origen — campañas
+  // masivas (WACampaign, WACampaignRecipient) vs. automatizaciones de leads de
+  // Facebook (LeadSheetSource, LeadSheetImportedRow). Ver lib/whatsapp/export-columns.ts
+  // para el mismo concepto de "origin" ya usado en el export a CSV/Sheets.
+  campaignMessagesByOrigin: Array<CampaignOriginStats>;
+  campaignMessageBreakdown: Array<CampaignBreakdownRow>;
+  // Chats con al menos una WALeadScore — deduplicados por chat (se usa la
+  // calificación de mayor score cuando hay más de un calificador), a
+  // diferencia de la pestaña "Leads calificados"/export que lista cada
+  // evaluación por separado. Ver lib/whatsapp/chat-attribution.ts para el
+  // origen de campaña de cada chat.
+  qualifiedChats: {
+    total: number;
+    byLabel: Array<{ label: string; count: number }>;
+  };
+  qualifiedChatsByCampaign: Array<{
+    id: string | null;
+    name: string;
+    origin: "manual" | "automatizacion" | null;
+    count: number;
+  }>;
+}
+
+interface CampaignOriginStats {
+  origin: "manual" | "automatizacion";
+  total: number;
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+  // % sobre mensajes efectivamente enviados (sent+delivered+read+failed) — los
+  // "pending"/"skipped" no cuentan como intento, así que quedan fuera del denominador.
+  deliveryRate: number | null;
+  readRate: number | null;
+}
+
+interface CampaignBreakdownRow extends CampaignOriginStats {
+  id: string;
+  name: string;
 }
 
 export async function getEstadisticas(userId: string): Promise<Estadisticas> {
@@ -120,7 +163,10 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     monthlyScorerUsage,
     appSettings,
     assignedChats,
-    chatStatusCounts,
+    campaignsForMessageStats,
+    leadSheetSources,
+    leadSheetStatusGroups,
+    leadScores,
   ] = await Promise.all([
     prisma.wAAccount.count({ where: accountWhere }),
     prisma.wAChat.count({ where: chatWhere }),
@@ -201,10 +247,33 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
         resolvedAt: true,
       },
     }),
-    prisma.wAChat.groupBy({
-      by: ["status"],
-      where: chatWhere,
+    // Contadores ya vienen agregados en WACampaign (sentCount/deliveredCount/...),
+    // actualizados por el webhook de Meta — no hace falta un groupBy sobre
+    // WACampaignRecipient. Visibilidad por cuenta, no por creador (mismo criterio
+    // que el resto de rutas de campañas, ver AGENTS.md).
+    prisma.wACampaign.findMany({
+      where: { waAccountId: { in: accountIds } },
+      select: { id: true, name: true, sentCount: true, deliveredCount: true, readCount: true, failedCount: true },
+    }),
+    prisma.leadSheetSource.findMany({
+      where: { waAccountId: { in: accountIds } },
+      select: { id: true, name: true },
+    }),
+    // "seeded" nunca se envió (filas ya presentes al conectar la fuente) — no es
+    // un resultado de envío, igual que en sheets-sync.ts.
+    prisma.leadSheetImportedRow.groupBy({
+      by: ["sourceId", "status"],
+      where: { source: { waAccountId: { in: accountIds } }, status: { not: "seeded" } },
       _count: { _all: true },
+    }),
+    prisma.wALeadScore.findMany({
+      where: { chat: { accountId: { in: accountIds } } },
+      select: {
+        chatId: true,
+        score: true,
+        label: true,
+        chat: { select: { messages: CHAT_ATTRIBUTION_MESSAGE_QUERY } },
+      },
     }),
   ]);
 
@@ -272,6 +341,99 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     }))
     .sort((a, b) => b.resolvedCount - a.resolvedCount);
 
+  function rate(numerator: number, denominator: number): number | null {
+    return denominator > 0 ? Math.round((numerator / denominator) * 1000) / 10 : null;
+  }
+
+  function toStats(counts: { sent: number; delivered: number; read: number; failed: number }): CampaignOriginStats {
+    const total = counts.sent + counts.delivered + counts.read + counts.failed;
+    return {
+      origin: "manual", // overwritten by callers
+      total,
+      sent: counts.sent,
+      delivered: counts.delivered,
+      read: counts.read,
+      failed: counts.failed,
+      deliveryRate: rate(counts.delivered + counts.read, total),
+      readRate: rate(counts.read, total),
+    };
+  }
+
+  const leadSheetCountsBySource = new Map<string, { sent: number; delivered: number; read: number; failed: number }>();
+  for (const g of leadSheetStatusGroups) {
+    const entry = leadSheetCountsBySource.get(g.sourceId) ?? { sent: 0, delivered: 0, read: 0, failed: 0 };
+    const count = g._count._all;
+    // "skipped" (contacto opt-out de marketing) se excluye de las tasas — nunca
+    // se intentó enviar, no es una entrega/lectura fallida.
+    if (g.status === "sent") entry.sent += count;
+    else if (g.status === "delivered") entry.delivered += count;
+    else if (g.status === "read") entry.read += count;
+    else if (g.status === "failed") entry.failed += count;
+    leadSheetCountsBySource.set(g.sourceId, entry);
+  }
+
+  const manualBreakdown: CampaignBreakdownRow[] = campaignsForMessageStats
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      ...toStats({ sent: c.sentCount, delivered: c.deliveredCount, read: c.readCount, failed: c.failedCount }),
+      origin: "manual" as const,
+    }))
+    .filter((r) => r.total > 0);
+
+  const automationBreakdown: CampaignBreakdownRow[] = leadSheetSources
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      ...toStats(leadSheetCountsBySource.get(s.id) ?? { sent: 0, delivered: 0, read: 0, failed: 0 }),
+      origin: "automatizacion" as const,
+    }))
+    .filter((r) => r.total > 0);
+
+  const campaignMessageBreakdown = [...manualBreakdown, ...automationBreakdown].sort((a, b) => b.total - a.total);
+
+  const manualTotals = manualBreakdown.reduce(
+    (acc, r) => ({ sent: acc.sent + r.sent, delivered: acc.delivered + r.delivered, read: acc.read + r.read, failed: acc.failed + r.failed }),
+    { sent: 0, delivered: 0, read: 0, failed: 0 }
+  );
+  const automationTotals = automationBreakdown.reduce(
+    (acc, r) => ({ sent: acc.sent + r.sent, delivered: acc.delivered + r.delivered, read: acc.read + r.read, failed: acc.failed + r.failed }),
+    { sent: 0, delivered: 0, read: 0, failed: 0 }
+  );
+
+  const campaignMessagesByOrigin: CampaignOriginStats[] = [
+    { ...toStats(manualTotals), origin: "manual" },
+    { ...toStats(automationTotals), origin: "automatizacion" },
+  ];
+
+  const bestScorePerChat = new Map<string, { score: number; label: string; campaign: ReturnType<typeof resolveChatAttribution> }>();
+  for (const s of leadScores) {
+    const existing = bestScorePerChat.get(s.chatId);
+    if (!existing || s.score > existing.score) {
+      bestScorePerChat.set(s.chatId, { score: s.score, label: s.label, campaign: resolveChatAttribution(s.chat.messages) });
+    }
+  }
+
+  const labelCounts = new Map<string, number>();
+  const campaignCounts = new Map<string, { id: string | null; name: string; origin: "manual" | "automatizacion" | null; count: number }>();
+  for (const { label, campaign } of bestScorePerChat.values()) {
+    labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
+
+    const key = campaign?.id ?? "__none__";
+    const entry = campaignCounts.get(key) ?? { id: campaign?.id ?? null, name: campaign?.name ?? "Sin campaña", origin: campaign?.origin ?? null, count: 0 };
+    entry.count++;
+    campaignCounts.set(key, entry);
+  }
+
+  const qualifiedChats = {
+    total: bestScorePerChat.size,
+    byLabel: LABEL_ORDER
+      .map((label) => ({ label, count: labelCounts.get(label) ?? 0 }))
+      .filter((l) => l.count > 0),
+  };
+
+  const qualifiedChatsByCampaign = Array.from(campaignCounts.values()).sort((a, b) => b.count - a.count);
+
   const payload: Estadisticas = {
     accounts,
     chats,
@@ -283,12 +445,15 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     totalTokens: (usage._sum.totalTokens ?? 0) + (scorerUsage._sum.totalTokens ?? 0),
     totalCost: Math.round(((usage._sum.estimatedCost ?? 0) + (scorerUsage._sum.estimatedCost ?? 0)) * 10000) / 10000,
     dailyMessages,
-    chatStatusCounts: chatStatusCounts.map((c) => ({ status: c.status, count: c._count._all })),
     botBreakdown,
     accountBreakdown,
     agentPerformance,
     monthlyCost: Math.round(((monthlyUsage._sum.estimatedCost ?? 0) + (monthlyScorerUsage._sum.estimatedCost ?? 0)) * 10000) / 10000,
     monthlyBudgetUsd: appSettings?.monthlyBudgetUsd ?? null,
+    campaignMessagesByOrigin,
+    campaignMessageBreakdown,
+    qualifiedChats,
+    qualifiedChatsByCampaign,
   };
 
   statsCache.set(userId, { data: payload, expiresAt: Date.now() + STATS_TTL_MS });

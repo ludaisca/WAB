@@ -12,6 +12,9 @@ import {
   Zap,
   UserCheck,
   Mail,
+  Send,
+  Megaphone,
+  Target,
 } from "lucide-react";
 import { CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { BentoGrid, BentoTile } from "@/app/components/ui/bento-grid";
@@ -20,6 +23,7 @@ import { Badge } from "@/app/components/ui/badge";
 import { PageHeader } from "@/app/components/ui/page-header";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import type { Estadisticas } from "@/lib/estadisticas/get-stats";
+import { LABEL_TEXT } from "@/lib/whatsapp/export-columns";
 
 const BOT_STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" | "danger" | "neutral" }> = {
   ACTIVE: { label: "Activo", tone: "success" },
@@ -27,20 +31,27 @@ const BOT_STATUS_BADGE: Record<string, { label: string; tone: "success" | "warni
   ERROR: { label: "Error", tone: "danger" },
 };
 
-const CHAT_STATUS_LABEL: Record<string, string> = {
-  OPEN: "Abiertos",
-  PENDING: "Pendientes",
-  RESOLVED: "Resueltos",
+const QUALIFIED_LABEL_BADGE: Record<string, "danger" | "success" | "info" | "neutral"> = {
+  prioridad_alta: "danger",
+  oportunidad: "success",
+  interesado: "info",
+  frio: "neutral",
+  descartado: "neutral",
 };
 
-const CHAT_STATUS_BADGE: Record<string, "info" | "warning" | "success"> = {
-  OPEN: "info",
-  PENDING: "warning",
-  RESOLVED: "success",
+const CAMPAIGN_ORIGIN_LABEL: Record<string, string> = {
+  manual: "Campaña masiva",
+  automatizacion: "Automatización",
+};
+
+const CAMPAIGN_ORIGIN_BADGE: Record<string, "accent" | "info"> = {
+  manual: "accent",
+  automatizacion: "info",
 };
 
 type BotBreakdownRow = Estadisticas["botBreakdown"][number];
 type AgentPerformanceRow = Estadisticas["agentPerformance"][number];
+type CampaignBreakdownRow = Estadisticas["campaignMessageBreakdown"][number];
 
 function formatCost(value: number): string {
   if (value === 0) return "$0";
@@ -110,8 +121,40 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
     },
   ], []);
 
+  const campaignColumns: TableColumn<CampaignBreakdownRow>[] = useMemo(() => [
+    {
+      key: "name",
+      header: "Campaña / fuente",
+      render: (r) => <span className="font-medium">{r.name}</span>,
+    },
+    {
+      key: "origin",
+      header: "Origen",
+      render: (r) => <Badge tone={CAMPAIGN_ORIGIN_BADGE[r.origin]} size="sm">{CAMPAIGN_ORIGIN_LABEL[r.origin]}</Badge>,
+    },
+    { key: "sent", header: "Enviados", headerClassName: "text-right", cellClassName: "text-right", render: (r) => r.sent, hideBelow: "md" },
+    { key: "delivered", header: "Entregados", headerClassName: "text-right", cellClassName: "text-right", render: (r) => r.delivered, hideBelow: "sm" },
+    { key: "read", header: "Leídos", headerClassName: "text-right", cellClassName: "text-right", render: (r) => r.read },
+    { key: "failed", header: "Fallidos", headerClassName: "text-right", cellClassName: "text-right", render: (r) => r.failed, hideBelow: "md" },
+    {
+      key: "deliveryRate",
+      header: "Tasa entrega",
+      headerClassName: "text-right",
+      cellClassName: "text-right",
+      render: (r) => (r.deliveryRate != null ? `${r.deliveryRate}%` : "—"),
+    },
+    {
+      key: "readRate",
+      header: "Tasa lectura",
+      headerClassName: "text-right",
+      cellClassName: "text-right",
+      render: (r) => (r.readRate != null ? `${r.readRate}%` : "—"),
+    },
+  ], []);
+
   const maxCount = Math.max(...stats.dailyMessages.map((d) => d.count), 1);
   const maxAccountChats = Math.max(...stats.accountBreakdown.map((a) => a.chats), 1);
+  const maxQualifiedByCampaign = Math.max(...stats.qualifiedChatsByCampaign.map((c) => c.count), 1);
 
   return (
     <div className="space-y-6">
@@ -200,24 +243,140 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
           href="/whatsapp/campanas"
         />
 
-        {stats.chatStatusCounts.length > 0 && (
-          <BentoTile>
-            <CardBody>
-              <p className="text-xs text-muted-darker mb-2">Chats por estado</p>
-              <div className="flex flex-wrap gap-2">
-                {stats.chatStatusCounts.map((c) => (
-                  <Badge
-                    key={c.status}
-                    tone={CHAT_STATUS_BADGE[c.status] ?? "neutral"}
-                    size="sm"
-                  >
-                    {CHAT_STATUS_LABEL[c.status] ?? c.status}: {c.count}
+        <BentoTile>
+          <CardBody>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Target size={14} className="text-accent" />
+              <p className="text-xs text-muted-darker">Chats calificados</p>
+            </div>
+            <p className="text-2xl font-bold tracking-tight mb-2">{stats.qualifiedChats.total}</p>
+            {stats.qualifiedChats.byLabel.length === 0 ? (
+              <p className="text-xs text-muted-darker">Sin calificaciones todavía</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {stats.qualifiedChats.byLabel.map((l) => (
+                  <Badge key={l.label} tone={QUALIFIED_LABEL_BADGE[l.label] ?? "neutral"} size="sm">
+                    {LABEL_TEXT[l.label] ?? l.label}: {l.count}
                   </Badge>
                 ))}
               </div>
-            </CardBody>
-          </BentoTile>
-        )}
+            )}
+          </CardBody>
+        </BentoTile>
+
+        <BentoTile span={{ sm: 2, lg: 2 }}>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Send size={16} className="text-accent" />
+              <CardTitle>Entregas por origen</CardTitle>
+            </div>
+          </CardHeader>
+          <CardBody>
+            {stats.campaignMessagesByOrigin.every((o) => o.total === 0) ? (
+              <p className="text-sm text-muted py-4 text-center">Sin envíos todavía</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {stats.campaignMessagesByOrigin.map((o) => (
+                  <div key={o.origin} className="rounded-lg border border-border p-3 space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      {o.origin === "manual" ? (
+                        <Megaphone size={14} className="text-accent" />
+                      ) : (
+                        <Zap size={14} className="text-info" />
+                      )}
+                      <p className="text-sm font-medium">{CAMPAIGN_ORIGIN_LABEL[o.origin]}</p>
+                    </div>
+                    {o.total === 0 ? (
+                      <p className="text-xs text-muted-darker">Sin envíos todavía</p>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap gap-1.5">
+                          <Badge tone="neutral" size="sm">Enviados: {o.sent}</Badge>
+                          <Badge tone="success" size="sm">Entregados: {o.delivered}</Badge>
+                          <Badge tone="info" size="sm">Leídos: {o.read}</Badge>
+                          {o.failed > 0 && <Badge tone="danger" size="sm">Fallidos: {o.failed}</Badge>}
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-muted-darker pt-1">
+                          <span>Entrega: {o.deliveryRate != null ? `${o.deliveryRate}%` : "—"}</span>
+                          <span>Lectura: {o.readRate != null ? `${o.readRate}%` : "—"}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardBody>
+        </BentoTile>
+
+        <BentoTile span={{ sm: 2, lg: 2 }}>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Target size={16} className="text-accent" />
+              <CardTitle>Calificados por campaña</CardTitle>
+            </div>
+          </CardHeader>
+          <CardBody>
+            {stats.qualifiedChatsByCampaign.length === 0 ? (
+              <p className="text-sm text-muted py-4 text-center">Sin calificaciones todavía</p>
+            ) : (
+              <div className="space-y-3">
+                {stats.qualifiedChatsByCampaign.map((c) => (
+                  <div key={c.id ?? "__none__"} className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1 flex items-center gap-2">
+                      <p className="text-sm font-medium truncate">{c.name}</p>
+                      {c.origin && (
+                        <Badge tone={CAMPAIGN_ORIGIN_BADGE[c.origin]} size="sm" className="shrink-0">
+                          {CAMPAIGN_ORIGIN_LABEL[c.origin]}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="w-32 shrink-0 bg-surface rounded-full h-2 overflow-hidden">
+                      <div
+                        className="h-full bg-accent rounded-full transition-all"
+                        style={{ width: `${(c.count / maxQualifiedByCampaign) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-muted-darker w-8 text-right shrink-0">{c.count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardBody>
+        </BentoTile>
+
+        <BentoTile span={{ sm: 2, lg: 4 }}>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Megaphone size={16} className="text-accent" />
+              <CardTitle>Mensajes por campaña / automatización</CardTitle>
+            </div>
+          </CardHeader>
+          <CardBody>
+            <Table
+              columns={campaignColumns}
+              rows={stats.campaignMessageBreakdown}
+              rowKey={(r) => `${r.origin}-${r.id}`}
+              emptyIcon={Megaphone}
+              emptyTitle="Sin envíos todavía"
+              emptyDescription="Aparecerán aquí una vez que se envíe una campaña masiva o se dispare una automatización de leads."
+              mobileCard={(r) => (
+                <div className="space-y-1 min-w-0 w-full">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-sm truncate">{r.name}</span>
+                    <Badge tone={CAMPAIGN_ORIGIN_BADGE[r.origin]} size="sm">{CAMPAIGN_ORIGIN_LABEL[r.origin]}</Badge>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-darker flex-wrap">
+                    <span>{r.sent} enviados</span>
+                    <span>{r.delivered} entregados</span>
+                    <span>{r.read} leídos</span>
+                    {r.failed > 0 && <span className="text-danger">{r.failed} fallidos</span>}
+                  </div>
+                </div>
+              )}
+            />
+          </CardBody>
+        </BentoTile>
 
         <BentoTile span={{ sm: 2, lg: 2 }}>
           <CardHeader>
