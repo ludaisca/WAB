@@ -13,10 +13,20 @@ CMD ["npm", "run", "dev"]
 
 FROM base AS builder
 COPY package*.json ./
-RUN npm ci
+# --include=dev: Coolify puede inyectar NODE_ENV=production como build-arg (ver
+# docker-compose.yml ARG COOLIFY_FQDN/NODE_ENV/etc.), lo que hace que "npm ci" a
+# secas omita devDependencies (typescript, @types/*) — Next.js las detecta
+# faltantes y las reinstala a medias del build, desperdiciando tiempo. Forzarlas
+# aquí no depende de cómo esté configurado ese toggle en la UI de Coolify.
+RUN npm ci --include=dev
 COPY prisma ./prisma
 RUN npx prisma generate
 COPY . .
+# El build de Next con Turbopack (compilación + type-check de ~90 rutas) excede
+# el límite de heap por defecto de V8 (~2GB) y aborta con
+# "JavaScript heap out of memory" — visto tanto en local como en el build real
+# de Coolify. 4096MB da margen sin acercarse al límite físico del host.
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
 FROM base AS runner
