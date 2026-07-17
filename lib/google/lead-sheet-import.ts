@@ -4,6 +4,7 @@ import { readSheetValues } from "@/lib/google/sheets-read";
 import { getTemplateVariables, renderTemplateText } from "@/lib/whatsapp/template-variables";
 import { sendTemplateMessage } from "@/lib/whatsapp/send-template";
 import { saveMediaFromMeta, isImageMime, isVideoMime } from "@/lib/whatsapp/media-store";
+import { shouldUpdateName } from "@/lib/whatsapp/contact-name";
 import type { LeadSheetSource, WAAccount, WATemplate } from "@prisma/client";
 
 // Tope por corrida del tick automático — evita que una ráfaga de filas nuevas (o una
@@ -81,10 +82,22 @@ export async function importNewLeadsForSource(
     for (const row of dataRows) {
       const phone = normalizePhone(row[phoneIdx] ?? "");
       if (!phone || existingByPhone.has(phone)) continue;
+      const seedContactName = nameIdx !== -1 ? row[nameIdx] || null : null;
       await prisma.leadSheetImportedRow.create({
-        data: { sourceId: source.id, phoneNumber: phone, status: "seeded" },
+        data: { sourceId: source.id, phoneNumber: phone, contactName: seedContactName, status: "seeded" },
       });
-      existingByPhone.set(phone, { id: "", sourceId: source.id, phoneNumber: phone, status: "seeded", errorMessage: null, importedAt: new Date() });
+      existingByPhone.set(phone, {
+        id: "",
+        sourceId: source.id,
+        phoneNumber: phone,
+        contactName: seedContactName,
+        status: "seeded",
+        wamid: null,
+        deliveredAt: null,
+        readAt: null,
+        errorMessage: null,
+        importedAt: new Date(),
+      });
       seeded++;
     }
     await prisma.leadSheetSource.update({ where: { id: source.id }, data: { lastRunAt: new Date() } });
@@ -139,6 +152,9 @@ export async function importNewLeadsForSource(
   });
 
   for (const { row, phone } of toProcess) {
+    const bodyParams = bodyIdxs.map((idx) => (idx === -1 ? "" : row[idx] ?? ""));
+    const contactName = nameIdx !== -1 ? row[nameIdx] || phone : phone;
+
     const contact = await prisma.contact.findUnique({
       where: { accountId_remoteJid: { accountId: source.waAccountId, remoteJid: phone } },
     });
@@ -148,17 +164,15 @@ export async function importNewLeadsForSource(
         create: {
           sourceId: source.id,
           phoneNumber: phone,
+          contactName,
           status: "skipped",
           errorMessage: "El contacto optó por no recibir mensajes de marketing",
         },
-        update: { status: "skipped", errorMessage: "El contacto optó por no recibir mensajes de marketing" },
+        update: { contactName, status: "skipped", errorMessage: "El contacto optó por no recibir mensajes de marketing" },
       });
       result.skipped++;
       continue;
     }
-
-    const bodyParams = bodyIdxs.map((idx) => (idx === -1 ? "" : row[idx] ?? ""));
-    const contactName = nameIdx !== -1 ? row[nameIdx] || phone : phone;
 
     try {
       const { wamid } = await sendTemplateMessage(source.waAccount, {
@@ -177,11 +191,19 @@ export async function importNewLeadsForSource(
         renderTemplateText(source.waTemplate.components, { bodyParams, headerParam: source.headerParam }) ||
         `Plantilla: ${templateName}`;
 
+      const contactNameShouldUpdate = shouldUpdateName(contactName, contact?.name, phone);
+
       const upsertedContact = await prisma.contact.upsert({
         where: { accountId_remoteJid: { accountId: source.waAccountId, remoteJid: phone } },
         create: { accountId: source.waAccountId, remoteJid: phone, name: contactName },
-        update: {},
+        update: contactNameShouldUpdate ? { name: contactName } : {},
       });
+
+      const existingChat = await prisma.wAChat.findUnique({
+        where: { accountId_remoteJid: { accountId: source.waAccountId, remoteJid: phone } },
+        select: { name: true },
+      });
+      const chatNameShouldUpdate = shouldUpdateName(contactName, existingChat?.name, phone);
 
       const chat = await prisma.wAChat.upsert({
         where: { accountId_remoteJid: { accountId: source.waAccountId, remoteJid: phone } },
@@ -193,7 +215,11 @@ export async function importNewLeadsForSource(
           lastMessage: messageBody.slice(0, 500),
           lastMessageAt: sentAt,
         },
-        update: { lastMessage: messageBody.slice(0, 500), lastMessageAt: sentAt },
+        update: {
+          ...(chatNameShouldUpdate ? { name: contactName } : {}),
+          lastMessage: messageBody.slice(0, 500),
+          lastMessageAt: sentAt,
+        },
       });
 
       await prisma.wAMessage.create({
@@ -209,6 +235,7 @@ export async function importNewLeadsForSource(
           bytesSize: headerMedia ? headerMedia.bytesSize : null,
           status: "sent",
           timestamp: sentAt,
+          leadSheetSourceId: source.id,
         },
       });
 
@@ -225,16 +252,16 @@ export async function importNewLeadsForSource(
 
       await prisma.leadSheetImportedRow.upsert({
         where: { sourceId_phoneNumber: { sourceId: source.id, phoneNumber: phone } },
-        create: { sourceId: source.id, phoneNumber: phone, status: "sent" },
-        update: { status: "sent", errorMessage: null },
+        create: { sourceId: source.id, phoneNumber: phone, contactName, status: "sent", wamid: wamid ?? null },
+        update: { contactName, status: "sent", wamid: wamid ?? null, errorMessage: null },
       });
       result.imported++;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error desconocido";
       await prisma.leadSheetImportedRow.upsert({
         where: { sourceId_phoneNumber: { sourceId: source.id, phoneNumber: phone } },
-        create: { sourceId: source.id, phoneNumber: phone, status: "failed", errorMessage },
-        update: { status: "failed", errorMessage },
+        create: { sourceId: source.id, phoneNumber: phone, contactName, status: "failed", errorMessage },
+        update: { contactName, status: "failed", errorMessage },
       });
       result.failed++;
     }

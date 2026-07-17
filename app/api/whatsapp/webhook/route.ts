@@ -195,6 +195,33 @@ async function applyStatusUpdate(accountId: string, status: WebhookStatus): Prom
     updateData.readAt = new Date();
   }
 
+  // Mismo tracking de entrega/lectura que WACampaignRecipient, pero para envíos
+  // disparados por una fuente de leads automática (LeadSheetImportedRow usa
+  // strings en minúscula, no el enum RecipientStatus). Independiente del bloque
+  // de campañas de abajo — un wamid solo puede pertenecer a una de las dos tablas.
+  const leadSheetStatus = mapped.status.toLowerCase();
+  const LEAD_SHEET_RANK: Record<string, number> = { sent: 1, delivered: 2, read: 3 };
+  const leadSheetRank = LEAD_SHEET_RANK[leadSheetStatus];
+  const leadSheetLower = leadSheetRank
+    ? Object.keys(LEAD_SHEET_RANK).filter((s) => LEAD_SHEET_RANK[s] < leadSheetRank)
+    : null;
+
+  const leadSheetUpdateData: Record<string, unknown> = { status: leadSheetStatus };
+  if (leadSheetStatus === "failed") {
+    const detail = statusErrorDetail(status);
+    if (detail) leadSheetUpdateData.errorMessage = detail;
+  }
+  if (mapped.field === "deliveredAt") leadSheetUpdateData.deliveredAt = new Date();
+  if (mapped.field === "readAt") leadSheetUpdateData.readAt = new Date();
+
+  await prisma.leadSheetImportedRow.updateMany({
+    where: {
+      wamid: status.id,
+      ...(leadSheetLower ? { status: { in: leadSheetLower } } : {}),
+    },
+    data: leadSheetUpdateData,
+  });
+
   const recipient = await prisma.wACampaignRecipient.findFirst({
     where: { wamid: status.id },
     select: { campaignId: true },

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
+import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
 
 export async function GET(req: Request) {
   try {
@@ -86,14 +87,10 @@ export async function GET(req: Request) {
       account: {
         select: { id: true, name: true, phoneNumber: true },
       },
-      // Most recent campaign-tagged message, if any — powers the campaign
-      // badge in the chat list without a separate round trip per row.
-      messages: {
-        where: { campaignId: { not: null } },
-        orderBy: { timestamp: "desc" },
-        take: 1,
-        select: { campaign: { select: { id: true, name: true } } },
-      },
+      // Most recent campaign- or lead-source-attributed message, if any —
+      // powers the campaign badge in the chat list without a separate round
+      // trip per row.
+      messages: CHAT_ATTRIBUTION_MESSAGE_QUERY,
     } as const;
 
     const [rows, total] = await Promise.all([
@@ -108,7 +105,7 @@ export async function GET(req: Request) {
 
     const chats = rows.map(({ messages, ...chat }) => ({
       ...chat,
-      campaign: messages[0]?.campaign ?? null,
+      campaign: resolveChatAttribution(messages),
     }));
 
     if (paginate) {

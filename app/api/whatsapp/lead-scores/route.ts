@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
+import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
 
 export async function GET() {
   try {
@@ -24,6 +25,8 @@ export async function GET() {
             status: true,
             accountId: true,
             account: { select: { id: true, name: true } },
+            contact: { select: { realName: true } },
+            messages: CHAT_ATTRIBUTION_MESSAGE_QUERY,
           },
         },
       },
@@ -31,7 +34,12 @@ export async function GET() {
       take: 500,
     });
 
-    return NextResponse.json(scores);
+    const rows = scores.map(({ chat, ...score }) => {
+      const { messages, ...chatRest } = chat;
+      return { ...score, chat: chatRest, campaign: resolveChatAttribution(messages) };
+    });
+
+    return NextResponse.json(rows);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });

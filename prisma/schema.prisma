@@ -299,6 +299,12 @@ model WAMessage {
   sender      User?            @relation(fields: [senderId], references: [id], onDelete: SetNull)
   campaignId  String?
   campaign    WACampaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  // Igual que campaignId pero para envíos disparados por una fuente de leads
+  // externa (LeadSheetSource) — nunca ambos a la vez, cada WAMessage viene de
+  // como mucho un origen. Ver lib/whatsapp/chat-attribution.ts para cómo se
+  // unifican ambos campos en una sola "atribución" del chat.
+  leadSheetSourceId String?
+  leadSheetSource   LeadSheetSource? @relation(fields: [leadSheetSourceId], references: [id], onDelete: SetNull)
   timestamp   DateTime
   createdAt   DateTime         @default(now()) @map("created_at")
 
@@ -309,6 +315,7 @@ model WAMessage {
   @@index([chatId, timestamp])
   @@index([chatId, direction])
   @@index([campaignId])
+  @@index([leadSheetSourceId])
   @@map("wa_messages")
 }
 
@@ -391,6 +398,7 @@ model LeadSheetSource {
   updatedAt     DateTime   @updatedAt @map("updated_at")
 
   importedRows LeadSheetImportedRow[]
+  messages     WAMessage[]
 
   @@index([userId])
   @@index([waAccountId])
@@ -405,11 +413,19 @@ model LeadSheetImportedRow {
   sourceId     String
   source       LeadSheetSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   phoneNumber  String
+  contactName  String?
+  // status: "sent" | "delivered" | "read" | "failed" | "skipped" | "seeded" —
+  // delivered/read los pone el webhook de Meta (ver applyStatusUpdate), igual
+  // que en WACampaignRecipient.
   status       String
+  wamid        String?
+  deliveredAt  DateTime?
+  readAt       DateTime?
   errorMessage String?
   importedAt   DateTime        @default(now())
 
   @@unique([sourceId, phoneNumber])
+  @@index([wamid])
   @@map("lead_sheet_imported_rows")
 }
 
@@ -592,6 +608,11 @@ model Contact {
   account    WAAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
   remoteJid  String
   name       String?
+  // Nombre aprendido por un calificador de IA durante la conversación (campo
+  // details.nombre_real de WALeadScore) — distinto de `name`, que viene del
+  // CSV/hoja de origen (revisado por marketing) y nunca se pisa con esto.
+  // Null hasta que algún calificador detecte un nombre real.
+  realName   String?
   leadStatus LeadStatus @default(NEW)
   // Reportado por el webhook `user_preferences` de Meta cuando el lead usa el
   // mecanismo nativo de WhatsApp para darse de baja de mensajes de marketing

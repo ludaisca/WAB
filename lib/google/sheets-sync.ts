@@ -2,16 +2,29 @@ import type { sheets_v4 } from "googleapis";
 import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
 import { getGoogleSheetsClientForUser } from "@/lib/google/sheets-client";
+import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
 import {
   EXPORT_COLUMNS,
   CAMPAIGN_EXPORT_COLUMNS,
   type ExportColumnDef,
   type LeadScoreRow,
-  type CampaignRecipientRow,
+  type CampaignResultRow,
+  type CampaignResultStatus,
 } from "@/lib/whatsapp/export-columns";
 
 const LEADS_TAB = "Leads calificados";
 const CAMPAIGNS_TAB = "Resultados de campaña";
+
+// LeadSheetImportedRow usa strings en minúscula (sent/delivered/read/failed/
+// skipped/seeded); el tipo unificado usa el mismo enum que WACampaignRecipient
+// (mayúsculas) para que ambos orígenes compartan una sola columna de estado.
+const LEAD_SHEET_STATUS_MAP: Record<string, CampaignResultStatus> = {
+  sent: "SENT",
+  delivered: "DELIVERED",
+  read: "READ",
+  failed: "FAILED",
+  skipped: "SKIPPED",
+};
 
 export async function syncGoogleSheetsForUser(userId: string): Promise<void> {
   const account = await prisma.googleAccount.findUnique({ where: { userId } });
@@ -34,23 +47,29 @@ export async function syncGoogleSheetsForUser(userId: string): Promise<void> {
           status: true,
           accountId: true,
           account: { select: { id: true, name: true } },
+          contact: { select: { realName: true } },
+          messages: CHAT_ATTRIBUTION_MESSAGE_QUERY,
         },
       },
     },
     orderBy: { score: "desc" },
   });
 
-  const leadRows: LeadScoreRow[] = scores.map((s) => ({
-    id: s.id,
-    score: s.score,
-    label: s.label,
-    summary: s.summary,
-    reasons: s.reasons,
-    details: s.details as LeadScoreRow["details"],
-    updatedAt: s.updatedAt.toISOString(),
-    scorer: s.scorer,
-    chat: s.chat,
-  }));
+  const leadRows: LeadScoreRow[] = scores.map((s) => {
+    const { messages, ...chatRest } = s.chat;
+    return {
+      id: s.id,
+      score: s.score,
+      label: s.label,
+      summary: s.summary,
+      reasons: s.reasons,
+      details: s.details as LeadScoreRow["details"],
+      updatedAt: s.updatedAt.toISOString(),
+      scorer: s.scorer,
+      campaign: resolveChatAttribution(messages),
+      chat: chatRest,
+    };
+  });
 
   await writeSheetTab(sheets, account.spreadsheetId, LEADS_TAB, EXPORT_COLUMNS, leadRows);
 
@@ -60,12 +79,14 @@ export async function syncGoogleSheetsForUser(userId: string): Promise<void> {
   // excluiría indebidamente esas campañas compartidas.
   const recipients = await prisma.wACampaignRecipient.findMany({
     where: { campaign: { waAccountId: { in: accountIds } } },
-    include: { campaign: { select: { name: true } } },
+    include: { campaign: { select: { name: true, waTemplate: { select: { name: true } } } } },
     orderBy: { sentAt: "desc" },
   });
 
-  const campaignRows: CampaignRecipientRow[] = recipients.map((r) => ({
-    campaign: r.campaign,
+  const manualRows: CampaignResultRow[] = recipients.map((r) => ({
+    origin: "manual",
+    campaignName: r.campaign.name,
+    templateName: r.campaign.waTemplate.name,
     phoneNumber: r.phoneNumber,
     contactName: r.contactName,
     status: r.status,
@@ -75,7 +96,31 @@ export async function syncGoogleSheetsForUser(userId: string): Promise<void> {
     readAt: r.readAt?.toISOString() ?? null,
   }));
 
-  await writeSheetTab(sheets, account.spreadsheetId, CAMPAIGNS_TAB, CAMPAIGN_EXPORT_COLUMNS, campaignRows);
+  // "seeded" nunca se envió (son las filas que ya existían al conectar la
+  // fuente) — no es un resultado de envío, se excluye del export.
+  const importedLeadRows = await prisma.leadSheetImportedRow.findMany({
+    where: { source: { waAccountId: { in: accountIds } }, status: { not: "seeded" } },
+    include: { source: { select: { name: true, waTemplate: { select: { name: true } } } } },
+    orderBy: { importedAt: "desc" },
+  });
+
+  const automationRows: CampaignResultRow[] = importedLeadRows.map((r) => ({
+    origin: "automatizacion",
+    campaignName: r.source.name,
+    templateName: r.source.waTemplate.name,
+    phoneNumber: r.phoneNumber,
+    contactName: r.contactName,
+    status: LEAD_SHEET_STATUS_MAP[r.status] ?? "FAILED",
+    errorMessage: r.errorMessage,
+    sentAt: r.status === "skipped" ? null : r.importedAt.toISOString(),
+    deliveredAt: r.deliveredAt?.toISOString() ?? null,
+    readAt: r.readAt?.toISOString() ?? null,
+  }));
+
+  await writeSheetTab(sheets, account.spreadsheetId, CAMPAIGNS_TAB, CAMPAIGN_EXPORT_COLUMNS, [
+    ...manualRows,
+    ...automationRows,
+  ]);
 
   await prisma.googleAccount.update({
     where: { userId },

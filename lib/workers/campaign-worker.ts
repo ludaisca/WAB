@@ -3,6 +3,7 @@ import { campaignQueue } from "@/lib/queue";
 import { getTemplateVariables, renderTemplateText } from "@/lib/whatsapp/template-variables";
 import { saveMediaFromMeta, isImageMime, isVideoMime } from "@/lib/whatsapp/media-store";
 import { sendTemplateMessage } from "@/lib/whatsapp/send-template";
+import { shouldUpdateName } from "@/lib/whatsapp/contact-name";
 
 function mediaMessageTypeFromMime(mimeType: string): string {
   if (isImageMime(mimeType)) return "image";
@@ -143,10 +144,23 @@ export async function processCampaignJob(job: CampaignJob) {
         headerParam: campaign.headerParam,
       }) || `Plantilla: ${templateName}`;
 
+      const [existingContact, existingChat] = await Promise.all([
+        prisma.contact.findUnique({
+          where: { accountId_remoteJid: { accountId: campaign.waAccountId, remoteJid } },
+          select: { name: true },
+        }),
+        prisma.wAChat.findUnique({
+          where: { accountId_remoteJid: { accountId: campaign.waAccountId, remoteJid } },
+          select: { name: true },
+        }),
+      ]);
+      const contactNameShouldUpdate = shouldUpdateName(contactName, existingContact?.name, remoteJid);
+      const chatNameShouldUpdate = shouldUpdateName(contactName, existingChat?.name, remoteJid);
+
       const contact = await prisma.contact.upsert({
         where: { accountId_remoteJid: { accountId: campaign.waAccountId, remoteJid } },
         create: { accountId: campaign.waAccountId, remoteJid, name: contactName },
-        update: {},
+        update: contactNameShouldUpdate ? { name: contactName } : {},
       });
 
       const chat = await prisma.wAChat.upsert({
@@ -160,6 +174,7 @@ export async function processCampaignJob(job: CampaignJob) {
           lastMessageAt: sentAt,
         },
         update: {
+          ...(chatNameShouldUpdate ? { name: contactName } : {}),
           lastMessage: messageBody.slice(0, 500),
           lastMessageAt: sentAt,
         },

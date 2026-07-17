@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { botQueue, mediaDownloadQueue } from "@/lib/queue";
 import { autoAssignChat } from "@/lib/whatsapp/auto-assign";
+import { shouldUpdateName } from "@/lib/whatsapp/contact-name";
 
 export interface NormalizedInboundMessage {
   remoteJid: string;
@@ -28,19 +29,6 @@ export interface NormalizedInboundMessage {
 export interface IngestResult {
   messageId: string;
   chatId: string;
-}
-
-function phoneFromJid(remoteJid: string): string {
-  return remoteJid.split("@")[0];
-}
-
-// Meta omits profile.name on some payloads (privacy settings, forwards, template
-// replies), in which case the caller falls back to the raw phone number. Treat
-// that fallback as "no real name" so a previously-saved name never regresses to
-// a bare phone number on a later message.
-function isFallbackName(name: string | null | undefined, remoteJid: string): boolean {
-  if (!name) return true;
-  return name === remoteJid || name === phoneFromJid(remoteJid);
 }
 
 // Shared by both the Meta Cloud webhook and the Baileys connection listener
@@ -70,10 +58,8 @@ export async function ingestInboundMessage(
     }),
   ]);
 
-  const contactNameShouldUpdate =
-    !isFallbackName(msg.contactName, msg.remoteJid) || isFallbackName(existingContact?.name, msg.remoteJid);
-  const chatNameShouldUpdate =
-    !isFallbackName(msg.contactName, msg.remoteJid) || isFallbackName(existingChat?.name, msg.remoteJid);
+  const contactNameShouldUpdate = shouldUpdateName(msg.contactName, existingContact?.name, msg.remoteJid);
+  const chatNameShouldUpdate = shouldUpdateName(msg.contactName, existingChat?.name, msg.remoteJid);
 
   const contactRecord = await prisma.contact.upsert({
     where: { accountId_remoteJid: { accountId, remoteJid: msg.remoteJid } },

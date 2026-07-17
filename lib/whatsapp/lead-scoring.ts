@@ -147,6 +147,19 @@ export async function scoreChatWithScorer(chatId: string, scorer: WALeadScorerBo
     include: { scorer: { select: { id: true, name: true } } },
   });
 
+  // El nombre real detectado en conversación se guarda aparte de Contact.name
+  // (que viene del CSV/hoja de origen y no debe tocarse) — se propaga siempre
+  // que el modelo lo detecte, sin importar la calificación resultante.
+  if (parsed.details?.nombre_real) {
+    const chat = await prisma.wAChat.findUnique({ where: { id: chatId }, select: { contactId: true } });
+    if (chat?.contactId) {
+      await prisma.contact.update({
+        where: { id: chat.contactId },
+        data: { realName: parsed.details.nombre_real },
+      });
+    }
+  }
+
   if (result.usage) {
     const promptTokens = result.usage.promptTokens;
     const completionTokens = result.usage.completionTokens;

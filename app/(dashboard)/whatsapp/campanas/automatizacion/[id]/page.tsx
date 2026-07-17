@@ -45,6 +45,8 @@ interface ImportedRow {
 
 const ROW_STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" | "info" | "danger" | "neutral" }> = {
   sent: { label: "Enviado", tone: "success" },
+  delivered: { label: "Entregado", tone: "success" },
+  read: { label: "Leído", tone: "success" },
   failed: { label: "Fallido", tone: "danger" },
   skipped: { label: "Omitido", tone: "warning" },
   seeded: { label: "Visto al conectar", tone: "neutral" },
