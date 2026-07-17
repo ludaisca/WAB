@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { syncGoogleSheetsForUser } from "@/lib/google/sheets-sync";
+import { isRevokedGrantError } from "@/lib/google/errors";
 import type { GoogleAccount } from "@prisma/client";
 
 export async function processSheetsSyncTick() {
@@ -12,15 +13,6 @@ export async function processSheetsSyncTick() {
       await handleSyncError(account, err);
     }
   }
-}
-
-function isRevokedGrantError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
-  const gaxiosCode =
-    err && typeof err === "object" && "response" in err
-      ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
-      : undefined;
-  return message.includes("invalid_grant") || gaxiosCode === "invalid_grant";
 }
 
 async function handleSyncError(account: GoogleAccount, err: unknown) {

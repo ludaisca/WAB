@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { decrypt } from "@/lib/crypto";
 import { campaignQueue } from "@/lib/queue";
 import { getTemplateVariables, renderTemplateText } from "@/lib/whatsapp/template-variables";
 import { saveMediaFromMeta, isImageMime, isVideoMime } from "@/lib/whatsapp/media-store";
+import { sendTemplateMessage } from "@/lib/whatsapp/send-template";
 
 function mediaMessageTypeFromMime(mimeType: string): string {
   if (isImageMime(mimeType)) return "image";
@@ -62,10 +62,8 @@ export async function processCampaignJob(job: CampaignJob) {
     return;
   }
 
-  const accessToken = decrypt(campaign.waAccount.accessToken);
   const templateName = campaign.waTemplate.name;
   const language = campaign.waTemplate.language;
-  const phoneNumberId = campaign.waAccount.phoneNumberId;
   const templateVars = getTemplateVariables(campaign.waTemplate.components);
 
   // Attribution tag applied to every Contact/WAChat this campaign actually
@@ -113,174 +111,87 @@ export async function processCampaignJob(job: CampaignJob) {
       continue;
     }
     try {
-      const body: Record<string, unknown> = {
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
+      const bodyParams = recipient.parameters
+        ? Object.values(recipient.parameters as Record<string, string>)
+        : [];
+
+      const { wamid } = await sendTemplateMessage(campaign.waAccount, {
         to: recipient.phoneNumber,
-        type: "template",
-        template: {
-          name: templateName,
-          language: { code: language },
+        templateName,
+        language,
+        bodyParams,
+        headerFormat: templateVars.header.format,
+        headerParam: campaign.headerParam,
+        buttonIndex: templateVars.buttonUrl?.index ?? null,
+        buttonParam: campaign.buttonParam,
+      });
+
+      const sentAt = new Date();
+
+      await prisma.wACampaignRecipient.update({
+        where: { id: recipient.id },
+        data: { status: "SENT", sentAt, wamid: wamid ?? null },
+      });
+
+      // Only attribute Contact/WAChat/WAMessage on an actual successful
+      // send — a recipient that never got a message shouldn't leave a
+      // phantom contact behind.
+      const remoteJid = recipient.phoneNumber;
+      const contactName = recipient.contactName ?? recipient.phoneNumber;
+      const messageBody = renderTemplateText(campaign.waTemplate.components, {
+        bodyParams,
+        headerParam: campaign.headerParam,
+      }) || `Plantilla: ${templateName}`;
+
+      const contact = await prisma.contact.upsert({
+        where: { accountId_remoteJid: { accountId: campaign.waAccountId, remoteJid } },
+        create: { accountId: campaign.waAccountId, remoteJid, name: contactName },
+        update: {},
+      });
+
+      const chat = await prisma.wAChat.upsert({
+        where: { accountId_remoteJid: { accountId: campaign.waAccountId, remoteJid } },
+        create: {
+          accountId: campaign.waAccountId,
+          remoteJid,
+          name: contactName,
+          contactId: contact.id,
+          lastMessage: messageBody.slice(0, 500),
+          lastMessageAt: sentAt,
         },
-      };
+        update: {
+          lastMessage: messageBody.slice(0, 500),
+          lastMessageAt: sentAt,
+        },
+      });
 
-      const templateComponents: Record<string, unknown>[] = [];
+      await prisma.wAMessage.create({
+        data: {
+          wamid: wamid ?? null,
+          chatId: chat.id,
+          direction: "OUTBOUND",
+          messageType: headerMedia ? mediaMessageTypeFromMime(headerMedia.mimeType) : "template",
+          body: messageBody,
+          mediaId: headerMedia ? campaign.headerParam : null,
+          mediaUrl: headerMedia ? headerMedia.relativePath : null,
+          mimeType: headerMedia ? headerMedia.mimeType : null,
+          bytesSize: headerMedia ? headerMedia.bytesSize : null,
+          status: "sent",
+          timestamp: sentAt,
+          campaignId: campaign.id,
+        },
+      });
 
-      if (recipient.parameters) {
-        const params = recipient.parameters as Record<string, string>;
-        templateComponents.push({
-          type: "body",
-          parameters: Object.entries(params).map(([, value]) => ({
-            type: "text",
-            text: value,
-          })),
-        });
-      }
-
-      if (campaign.headerParam && templateVars.header.format) {
-        if (templateVars.header.format === "TEXT") {
-          templateComponents.push({
-            type: "header",
-            parameters: [{ type: "text", text: campaign.headerParam }],
-          });
-        } else {
-          // headerParam holds a Meta media ID (uploaded via /api/whatsapp/media at
-          // campaign creation), not a public URL — templates require binary media.
-          const mediaType = templateVars.header.format.toLowerCase();
-          templateComponents.push({
-            type: "header",
-            parameters: [{ type: mediaType, [mediaType]: { id: campaign.headerParam } }],
-          });
-        }
-      }
-
-      if (campaign.buttonParam && templateVars.buttonUrl) {
-        templateComponents.push({
-          type: "button",
-          sub_type: "url",
-          index: String(templateVars.buttonUrl.index),
-          parameters: [{ type: "text", text: campaign.buttonParam }],
-        });
-      }
-
-      if (templateComponents.length > 0) {
-        (body.template as Record<string, unknown>).components = templateComponents;
-      }
-
-      let res = await fetch(
-        `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(body),
-        }
-      );
-
-      if (res.status === 429) {
-        const retryAfter = Number(res.headers.get("Retry-After") || "5");
-        await new Promise((r) => setTimeout(r, retryAfter * 1000));
-        res = await fetch(
-          `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(body),
-          }
-        );
-      }
-
-      if (res.ok) {
-        const responseData = (await res.json()) as {
-          messages?: Array<{ id: string }>;
-        };
-        const wamid = responseData?.messages?.[0]?.id;
-        const sentAt = new Date();
-
-        await prisma.wACampaignRecipient.update({
-          where: { id: recipient.id },
-          data: { status: "SENT", sentAt, wamid: wamid ?? null },
-        });
-
-        // Only attribute Contact/WAChat/WAMessage on an actual successful
-        // send — a recipient that never got a message shouldn't leave a
-        // phantom contact behind.
-        const remoteJid = recipient.phoneNumber;
-        const contactName = recipient.contactName ?? recipient.phoneNumber;
-        const bodyParams = recipient.parameters
-          ? Object.values(recipient.parameters as Record<string, string>)
-          : [];
-        const messageBody = renderTemplateText(campaign.waTemplate.components, {
-          bodyParams,
-          headerParam: campaign.headerParam,
-        }) || `Plantilla: ${templateName}`;
-
-        const contact = await prisma.contact.upsert({
-          where: { accountId_remoteJid: { accountId: campaign.waAccountId, remoteJid } },
-          create: { accountId: campaign.waAccountId, remoteJid, name: contactName },
-          update: {},
-        });
-
-        const chat = await prisma.wAChat.upsert({
-          where: { accountId_remoteJid: { accountId: campaign.waAccountId, remoteJid } },
-          create: {
-            accountId: campaign.waAccountId,
-            remoteJid,
-            name: contactName,
-            contactId: contact.id,
-            lastMessage: messageBody.slice(0, 500),
-            lastMessageAt: sentAt,
-          },
-          update: {
-            lastMessage: messageBody.slice(0, 500),
-            lastMessageAt: sentAt,
-          },
-        });
-
-        await prisma.wAMessage.create({
-          data: {
-            wamid: wamid ?? null,
-            chatId: chat.id,
-            direction: "OUTBOUND",
-            messageType: headerMedia ? mediaMessageTypeFromMime(headerMedia.mimeType) : "template",
-            body: messageBody,
-            mediaId: headerMedia ? campaign.headerParam : null,
-            mediaUrl: headerMedia ? headerMedia.relativePath : null,
-            mimeType: headerMedia ? headerMedia.mimeType : null,
-            bytesSize: headerMedia ? headerMedia.bytesSize : null,
-            status: "sent",
-            timestamp: sentAt,
-            campaignId: campaign.id,
-          },
-        });
-
-        await prisma.contactTag.upsert({
-          where: { contactId_tagId: { contactId: contact.id, tagId: campaignTag.id } },
-          create: { contactId: contact.id, tagId: campaignTag.id },
-          update: {},
-        });
-        await prisma.chatTag.upsert({
-          where: { chatId_tagId: { chatId: chat.id, tagId: campaignTag.id } },
-          create: { chatId: chat.id, tagId: campaignTag.id },
-          update: {},
-        });
-      } else {
-        const errorBody = await res.json().catch(() => ({}));
-        await prisma.wACampaignRecipient.update({
-          where: { id: recipient.id },
-          data: {
-            status: "FAILED",
-            errorMessage:
-              (errorBody as { error?: { message?: string } })?.error
-                ?.message ?? `Error HTTP ${res.status}`,
-          },
-        });
-      }
+      await prisma.contactTag.upsert({
+        where: { contactId_tagId: { contactId: contact.id, tagId: campaignTag.id } },
+        create: { contactId: contact.id, tagId: campaignTag.id },
+        update: {},
+      });
+      await prisma.chatTag.upsert({
+        where: { chatId_tagId: { chatId: chat.id, tagId: campaignTag.id } },
+        create: { chatId: chat.id, tagId: campaignTag.id },
+        update: {},
+      });
     } catch (err) {
       await prisma.wACampaignRecipient.update({
         where: { id: recipient.id },

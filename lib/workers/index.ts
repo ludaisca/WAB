@@ -8,7 +8,8 @@ import { processBotSendJob } from "./bot-send-worker";
 import { processLeadScoringTick } from "./lead-scoring-worker";
 import { processLeadRecoveryTick } from "./lead-recovery-worker";
 import { processSheetsSyncTick } from "./sheets-sync-worker";
-import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue, campaignQueue, sheetsSyncQueue } from "@/lib/queue";
+import { processLeadSheetImportTick } from "./lead-sheet-worker";
+import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue, campaignQueue, sheetsSyncQueue, leadSheetImportQueue } from "@/lib/queue";
 
 const connection = {
   url: process.env.REDIS_URL || "redis://redis:6379",
@@ -67,7 +68,11 @@ export function startWorkers() {
     await processSheetsSyncTick();
   }, { connection, concurrency: 1 });
 
-  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker, sheetsSyncWorker);
+  const leadSheetImportWorker = new Worker("lead-sheet-import", async () => {
+    await processLeadSheetImportTick();
+  }, { connection, concurrency: 1 });
+
+  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker, sheetsSyncWorker, leadSheetImportWorker);
 
   mediaCleanupQueue
     .add(
@@ -117,6 +122,17 @@ export function startWorkers() {
       { jobId: "sheets-sync-tick", repeat: { pattern: "*/15 * * * *" } }
     )
     .catch((err) => console.error("[workers] No se pudo programar sheets-sync:", err));
+
+  // Un lead de Facebook Ads espera respuesta rápida — mismo cron que lead-scoring
+  // (5 min) para no dejarlo esperando de más, acotado por MAX_ROWS_PER_TICK en
+  // lib/google/lead-sheet-import.ts para no saturar la API de Meta en una ráfaga.
+  leadSheetImportQueue
+    .add(
+      "tick",
+      {},
+      { jobId: "lead-sheet-import-tick", repeat: { pattern: "*/5 * * * *" } }
+    )
+    .catch((err) => console.error("[workers] No se pudo programar lead-sheet-import:", err));
 
   console.log("[workers] BullMQ workers started");
 }

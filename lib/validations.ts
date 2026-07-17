@@ -135,11 +135,33 @@ export const campaignSchema = z.object({
   })).min(1, "Al menos un destinatario es requerido"),
 });
 
+export const leadSheetSourceSchema = z.object({
+  name: z.string().min(1, "El nombre es requerido").max(200),
+  waAccountId: z.string().min(1, "La cuenta es requerida"),
+  waTemplateId: z.string().min(1, "La plantilla es requerida"),
+  spreadsheetId: z.string().min(1, "La hoja de Google Sheets es requerida"),
+  sheetName: z.string().min(1, "La pestaña es requerida"),
+  phoneColumn: z.string().min(1, "La columna de teléfono es requerida"),
+  nameColumn: z.string().optional(),
+  bodyColumns: z.array(z.string()).default([]),
+  headerParam: z.string().optional(),
+  buttonParam: z.string().optional(),
+});
+
+export const leadSheetSourceUpdateSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  enabled: z.boolean().optional(),
+  headerParam: z.string().nullable().optional(),
+  buttonParam: z.string().nullable().optional(),
+});
+
 export type BotInput = z.infer<typeof botSchema>;
 export type BotUpdateInput = z.infer<typeof botUpdateSchema>;
 export type LeadScorerBotInput = z.infer<typeof leadScorerBotSchema>;
 export type LeadScorerBotUpdateInput = z.infer<typeof leadScorerBotUpdateSchema>;
 export type CampaignInput = z.infer<typeof campaignSchema>;
+export type LeadSheetSourceInput = z.infer<typeof leadSheetSourceSchema>;
+export type LeadSheetSourceUpdateInput = z.infer<typeof leadSheetSourceUpdateSchema>;
 
 const headerFormatEnum = z.enum(["TEXT", "IMAGE", "VIDEO", "DOCUMENT"]);
 const buttonTypeEnum = z.enum(["QUICK_REPLY", "URL"]);

@@ -28,6 +28,7 @@ model User {
   assignedChats  WAChat[]         @relation("ChatAssignments")
   notifications  Notification[]
   sentMessages   WAMessage[]
+  leadSheetSources LeadSheetSource[]
 
   @@map("users")
 }
@@ -130,6 +131,7 @@ model WAAccount {
   contacts        Contact[]
 
   cannedResponses CannedResponse[]
+  leadSheetSources LeadSheetSource[]
 
   @@index([phoneNumberId])
   @@unique([phoneNumberId])
@@ -351,9 +353,64 @@ model WATemplate {
   createdAt   DateTime @default(now()) @map("created_at")
 
   campaigns WACampaign[]
+  leadSheetSources LeadSheetSource[]
 
   @@unique([waAccountId, templateId])
   @@map("wa_templates")
+}
+
+// Fuente de leads externa (hoja de Google Sheets, típicamente alimentada por la
+// sincronización nativa de Facebook Lead Ads → Sheets). A diferencia de GoogleAccount
+// (una hoja por usuario, la que WAB crea para exportar), spreadsheetId aquí es una hoja
+// arbitraria del usuario — la misma conexión OAuth (lib/google/sheets-client.ts) sirve
+// para leerla porque el scope otorgado no está restringido a los archivos creados por WAB.
+model LeadSheetSource {
+  id            String     @id @default(cuid())
+  userId        String
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  waAccountId   String
+  waAccount     WAAccount  @relation(fields: [waAccountId], references: [id], onDelete: Cascade)
+  waTemplateId  String
+  waTemplate    WATemplate @relation(fields: [waTemplateId], references: [id], onDelete: Cascade)
+  name          String
+  spreadsheetId String
+  sheetName     String
+  phoneColumn   String
+  nameColumn    String?
+  // Nombres de columna de la hoja, en el orden {{1}},{{2}},... del body de la plantilla.
+  bodyColumns   Json
+  // Igual que WACampaign.headerParam/buttonParam: valores estáticos (no por fila) —
+  // texto o Meta media id para el header, sufijo de URL para el botón dinámico.
+  headerParam   String?
+  buttonParam   String?
+  enabled       Boolean    @default(true)
+  lastRunAt     DateTime?
+  lastImportedCount Int    @default(0)
+  lastError     String?
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  importedRows LeadSheetImportedRow[]
+
+  @@index([userId])
+  @@index([waAccountId])
+  @@map("lead_sheet_sources")
+}
+
+// Log de deduplicación: una fila por (fuente, teléfono) ya vista, para no volver
+// a disparar la plantilla al mismo lead en ticks futuros. "seeded" = fila que ya
+// existía en la hoja al conectar la fuente (se ignora salvo import manual explícito).
+model LeadSheetImportedRow {
+  id           String          @id @default(cuid())
+  sourceId     String
+  source       LeadSheetSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  phoneNumber  String
+  status       String
+  errorMessage String?
+  importedAt   DateTime        @default(now())
+
+  @@unique([sourceId, phoneNumber])
+  @@map("lead_sheet_imported_rows")
 }
 
 model WACampaign {

@@ -32,3 +32,4 @@ export const botSendQueue = new Queue("bot-message-send", { connection, defaultJ
 export const leadScoringQueue = new Queue("lead-scoring", { connection, defaultJobOptions });
 export const leadRecoveryQueue = new Queue("lead-recovery", { connection, defaultJobOptions });
 export const sheetsSyncQueue = new Queue("sheets-sync", { connection, defaultJobOptions });
+export const leadSheetImportQueue = new Queue("lead-sheet-import", { connection, defaultJobOptions });
