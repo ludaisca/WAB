@@ -9,7 +9,6 @@ import {
   Megaphone,
   Users,
   BarChart3,
-  Database,
   FileText,
   Contact,
   Phone,
@@ -66,13 +65,12 @@ export function DashboardShell({
           items: [
             ...(isAdmin ? [{ href: "/whatsapp/bots" as const, label: "Bots IA", icon: Bot as React.ElementType }] : []),
             { href: "/whatsapp/calificadores",  label: "Calificadores de Leads", icon: Target },
-            ...(isAdmin ? [{ href: "/whatsapp/conocimiento" as const, label: "Base de Conocimiento", icon: Database as React.ElementType }] : []),
           ],
         },
         {
           title: "Canales",
           items: [
-            { href: "/whatsapp",                label: "Cuentas WhatsApp", icon: Phone, exact: true },
+            { href: "/whatsapp/cuentas",        label: "Cuentas WhatsApp", icon: Phone },
           ],
         },
         {

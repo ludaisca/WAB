@@ -20,15 +20,6 @@ export function SkeletonText({ lines = 3, className }: { lines?: number; classNa
   );
 }
 
-export function SkeletonCard({ className }: { className?: string }) {
-  return (
-    <div className={cn("rounded-xl border border-border bg-surface p-5 space-y-3", className)} aria-hidden="true">
-      <Skeleton className="h-5 w-1/3" />
-      <SkeletonText lines={2} />
-    </div>
-  );
-}
-
 export function SkeletonRow({ cols = 4, className }: { cols?: number; className?: string }) {
   return (
     <div className={cn("flex items-center gap-4 py-3", className)} aria-hidden="true">

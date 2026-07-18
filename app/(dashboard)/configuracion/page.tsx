@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import { User, Lock, Shield, CalendarDays, Brain, Users, MessageSquareDashed, FileSpreadsheet, ExternalLink, RefreshCw, Unlink } from "lucide-react";
+import { User, Lock, Shield, CalendarDays, Brain, Users, FileSpreadsheet, ExternalLink, RefreshCw, Unlink } from "lucide-react";
 import { Card, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -15,6 +15,7 @@ import { Switch } from "@/app/components/ui/switch";
 import { PageHeader } from "@/app/components/ui/page-header";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { useToast } from "@/app/components/ui/toast";
+import { RespuestasRapidasSection } from "./_respuestas-rapidas";
 
 interface GoogleSheetsStatus {
   connected: boolean;
@@ -194,7 +195,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-2xl mx-auto">
       <PageHeader title="Configuración" description="Administra tu cuenta y preferencias." />
 
       <Card>
@@ -314,20 +315,7 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      <Card>
-        <CardBody>
-          <div className="flex items-center gap-2 mb-4">
-            <MessageSquareDashed size={16} className="text-accent" />
-            <CardTitle>Respuestas rápidas</CardTitle>
-          </div>
-          <p className="text-sm text-muted-darker mb-4">
-            Atajos de texto (/atajo) para responder más rápido en los chats de WhatsApp.
-          </p>
-          <Button href="/configuracion/respuestas-rapidas" variant="secondary" size="sm" icon={MessageSquareDashed}>
-            Gestionar respuestas
-          </Button>
-        </CardBody>
-      </Card>
+      <RespuestasRapidasSection />
 
       {isAdmin && (
         <Card>

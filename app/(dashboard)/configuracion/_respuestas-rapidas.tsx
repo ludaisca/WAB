@@ -2,16 +2,18 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Plus, MessageSquareDashed, Trash2, Pencil } from "lucide-react";
-import { Card, CardBody } from "@/app/components/ui/card";
+import { Card, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Select } from "@/app/components/ui/select";
-import { EmptyState } from "@/app/components/ui/empty-state";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { DropdownItem } from "@/app/components/ui/dropdown";
-import { PageHeader } from "@/app/components/ui/page-header";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
-import { CannedResponseFormModal } from "./_form";
+import { CannedResponseFormModal } from "./_respuestas-rapidas-form";
+
+// Sección embebida en /configuracion — antes era la página propia
+// /configuracion/respuestas-rapidas, degradada a sección porque el CRUD es
+// chico y no ameritaba un nivel más de navegación.
 
 interface Account { id: string; name: string; }
 
@@ -22,7 +24,7 @@ interface CannedResponse {
   waAccountId: string;
 }
 
-export default function RespuestasRapidasPage() {
+export function RespuestasRapidasSection() {
   const { success, error: toastError } = useToast();
 
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -101,89 +103,88 @@ export default function RespuestasRapidasPage() {
   ], []);
 
   return (
-    <div className="space-y-6 max-w-3xl">
-      <PageHeader
-        title="Respuestas rápidas"
-        description="Atajos de texto (/atajo) que el equipo puede insertar al escribir en un chat."
-      />
-
-      <div className="flex items-end gap-3 flex-wrap">
-        <div className="w-64">
-          <Select
-            value={selectedAccountId}
-            onChange={(e) => setSelectedAccountId(e.target.value)}
-            placeholder="Seleccionar cuenta"
-          >
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>{a.name}</option>
-            ))}
-          </Select>
+    <Card>
+      <CardBody>
+        <div className="flex items-center gap-2 mb-4">
+          <MessageSquareDashed size={16} className="text-accent" />
+          <CardTitle>Respuestas rápidas</CardTitle>
         </div>
-        <Button
-          size="sm"
-          icon={Plus}
-          onClick={() => { setEditing(null); setModalOpen(true); }}
-          disabled={!selectedAccountId}
-        >
-          Nueva respuesta
-        </Button>
-      </div>
+        <p className="text-sm text-muted-darker mb-4">
+          Atajos de texto (/atajo) que el equipo puede insertar al escribir en un chat.
+        </p>
 
-      {!selectedAccountId ? (
-        <Card>
-          <CardBody>
-            <EmptyState
-              icon={MessageSquareDashed}
-              title="Selecciona una cuenta"
-              description="Elige una cuenta WhatsApp para ver sus respuestas rápidas."
-            />
-          </CardBody>
-        </Card>
-      ) : (
-        <Card>
-          <CardBody>
-            <Table
-              columns={columns}
-              rows={items}
-              rowKey={(r) => r.id}
-              loading={loading}
-              error={fetchError}
-              onRetry={fetchItems}
-              emptyIcon={MessageSquareDashed}
-              emptyTitle="Sin respuestas rápidas"
-              emptyDescription="Crea atajos como /gracias para responder más rápido en los chats."
-              rowActions={(r) => (
-                <>
-                  <DropdownItem icon={Pencil} onClick={() => { setEditing(r); setModalOpen(true); }}>
-                    Editar
-                  </DropdownItem>
-                  <DropdownItem icon={Trash2} onClick={() => setDeleteId(r.id)}>
-                    Eliminar
-                  </DropdownItem>
-                </>
-              )}
-            />
-          </CardBody>
-        </Card>
-      )}
+        <div className="flex items-end gap-3 flex-wrap mb-4">
+          {accounts.length > 1 && (
+            <div className="w-56">
+              <Select
+                value={selectedAccountId}
+                onChange={(e) => setSelectedAccountId(e.target.value)}
+                placeholder="Seleccionar cuenta"
+              >
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </Select>
+            </div>
+          )}
+          <Button
+            size="sm"
+            icon={Plus}
+            onClick={() => { setEditing(null); setModalOpen(true); }}
+            disabled={!selectedAccountId}
+          >
+            Nueva respuesta
+          </Button>
+        </div>
 
-      <CannedResponseFormModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        waAccountId={selectedAccountId}
-        initialData={editing}
-        onSaved={fetchItems}
-      />
+        {!selectedAccountId ? (
+          <p className="text-sm text-muted py-2">
+            {accounts.length === 0
+              ? "Conecta una cuenta WhatsApp para crear respuestas rápidas."
+              : "Selecciona una cuenta para ver sus respuestas rápidas."}
+          </p>
+        ) : (
+          <Table
+            columns={columns}
+            rows={items}
+            rowKey={(r) => r.id}
+            loading={loading}
+            error={fetchError}
+            onRetry={fetchItems}
+            emptyIcon={MessageSquareDashed}
+            emptyTitle="Sin respuestas rápidas"
+            emptyDescription="Crea atajos como /gracias para responder más rápido en los chats."
+            rowActions={(r) => (
+              <>
+                <DropdownItem icon={Pencil} onClick={() => { setEditing(r); setModalOpen(true); }}>
+                  Editar
+                </DropdownItem>
+                <DropdownItem icon={Trash2} onClick={() => setDeleteId(r.id)}>
+                  Eliminar
+                </DropdownItem>
+              </>
+            )}
+          />
+        )}
 
-      <ConfirmDialog
-        open={!!deleteId}
-        onClose={() => setDeleteId(null)}
-        title="Eliminar respuesta rápida"
-        description="Esta acción no se puede deshacer."
-        confirmLabel="Eliminar"
-        tone="danger"
-        onConfirm={handleDelete}
-      />
-    </div>
+        <CannedResponseFormModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          waAccountId={selectedAccountId}
+          initialData={editing}
+          onSaved={fetchItems}
+        />
+
+        <ConfirmDialog
+          open={!!deleteId}
+          onClose={() => setDeleteId(null)}
+          title="Eliminar respuesta rápida"
+          description="Esta acción no se puede deshacer."
+          confirmLabel="Eliminar"
+          tone="danger"
+          onConfirm={handleDelete}
+        />
+      </CardBody>
+    </Card>
   );
 }
