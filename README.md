@@ -4,7 +4,7 @@ CRM de WhatsApp Business construido sobre la API oficial de Meta (Cloud API): ba
 
 ## Funcionalidad principal
 
-- **Chats**: bandeja estilo inbox con filtros (cuenta, campaña, respondido/no respondido), asignación de agentes, notas internas, etiquetas, respuestas rápidas (`/atajo`), adjuntos multimedia (imagen/audio/video/documento/sticker) con proxy seguro de medios.
+- **Chats**: bandeja estilo inbox con filtros (cuenta, campaña, respondido/no respondido), asignación de agentes, notas por contacto, etiquetas, respuestas rápidas (`/atajo`), adjuntos multimedia (imagen/audio/video/documento/sticker) con proxy seguro de medios.
 - **Bots de IA**: respuestas automáticas multimodales (OpenRouter o Google Gemini), con RAG sobre una base de conocimiento propia (pgvector), humanización de respuestas (envío fraccionado con delay simulado) y presupuesto mensual de gasto en IA.
 - **Calificadores de leads**: un bot de IA aparte audita cada conversación y la puntúa (0–100) en un embudo de 5 fases, con ejecución manual o programada, detección de spam/venta inversa, y exportación a CSV o a una hoja de Google sincronizada automáticamente.
 - **Recuperación de leads**: reengancha automáticamente conversaciones "en visto" dentro de la ventana de 24h de WhatsApp, respetando horario laboral configurado por el usuario.
@@ -50,6 +50,7 @@ No hay suite de tests automatizada — la verificación es `tsc --noEmit` + `lin
 | `DATABASE_URL` | conexión a PostgreSQL |
 | `REDIS_URL` | conexión a Redis |
 | `AUTH_SECRET` | secreto de NextAuth (`openssl rand -base64 32`) |
+| `DB_PASSWORD` | password del PostgreSQL del compose de producción (default `postgres`) |
 | `ENCRYPTION_KEY` | clave AES-256 para credenciales cifradas en DB (`openssl rand -hex 32`) |
 | `NEXT_PUBLIC_APP_URL` | URL pública de la app |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_OAUTH_REDIRECT_URI` | credenciales OAuth para la sincronización con Google Sheets (opcional) |
