@@ -303,24 +303,20 @@ async function handleBotMessage(job: BotMessageJob) {
   }
 
   await Promise.all([
-    prisma.wABotConversation.update({
-      where: { id: conversation.id },
-      data: {
-        messageCount: { increment: 1 },
-        lastInteraction: now,
-        ...(bot.memoryType === "SUMMARY"
-          ? {
-              // El resumen debe acumular AMBOS lados del turno — solo con las
-              // respuestas del bot, la "memoria" olvidaba todo lo que el
-              // cliente dijo.
-              summary: summarizeText(
-                `Cliente: ${job.caption ?? incomingMessage}\nAsistente: ${result.content}`,
-                conversation.summary
-              ),
-            }
-          : {}),
-      },
-    }),
+    bot.memoryType === "SUMMARY"
+      ? prisma.wABotConversation.update({
+          where: { id: conversation.id },
+          data: {
+            // El resumen debe acumular AMBOS lados del turno — solo con las
+            // respuestas del bot, la "memoria" olvidaba todo lo que el
+            // cliente dijo.
+            summary: summarizeText(
+              `Cliente: ${job.caption ?? incomingMessage}\nAsistente: ${result.content}`,
+              conversation.summary
+            ),
+          },
+        })
+      : Promise.resolve(),
     prisma.wAAccount.update({
       where: { id: bot.waAccount.id },
       data: { lastActivity: now },

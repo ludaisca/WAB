@@ -16,7 +16,7 @@ const HISTORY_LIMIT = 12;
 // should never actually trip, but if the config is ever loosened past 24h,
 // this is what stops a free-text send from violating Meta's policy instead
 // of silently failing at Meta's end.
-export function isWithinServiceWindow(lastInboundAt: Date, now: Date): boolean {
+function isWithinServiceWindow(lastInboundAt: Date, now: Date): boolean {
   return now.getTime() - lastInboundAt.getTime() < SERVICE_WINDOW_MS;
 }
 

@@ -14,16 +14,13 @@ export interface NormalizedInboundMessage {
   isGroup: boolean;
   // Meta Cloud media id (resolved later to a downloadable URL).
   mediaId?: string | null;
-  // If the channel already produced local bytes (Baileys), the relative path
-  // under MEDIA_ROOT is passed here so we skip the async download queue.
+  // If the caller already produced local bytes, the relative path under
+  // MEDIA_ROOT is passed here so we skip the async download queue.
   localMediaPath?: string | null;
   mimeType?: string | null;
   filename?: string | null;
   caption?: string | null;
   bytesSize?: number | null;
-  width?: number | null;
-  height?: number | null;
-  duration?: number | null;
 }
 
 export interface IngestResult {
@@ -31,10 +28,9 @@ export interface IngestResult {
   chatId: string;
 }
 
-// Shared by both the Meta Cloud webhook and the Baileys connection listener
-// so the CRM (Contact upsert), chat threading, notifications, and bot
-// triggering behave identically regardless of which WhatsApp channel a
-// message came in on.
+// Single entry point for inbound messages (hoy solo el webhook de Meta Cloud)
+// — concentra CRM (Contact upsert), chat threading, notificaciones y disparo
+// de bots para que cualquier canal futuro se comporte idéntico.
 export async function ingestInboundMessage(
   accountId: string,
   msg: NormalizedInboundMessage
@@ -104,9 +100,6 @@ export async function ingestInboundMessage(
         mimeType: msg.mimeType ?? null,
         filename: msg.filename ?? null,
         bytesSize: msg.bytesSize ?? null,
-        width: msg.width ?? null,
-        height: msg.height ?? null,
-        duration: msg.duration ?? null,
         timestamp: msg.timestamp,
       },
     });
@@ -120,7 +113,7 @@ export async function ingestInboundMessage(
     throw err;
   }
 
-  // Only Meta needs the async download (Baileys already produced bytes inline).
+  // Media entrante de Meta llega solo como mediaId — los bytes se descargan async.
   if (msg.mediaId && !msg.localMediaPath && msg.type !== "text") {
     await mediaDownloadQueue
       .add("download-media", {

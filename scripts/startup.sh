@@ -11,7 +11,12 @@ if [ -d "prisma/migrations" ]; then
   npx prisma migrate deploy
 else
   echo "No migrations found, using db push (development mode)"
-  npx prisma db push --skip-generate
+  # --accept-data-loss: sin el flag, cualquier cambio de schema que elimine una
+  # columna con datos (p. ej. la limpieza de campos write-only de 2026-07)
+  # aborta el arranque en producción y el deploy entra en crash-loop. El
+  # workflow de este repo es push-based (sin prisma/migrations) — si algún día
+  # se migra a `migrate deploy`, quitar este flag.
+  npx prisma db push --skip-generate --accept-data-loss
 fi
 
 echo "3. Ensuring pgvector index..."

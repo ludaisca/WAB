@@ -43,8 +43,18 @@ services:
       ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
       REDIS_URL: "redis://redis:6379"
       NODE_ENV: "${NODE_ENV:-production}"
+      # Integración Google Sheets (opcional) — sin este passthrough las vars
+      # definidas en Coolify solo servían para sustitución del compose, nunca
+      # llegaban al proceso Node y la integración quedaba muerta en producción.
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}"
+      GOOGLE_OAUTH_REDIRECT_URI: "${GOOGLE_OAUTH_REDIRECT_URI:-}"
+      MEDIA_RETENTION_DAYS: "${MEDIA_RETENTION_DAYS:-90}"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:5000/api/health"]
+      # 127.0.0.1, no "localhost": dentro del contenedor localhost resuelve a
+      # ::1 primero y next-server solo escucha en IPv4 — con localhost el
+      # healthcheck falla siempre con "Connection refused" aunque la app esté bien.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5000/api/health"]
       interval: 10s
       timeout: 5s
       retries: 5

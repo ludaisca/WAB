@@ -1,5 +1,14 @@
 import { prisma } from "@/lib/prisma";
+import { getMonthlyAiCost } from "@/lib/ai/budget";
 import { getUserAccountIds } from "@/lib/shared-accounts";
+import {
+  countActiveBots,
+  countBots,
+  countCampaigns,
+  countChats,
+  countCompletedCampaigns,
+  countMessages,
+} from "@/lib/estadisticas/global-counts";
 import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
 
 // Mismo orden que VALID_LABELS en lib/whatsapp/lead-scoring.ts, invertido para
@@ -60,7 +69,6 @@ export interface Estadisticas {
   botBreakdown: Array<{
     id: string;
     name: string;
-    isActive: boolean;
     status: string;
     interactions: number;
     totalTokens: number;
@@ -137,12 +145,6 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
   const monthStart = utcInstantForLocalMidnight(todayYear, todayMonth, 1);
 
   const accountWhere = { id: { in: accountIds } };
-  const chatWhere = {
-    OR: [
-      { account: { userId } },
-      { account: { sharedWith: { some: { userId } } } },
-    ],
-  };
 
   const [
     accounts,
@@ -152,6 +154,7 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     campaigns,
     usage,
     scorerUsage,
+    recoveryUsage,
     recentMessages,
     activeBots,
     campaignsCompleted,
@@ -159,8 +162,7 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     usageByBot,
     accountsList,
     chatCountsByAccount,
-    monthlyUsage,
-    monthlyScorerUsage,
+    monthlyCost,
     appSettings,
     assignedChats,
     campaignsForMessageStats,
@@ -169,17 +171,10 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     leadScores,
   ] = await Promise.all([
     prisma.wAAccount.count({ where: accountWhere }),
-    prisma.wAChat.count({ where: chatWhere }),
-    prisma.wAMessage.count({
-      where: {
-        OR: [
-          { chat: { account: { userId } } },
-          { chat: { account: { sharedWith: { some: { userId } } } } },
-        ],
-      },
-    }),
-    prisma.wABot.count({ where: { userId } }),
-    prisma.wACampaign.count({ where: { userId } }),
+    countChats(accountIds),
+    countMessages(accountIds),
+    countBots(userId),
+    countCampaigns(userId),
     prisma.wABotUsage.aggregate({
       where: { bot: { userId } },
       _sum: { totalTokens: true, estimatedCost: true },
@@ -188,23 +183,24 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
       where: { scorer: { userId } },
       _sum: { totalTokens: true, estimatedCost: true },
     }),
+    prisma.wALeadRecoveryAttempt.aggregate({
+      where: { chat: { account: { userId } } },
+      _sum: { totalTokens: true, estimatedCost: true },
+    }),
     prisma.wAMessage.findMany({
       where: {
         createdAt: { gte: chartStart },
-        OR: [
-          { chat: { account: { userId } } },
-          { chat: { account: { sharedWith: { some: { userId } } } } },
-        ],
+        chat: { accountId: { in: accountIds } },
       },
       select: { createdAt: true },
       orderBy: { createdAt: "desc" },
       take: 5000,
     }),
-    prisma.wABot.count({ where: { userId, isActive: true } }),
-    prisma.wACampaign.count({ where: { userId, status: "COMPLETED" } }),
+    countActiveBots(userId),
+    countCompletedCampaigns(userId),
     prisma.wABot.findMany({
       where: { userId },
-      select: { id: true, name: true, isActive: true, status: true },
+      select: { id: true, name: true, status: true },
     }),
     prisma.wABotUsage.groupBy({
       by: ["botId"],
@@ -221,22 +217,14 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
       where: { accountId: { in: accountIds } },
       _count: { _all: true },
     }),
-    prisma.wABotUsage.aggregate({
-      where: { bot: { userId }, createdAt: { gte: monthStart } },
-      _sum: { estimatedCost: true },
-    }),
-    prisma.wALeadScorerUsage.aggregate({
-      where: { scorer: { userId }, createdAt: { gte: monthStart } },
-      _sum: { estimatedCost: true },
-    }),
+    // Misma función que usan bot-worker/lead-scoring/lead-recovery para decidir
+    // pausar el gasto — así el % de presupuesto mostrado nunca diverge del real.
+    getMonthlyAiCost(userId, monthStart),
     prisma.appSettings.findUnique({ where: { userId }, select: { monthlyBudgetUsd: true } }),
     prisma.wAChat.findMany({
       where: {
         assignedToId: { not: null },
-        OR: [
-          { account: { userId } },
-          { account: { sharedWith: { some: { userId } } } },
-        ],
+        accountId: { in: accountIds },
       },
       select: {
         assignedToId: true,
@@ -293,7 +281,6 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
       return {
         id: b.id,
         name: b.name,
-        isActive: b.isActive,
         status: b.status,
         interactions: u?._count._all ?? 0,
         totalTokens: u?._sum.totalTokens ?? 0,
@@ -442,13 +429,22 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     campaigns,
     activeBots,
     campaignsCompleted,
-    totalTokens: (usage._sum.totalTokens ?? 0) + (scorerUsage._sum.totalTokens ?? 0),
-    totalCost: Math.round(((usage._sum.estimatedCost ?? 0) + (scorerUsage._sum.estimatedCost ?? 0)) * 10000) / 10000,
+    totalTokens:
+      (usage._sum.totalTokens ?? 0) +
+      (scorerUsage._sum.totalTokens ?? 0) +
+      (recoveryUsage._sum.totalTokens ?? 0),
+    totalCost:
+      Math.round(
+        ((usage._sum.estimatedCost ?? 0) +
+          (scorerUsage._sum.estimatedCost ?? 0) +
+          (recoveryUsage._sum.estimatedCost ?? 0)) *
+          10000
+      ) / 10000,
     dailyMessages,
     botBreakdown,
     accountBreakdown,
     agentPerformance,
-    monthlyCost: Math.round(((monthlyUsage._sum.estimatedCost ?? 0) + (monthlyScorerUsage._sum.estimatedCost ?? 0)) * 10000) / 10000,
+    monthlyCost: Math.round(monthlyCost * 10000) / 10000,
     monthlyBudgetUsd: appSettings?.monthlyBudgetUsd ?? null,
     campaignMessagesByOrigin,
     campaignMessageBreakdown,

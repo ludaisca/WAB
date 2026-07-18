@@ -290,9 +290,6 @@ model WAMessage {
   mediaUrl    String?
   mimeType    String?
   filename    String?
-  width       Int?
-  height      Int?
-  duration    Int?
   bytesSize   Int?
   status      String?
   senderId    String?
@@ -546,8 +543,6 @@ model WABotConversation {
   waChatId        String
   waChat          WAChat   @relation(fields: [waChatId], references: [id], onDelete: Cascade)
   summary         String?  @db.Text
-  messageCount    Int      @default(0)
-  lastInteraction DateTime @default(now())
 
   @@unique([botId, waChatId])
   @@map("wa_bot_conversations")

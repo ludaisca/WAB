@@ -4,6 +4,7 @@ import { getUserApiKey } from "@/lib/ai/settings";
 import { wrapUserPrompt } from "@/lib/ai/prompt-sanitizer";
 import { estimateCost } from "@/lib/ai/pricing";
 import type { AIProvider } from "@/lib/ai/types";
+import type { ScoreDetails } from "@/lib/whatsapp/export-columns";
 import type { WALeadScorerBot } from "@prisma/client";
 
 // Five-phase funnel (replaces the old frio/tibio/caliente 3-tier system) —
@@ -46,21 +47,6 @@ Responde ÚNICAMENTE con un bloque \`\`\`json ... \`\`\` sin texto adicional ant
 {"score": number (0-100), "label": "descartado"|"frio"|"interesado"|"oportunidad"|"prioridad_alta", "summary": string, "reasons": string[], "details": {"tipo_lead": "nuevo_contacto"|"seguimiento"|"reactivacion"|"desconocido"|null, "necesidad_principal": string|null, "contexto_negocio": string|null, "senales_compra": string[], "objeciones_dudas": string[], "nivel_interaccion": "bajo"|"medio"|"alto", "tono_interes": "exploratorio"|"comparativo"|"decidido"|"urgente"|"negativo"|"derivado"|null, "proximos_pasos": string[], "nombre_real": string|null, "producto_interes": string|null, "urgencia": string|null, "presupuesto": string|null}}
 
 summary es un resumen narrativo de 3-5 líneas basado solo en lo explícito. reasons son 2-4 motivos breves y concretos (señales de compra u objeciones reales — "receptivo" o "cordial" no cuentan como motivo). senales_compra y objeciones_dudas: máximo 3 elementos cada una, listas vacías si no aplica. nivel_interaccion "medio" solo si hubo respuesta con continuidad o pregunta propia del lead; una confirmación breve sin siguiente paso es "bajo".`;
-
-interface ScoreDetails {
-  tipo_lead: string | null;
-  necesidad_principal: string | null;
-  contexto_negocio: string | null;
-  senales_compra: string[];
-  objeciones_dudas: string[];
-  nivel_interaccion: string | null;
-  tono_interes: string | null;
-  proximos_pasos: string[];
-  nombre_real: string | null;
-  producto_interes: string | null;
-  urgencia: string | null;
-  presupuesto: string | null;
-}
 
 export class LeadScoringError extends Error {}
 

@@ -8,21 +8,7 @@ import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Select } from "@/app/components/ui/select";
 import { useToast } from "@/app/components/ui/toast";
-
-interface ScoreDetails {
-  tipo_lead: string | null;
-  necesidad_principal: string | null;
-  contexto_negocio: string | null;
-  senales_compra: string[];
-  objeciones_dudas: string[];
-  nivel_interaccion: string | null;
-  tono_interes: string | null;
-  proximos_pasos: string[];
-  nombre_real: string | null;
-  producto_interes: string | null;
-  urgencia: string | null;
-  presupuesto: string | null;
-}
+import type { ScoreDetails } from "@/lib/whatsapp/export-columns";
 
 interface LeadScore {
   id: string;

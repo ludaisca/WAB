@@ -21,7 +21,3 @@ export async function getUserApiKey(userId: string, provider: AIProvider): Promi
     return null;
   }
 }
-
-export async function getUserAiSettings(userId: string) {
-  return prisma.appSettings.findUnique({ where: { userId } });
-}

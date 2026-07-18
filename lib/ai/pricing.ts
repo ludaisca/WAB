@@ -46,7 +46,3 @@ export async function estimateCost(
 
   return Math.round((inputCost + outputCost) * 10000) / 10000;
 }
-
-export function getPricing(model: string) {
-  return MODEL_PRICING[model] ?? null;
-}
