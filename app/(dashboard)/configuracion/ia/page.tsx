@@ -177,7 +177,7 @@ export default function IASettingsPage() {
   if (loading) return <div className="flex items-center justify-center py-16"><Spinner /></div>;
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-2xl mx-auto">
       <Link href="/configuracion" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground transition-colors mb-3">
         <ArrowLeft size={14} /> Volver a configuración
       </Link>

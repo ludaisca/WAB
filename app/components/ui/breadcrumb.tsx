@@ -12,14 +12,12 @@ const LABELS: Record<string, string> = {
   campanas: "Campañas",
   chat: "Chats",
   cuentas: "Cuentas",
-  conocimiento: "Base de Conocimiento",
   calificadores: "Calificadores de Leads",
   plantillas: "Plantillas",
   usuarios: "Usuarios",
   configuracion: "Configuración",
   ia: "Inteligencia Artificial",
   contactos: "Contactos",
-  "respuestas-rapidas": "Respuestas Rápidas",
   nueva: "Nueva",
   nuevo: "Nuevo",
 };
@@ -42,7 +40,7 @@ export function Breadcrumb() {
   }));
 
   return (
-    <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-xs text-muted-darker mb-5">
+    <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-xs text-muted-darker">
       <Link
         href="/dashboard"
         className="flex items-center hover:text-foreground transition-colors"

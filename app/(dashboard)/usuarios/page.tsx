@@ -6,7 +6,8 @@ import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Spinner } from "@/app/components/ui/spinner";
 import { PageHeader } from "@/app/components/ui/page-header";
-import { TileGrid } from "@/app/components/ui/tile-grid";
+import { EntityList, EntityRow } from "@/app/components/ui/entity-list";
+import { EntityAvatar } from "@/app/components/ui/avatar";
 import { useToast } from "@/app/components/ui/toast";
 import { UserFormModal } from "./_form";
 
@@ -92,43 +93,49 @@ export default function UsersPage() {
 
       <p className="text-sm text-muted-darker">Todos los usuarios ({users.length})</p>
 
-      <TileGrid
+      <EntityList
         rows={users}
         rowKey={(u) => u.id}
         loading={loading}
         error={fetchError}
         onRetry={fetchUsers}
-        columns="3"
         emptyIcon={Users}
         emptyTitle="Sin usuarios"
         emptyDescription="No hay usuarios registrados en el sistema."
-        renderTile={(u) => (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-medium text-sm truncate">{u.name ?? "—"}</span>
-              <Badge tone={u.role === "admin" ? "warning" : u.role === "ejecutivo" ? "info" : "neutral"} size="sm">
-                {u.role === "admin" ? "Admin" : u.role === "ejecutivo" ? "Ejecutivo" : "Usuario"}
-              </Badge>
-            </div>
-            <p className="text-xs font-mono text-muted-darker truncate">{u.email}</p>
-            <div className="flex items-center gap-2 text-xs text-muted-darker">
-              <span>{u.waAccounts.length} cuenta(s)</span>
-              <span>·</span>
-              <span>{new Date(u.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}</span>
-            </div>
-            <div className="pt-2 border-t border-border">
+        renderRow={(u) => (
+          <>
+            <EntityRow
+              leading={<EntityAvatar id={u.id} name={u.name ?? u.email} size="sm" />}
+              title={u.name ?? "—"}
+              badges={
+                <Badge tone={u.role === "admin" ? "warning" : u.role === "ejecutivo" ? "info" : "neutral"} size="sm">
+                  {u.role === "admin" ? "Admin" : u.role === "ejecutivo" ? "Ejecutivo" : "Usuario"}
+                </Badge>
+              }
+              subtitle={
+                <>
+                  <span className="font-mono">{u.email}</span> · {u.waAccounts.length} cuenta(s)
+                </>
+              }
+              meta={
+                <span className="font-mono">
+                  {new Date(u.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}
+                </span>
+              }
+            />
+            <span className="shrink-0">
               <Button
                 variant="ghost"
                 size="sm"
                 icon={nextRoleIcon(u.role)}
                 onClick={() => toggleRole(u.id, u.role)}
                 disabled={togglingId === u.id}
-                className={u.role === "admin" ? "text-warning w-full justify-center" : "text-muted-darker w-full justify-center"}
+                className={u.role === "admin" ? "text-warning" : "text-muted-darker"}
               >
                 {togglingId === u.id ? <Spinner /> : `Hacer ${nextRoleLabel(u.role)}`}
               </Button>
-            </div>
-          </div>
+            </span>
+          </>
         )}
       />
 

@@ -230,7 +230,7 @@ export default function BotDetailPage() {
   if (!bot) return <Banner tone="danger" title="Bot no encontrado">El bot solicitado no existe.</Banner>;
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-3xl mx-auto">
       <Link href="/whatsapp/bots" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground transition-colors mb-3">
         <ArrowLeft size={14} /> Volver a bots
       </Link>

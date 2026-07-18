@@ -1,12 +1,21 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Phone, MessageCircle, Bot, Megaphone, Plus, Settings, ArrowRight } from "lucide-react";
+import { MessageCircle, Plus, Settings, ArrowRight } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
-import { StatCard } from "@/app/components/ui/stat-card";
-import { CardTitle } from "@/app/components/ui/card";
-import { BentoGrid, BentoTile } from "@/app/components/ui/bento-grid";
+import {
+  countActiveBots,
+  countBots,
+  countCampaigns,
+  countChats,
+  countCompletedCampaigns,
+  countConnectedAccounts,
+} from "@/lib/estadisticas/global-counts";
+import { KpiStrip, type KpiItem } from "@/app/components/ui/kpi-strip";
+import { SectionHeader } from "@/app/components/ui/section-header";
+import { Workbench, WorkbenchMain, WorkbenchAside } from "@/app/components/ui/workbench";
+import { EntityAvatar } from "@/app/components/ui/avatar";
 import { IconBox } from "@/app/components/ui/icon-box";
 import { Badge } from "@/app/components/ui/badge";
 import { PageHeader } from "@/app/components/ui/page-header";
@@ -43,13 +52,13 @@ export default async function DashboardPage() {
     campaignsCompleted,
   ] = await Promise.all([
     Promise.resolve(accountIds.length),
-    prisma.wAAccount.count({ where: { id: { in: accountIds }, status: "CONNECTED" } }),
-    prisma.wAChat.count({ where: { accountId: { in: accountIds } } }),
+    countConnectedAccounts(accountIds),
+    countChats(accountIds),
     prisma.wAChat.aggregate({ where: { accountId: { in: accountIds } }, _sum: { unreadCount: true } }),
     prisma.wAChat.findMany({
       where: { accountId: { in: accountIds } },
       orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
-      take: 5,
+      take: 8,
       select: {
         id: true,
         accountId: true,
@@ -60,10 +69,10 @@ export default async function DashboardPage() {
         account: { select: { name: true } },
       },
     }),
-    prisma.wABot.count({ where: { userId } }),
-    prisma.wABot.count({ where: { userId, isActive: true } }),
-    prisma.wACampaign.count({ where: { userId } }),
-    prisma.wACampaign.count({ where: { userId, status: "COMPLETED" } }),
+    countBots(userId),
+    countActiveBots(userId),
+    countCampaigns(userId),
+    countCompletedCampaigns(userId),
   ]);
 
   const unreadCount = unreadAgg._sum.unreadCount ?? 0;
@@ -77,178 +86,141 @@ export default async function DashboardPage() {
     accountName: c.account?.name ?? "—",
   }));
 
-  const showAccountColumn = accountsTotal > 1;
+  const showAccountBadge = accountsTotal > 1;
+
+  const kpis: KpiItem[] = [
+    {
+      label: "Cuentas",
+      value: accountsTotal === 0 ? "0" : `${accountsConnected}/${accountsTotal}`,
+      hint: accountsTotal === 0 ? "Conecta tu primer número" : "conectadas",
+      href: "/whatsapp/cuentas",
+    },
+    {
+      label: "Chats activos",
+      value: String(chatsTotal),
+      delta: unreadCount > 0 ? `${unreadCount} sin leer` : undefined,
+      deltaTone: unreadCount > 0 ? "danger" : "neutral",
+      hint: "conversaciones",
+      href: "/whatsapp/chat",
+    },
+    {
+      label: "Bots IA",
+      value: botsTotal === 0 ? "0" : `${botsActive}/${botsTotal}`,
+      hint: "activos",
+      href: "/whatsapp/bots",
+    },
+    {
+      label: "Campañas",
+      value: campaignsTotal === 0 ? "0" : `${campaignsCompleted}/${campaignsTotal}`,
+      hint: "completadas",
+      href: "/whatsapp/campanas",
+    },
+  ];
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Panel" description="Resumen de tu actividad en WhatsApp" />
+    <div className="space-y-10">
+      <div className="animate-fade-in-up">
+        <PageHeader title="Panel" description="Resumen de tu actividad en WhatsApp" />
+      </div>
 
-      <BentoGrid>
-        <StatCard
-          label="Cuentas"
-          value={accountsTotal === 0 ? "0" : `${accountsConnected}/${accountsTotal}`}
-          icon={Phone}
-          tone="accent"
-          sublabel={accountsTotal === 0 ? "Conecta tu primer número" : "conectadas"}
-          href="/whatsapp/cuentas"
-        />
-        <StatCard
-          label="Chats activos"
-          value={String(chatsTotal)}
-          icon={MessageCircle}
-          tone="info"
-          sublabel={unreadCount > 0 ? `${unreadCount} sin leer` : "conversaciones"}
-          href="/whatsapp/chat"
-        />
-        <StatCard
-          label="Bots IA"
-          value={botsTotal === 0 ? "0" : `${botsActive}/${botsTotal}`}
-          icon={Bot}
-          tone="success"
-          sublabel="activos"
-          href="/whatsapp/bots"
-        />
-        <StatCard
-          label="Campañas"
-          value={campaignsTotal === 0 ? "0" : `${campaignsCompleted}/${campaignsTotal}`}
-          icon={Megaphone}
-          tone="warning"
-          sublabel="completadas"
-          href="/whatsapp/campanas"
-        />
+      <div className="animate-fade-in-up animation-delay-100">
+        <KpiStrip items={kpis} />
+      </div>
 
-        <BentoTile span={{ sm: 2, lg: 2 }} padding="none">
-            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border">
-              <div className="flex items-center gap-2">
-                <MessageCircle size={16} className="text-accent" />
-                <CardTitle>Chats recientes</CardTitle>
-              </div>
-              {chatsTotal > 0 && (
-                <Link
-                  href="/whatsapp/chat"
-                  className="inline-flex items-center gap-1 text-xs text-accent hover:underline underline-offset-2"
-                >
-                  Ver bandeja <ArrowRight size={12} />
-                </Link>
-              )}
-            </div>
+      <Workbench>
+        <WorkbenchMain>
+          <section className="animate-fade-in-up animation-delay-200">
+            <SectionHeader
+              eyebrow="Actividad"
+              title="Chats recientes"
+              action={
+                chatsTotal > 0 ? (
+                  <Link
+                    href="/whatsapp/chat"
+                    className="inline-flex items-center gap-1 text-xs text-accent hover:underline underline-offset-2"
+                  >
+                    Ver bandeja <ArrowRight size={12} />
+                  </Link>
+                ) : undefined
+              }
+            />
 
             {chats.length === 0 ? (
-              <div className="px-5 py-8 text-center">
+              <div className="py-10 text-center">
                 <p className="text-sm text-muted-darker">No hay conversaciones aún.</p>
                 <p className="text-xs text-muted mt-1">
                   Conecta un número de WhatsApp para empezar a recibir mensajes.
                 </p>
               </div>
             ) : (
-              <div className="hidden sm:block overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-surface">
-                      <th className="px-5 py-2.5 text-left text-xs font-medium text-muted-darker uppercase tracking-wider">Contacto</th>
-                      <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-darker uppercase tracking-wider">Último mensaje</th>
-                      {showAccountColumn && (
-                        <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-darker uppercase tracking-wider">Cuenta</th>
-                      )}
-                      <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-darker uppercase tracking-wider">Hora</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {chats.map((chat) => (
-                      <tr key={chat.id} className="hover:bg-surface-light/40 transition-colors">
-                        <td className="px-5 py-3">
-                          <Link
-                            href={`/whatsapp/chat/${chat.accountId}/${chat.id}`}
-                            className="font-medium text-sm hover:text-accent transition-colors"
-                          >
-                            {chat.name}
-                          </Link>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-muted-darker max-w-[200px] truncate">
-                          {chat.lastMessage ?? "—"}
-                        </td>
-                        {showAccountColumn && (
-                          <td className="px-4 py-3">
-                            <Badge tone="neutral" size="sm">{chat.accountName}</Badge>
-                          </td>
-                        )}
-                        <td className="px-4 py-3 text-xs text-muted-darker text-right">
-                          {formatTime(chat.lastMessageAt)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {chats.length > 0 && (
-              <div className="sm:hidden divide-y divide-border">
+              <div className="mt-3 divide-y divide-border">
                 {chats.map((chat) => (
                   <Link
                     key={chat.id}
                     href={`/whatsapp/chat/${chat.accountId}/${chat.id}`}
-                    className="block px-5 py-4 hover:bg-surface-light/40 transition-colors"
+                    className="flex items-center gap-3 py-3 transition-colors hover:bg-surface/60"
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-sm truncate">{chat.name}</p>
-                        <p className="text-xs text-muted-darker truncate mt-0.5">
-                          {chat.lastMessage ?? "—"}
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
-                        <span className="text-[10px] text-muted-darker">
-                          {formatTime(chat.lastMessageAt)}
-                        </span>
-                        {showAccountColumn && (
-                          <Badge tone="neutral" size="sm">{chat.accountName}</Badge>
-                        )}
-                      </div>
+                    <EntityAvatar id={chat.accountId} name={chat.name} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{chat.name}</p>
+                      <p className="truncate text-xs text-muted-darker">{chat.lastMessage ?? "—"}</p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <span className="font-mono text-[11px] text-muted-darker">
+                        {formatTime(chat.lastMessageAt)}
+                      </span>
+                      {showAccountBadge && (
+                        <Badge tone="neutral" size="sm">{chat.accountName}</Badge>
+                      )}
                     </div>
                   </Link>
                 ))}
               </div>
             )}
-        </BentoTile>
+          </section>
+        </WorkbenchMain>
 
-        <BentoTile span={{ sm: 2, lg: 2 }} className="gap-3">
-          <CardTitle className="mb-1">Acceso rápido</CardTitle>
+        <WorkbenchAside>
+          <section className="animate-fade-in-up animation-delay-300">
+            <SectionHeader eyebrow="Atajos" title="Acceso rápido" />
 
-          <Link
-            href="/whatsapp/cuentas?nueva=1"
-            className="flex items-center gap-3 rounded-lg border border-border bg-surface-light p-3.5 transition-all hover:border-accent/30 hover:shadow-sm"
-          >
-            <IconBox icon={Plus} size="sm" tone="accent" />
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Agregar número</p>
-              <p className="text-xs text-muted-darker truncate">Conectar cuenta WhatsApp Business</p>
+            <div className="mt-3 divide-y divide-border">
+              <Link
+                href="/whatsapp/cuentas?nueva=1"
+                className="flex items-center gap-3 py-3.5 transition-colors hover:bg-surface/60"
+              >
+                <IconBox icon={Plus} size="sm" tone="accent" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Agregar número</p>
+                  <p className="truncate text-xs text-muted-darker">Conectar cuenta WhatsApp Business</p>
+                </div>
+              </Link>
+
+              <Link
+                href="/whatsapp/chat"
+                className="flex items-center gap-3 py-3.5 transition-colors hover:bg-surface/60"
+              >
+                <IconBox icon={MessageCircle} size="sm" tone="info" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Bandeja de chats</p>
+                  <p className="truncate text-xs text-muted-darker">Ver y responder conversaciones</p>
+                </div>
+              </Link>
+
+              <Link
+                href="/configuracion"
+                className="flex items-center gap-3 py-3.5 transition-colors hover:bg-surface/60"
+              >
+                <IconBox icon={Settings} size="sm" tone="accent" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Configuración</p>
+                  <p className="truncate text-xs text-muted-darker">Administrar perfil y ajustes IA</p>
+                </div>
+              </Link>
             </div>
-          </Link>
-
-          <Link
-            href="/whatsapp/chat"
-            className="flex items-center gap-3 rounded-lg border border-border bg-surface-light p-3.5 transition-all hover:border-accent/30 hover:shadow-sm"
-          >
-            <IconBox icon={MessageCircle} size="sm" tone="info" />
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Bandeja de chats</p>
-              <p className="text-xs text-muted-darker truncate">Ver y responder conversaciones</p>
-            </div>
-          </Link>
-
-          <Link
-            href="/configuracion"
-            className="flex items-center gap-3 rounded-lg border border-border bg-surface-light p-3.5 transition-all hover:border-accent/30 hover:shadow-sm"
-          >
-            <IconBox icon={Settings} size="sm" tone="accent" />
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Configuración</p>
-              <p className="text-xs text-muted-darker truncate">Administrar perfil y ajustes IA</p>
-            </div>
-          </Link>
-        </BentoTile>
-      </BentoGrid>
+          </section>
+        </WorkbenchAside>
+      </Workbench>
     </div>
   );
 }

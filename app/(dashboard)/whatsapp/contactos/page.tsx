@@ -3,13 +3,13 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Search, RefreshCw, Contact as ContactIcon } from "lucide-react";
-import { Card } from "@/app/components/ui/card";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { PageHeader } from "@/app/components/ui/page-header";
-import { TileGrid } from "@/app/components/ui/tile-grid";
+import { EntityList, EntityRow } from "@/app/components/ui/entity-list";
+import { EntityAvatar } from "@/app/components/ui/avatar";
 import { Pagination } from "@/app/components/ui/pagination";
 import { useToast } from "@/app/components/ui/toast";
 import { ContactDrawer } from "@/app/components/whatsapp/contact-drawer";
@@ -125,8 +125,8 @@ export default function ContactosPage() {
         }
       />
 
-      <Card>
-        <div className="flex flex-col sm:flex-row gap-3 mb-4">
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row gap-3">
           <Input
             icon={Search}
             value={searchInput}
@@ -161,65 +161,63 @@ export default function ContactosPage() {
           </Select>
         </div>
 
-        <TileGrid
+        <EntityList
           rows={contacts}
           rowKey={(c) => c.id}
           loading={loading}
           error={fetchError}
           onRetry={fetchContacts}
           onRowClick={(c) => setSelectedId(c.id)}
-          columns="3"
           emptyIcon={ContactIcon}
           emptyTitle="Sin contactos"
           emptyDescription="Los contactos se crean automáticamente cuando recibes un mensaje de WhatsApp."
-          renderTile={(contact) => {
+          renderRow={(contact) => {
             const badge = LEAD_STATUS_BADGE[contact.leadStatus] ?? { label: contact.leadStatus, tone: "neutral" as const };
             const account = accounts.find((a) => a.id === contact.accountId);
+            const name = contact.name ?? contact.remoteJid;
             return (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-foreground text-sm truncate">{contact.name ?? contact.remoteJid}</span>
-                  <Badge tone={badge.tone} size="sm">{badge.label}</Badge>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-darker">
-                  <span>{phoneFromJid(contact.remoteJid)}</span>
-                  {accounts.length > 1 && account && (
-                    <>
-                      <span>·</span>
-                      <span>{account.name}</span>
-                    </>
-                  )}
-                </div>
-                {contact.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
+              <EntityRow
+                leading={<EntityAvatar id={contact.accountId} name={name} size="sm" />}
+                title={name}
+                badges={
+                  <span className="flex shrink-0 items-center gap-1">
+                    <Badge tone={badge.tone} size="sm">{badge.label}</Badge>
                     {contact.tags.map(({ tag }) => (
-                      <Badge key={tag.id} tone="accent" size="sm">{tag.name}</Badge>
+                      <Badge key={tag.id} tone="accent" size="sm" className="hidden md:inline-flex">{tag.name}</Badge>
                     ))}
-                  </div>
-                )}
-                <div className="flex items-center justify-between text-xs text-muted-darker pt-1">
-                  <span>{contact._count.notes} nota(s)</span>
-                  <span>
-                    {contact.chat?.lastMessageAt
-                      ? new Date(contact.chat.lastMessageAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
-                      : "—"}
                   </span>
-                </div>
-                {contact.chat && (
-                  <Link
-                    href={`/whatsapp/chat/${contact.accountId}/${contact.chat.id}`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="inline-block text-xs text-accent hover:underline"
-                  >
-                    Ver chat
-                  </Link>
-                )}
-              </div>
+                }
+                subtitle={
+                  <>
+                    <span className="font-mono">{phoneFromJid(contact.remoteJid)}</span>
+                    {accounts.length > 1 && account && <> · {account.name}</>}
+                    {contact._count.notes > 0 && <> · {contact._count.notes} nota(s)</>}
+                  </>
+                }
+                meta={
+                  <>
+                    <span className="font-mono">
+                      {contact.chat?.lastMessageAt
+                        ? new Date(contact.chat.lastMessageAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+                        : "—"}
+                    </span>
+                    {contact.chat && (
+                      <Link
+                        href={`/whatsapp/chat/${contact.accountId}/${contact.chat.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-accent hover:underline"
+                      >
+                        Ver chat
+                      </Link>
+                    )}
+                  </>
+                }
+              />
             );
           }}
         />
         {total > PAGE_SIZE && (
-          <div className="flex justify-center mt-4 pt-4 border-t border-border">
+          <div className="flex justify-center pt-2">
             <Pagination
               currentPage={page}
               totalPages={Math.ceil(total / PAGE_SIZE)}
@@ -227,7 +225,7 @@ export default function ContactosPage() {
             />
           </div>
         )}
-      </Card>
+      </div>
 
       {selectedId && (
         <ContactDrawer

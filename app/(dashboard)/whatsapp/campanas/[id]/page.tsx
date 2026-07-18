@@ -142,7 +142,7 @@ export default function CampaignDetailPage() {
     ? Math.round(((campaign.sentCount) / campaign.recipientCount) * 100) : 0;
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-3xl mx-auto">
       <Link href="/whatsapp/campanas" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground transition-colors mb-3">
         <ArrowLeft size={14} /> Volver a campañas
       </Link>

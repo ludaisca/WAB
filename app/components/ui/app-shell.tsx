@@ -64,24 +64,18 @@ function SidebarContent({
 
     return (
       <li key={item.href} className="relative w-full">
-        {active && (
-          <span
-            className={cn(
-              "absolute left-0 top-2 bottom-2 w-1 rounded-r-md",
-              accent === "accent" ? "bg-accent" : "bg-danger"
-            )}
-          />
-        )}
         <Link
           href={item.href}
           onClick={onClose}
           title={collapsed ? item.label : undefined}
           className={cn(
-            "flex items-center rounded-lg text-sm font-medium transition-all duration-150",
+            "flex items-center text-sm font-medium transition-all duration-150",
             collapsed ? "justify-center w-10 h-10 mx-auto" : "gap-3 px-3 py-2.5",
+            // El item activo lleva la esquina de burbuja — firma del rediseño;
+            // el resto conserva el radio estándar.
             active
-              ? activeClass(accent ?? "accent")
-              : "text-muted hover:bg-surface-light hover:text-foreground"
+              ? cn("rounded-bubble", activeClass(accent ?? "accent"))
+              : "rounded-lg text-muted hover:bg-surface-light hover:text-foreground"
           )}
         >
           <Icon size={18} className="shrink-0" />
@@ -207,7 +201,7 @@ export function AppShell({
     <div className={cn("flex bg-background", fullBleed ? "h-svh" : "min-h-svh")}>
       <aside
         className={cn(
-          "hidden md:flex border-r border-border bg-surface flex-col shrink-0 transition-all duration-200",
+          "hidden md:flex border-r border-border/60 bg-background flex-col shrink-0 transition-all duration-200",
           collapsed ? "w-16" : "w-60 lg:w-64"
         )}
       >
@@ -233,7 +227,11 @@ export function AppShell({
       </Drawer>
 
       <div className="flex flex-1 flex-col min-w-0">
-        <header className="flex items-center gap-3 border-b border-border px-4 py-3 md:px-6 shrink-0 bg-surface">
+        {/* relative z-40: el backdrop-blur crea un stacking context que aplana
+            el header (y sus dropdowns z-50) en una capa atómica — sin elevar el
+            header completo, el contenido de <main> (posterior en el DOM) pinta
+            encima de los menús de usuario/notificaciones y les roba los clicks. */}
+        <header className="relative z-40 flex items-center gap-3 px-4 py-3 md:px-6 shrink-0 bg-background/80 backdrop-blur-sm">
           <button
             onClick={() => setDrawerOpen(true)}
             className="md:hidden text-foreground hover:text-muted transition-colors"
@@ -263,7 +261,11 @@ export function AppShell({
             </Link>
           </div>
 
-          <div className="hidden md:block flex-1" />
+          {/* Breadcrumb integrado al header (antes vivía dentro de <main>) —
+              en fullBleed nunca se renderizaba y se mantiene así. */}
+          <div className="hidden md:flex flex-1 items-center">
+            {!fullBleed && <Breadcrumb />}
+          </div>
 
           <div className="flex items-center gap-1.5">
             <ThemeToggle />
@@ -278,7 +280,6 @@ export function AppShell({
             fullBleed ? "flex flex-col min-h-0 overflow-hidden" : "p-4 md:p-6 lg:p-8"
           )}
         >
-          {!fullBleed && <Breadcrumb />}
           {children}
         </main>
       </div>

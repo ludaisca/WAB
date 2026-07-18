@@ -3,11 +3,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Megaphone, Trash2, Eye, Workflow, ExternalLink } from "lucide-react";
+import { Plus, Megaphone, Trash2, Workflow, ExternalLink } from "lucide-react";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Switch } from "@/app/components/ui/switch";
-import { TileGrid } from "@/app/components/ui/tile-grid";
+import { EntityList, EntityRow } from "@/app/components/ui/entity-list";
+import { EntityAvatar } from "@/app/components/ui/avatar";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { PageHeader } from "@/app/components/ui/page-header";
 import { useToast } from "@/app/components/ui/toast";
@@ -128,60 +129,71 @@ function CampaignsTab() {
         <Button href="/whatsapp/campanas/nueva" icon={Plus} size="sm">Nueva campaña</Button>
       </div>
 
-      <TileGrid
+      <EntityList
         rows={campaigns}
         rowKey={(c) => c.id}
         loading={loading}
-        columns="2"
         emptyIcon={Megaphone}
         emptyTitle="Sin campañas"
         emptyDescription="Crea tu primera campaña de WhatsApp para enviar mensajes a múltiples destinatarios."
-        renderTile={(c) => {
+        onRowClick={(c) => router.push(`/whatsapp/campanas/${c.id}`)}
+        renderRow={(c) => {
           const badge = STATUS_BADGE[c.status] ?? { label: c.status, tone: "neutral" as const };
           const progress = c.recipientCount > 0
             ? Math.round((c.sentCount / c.recipientCount) * 100)
             : 0;
           return (
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <Link href={`/whatsapp/campanas/${c.id}`} className="font-semibold text-sm text-accent hover:underline truncate">
+            <>
+              <EntityRow
+                leading={<EntityAvatar id={c.waAccount.id} name={c.name} size="sm" />}
+                title={
+                  <Link
+                    href={`/whatsapp/campanas/${c.id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="hover:text-accent transition-colors"
+                  >
                     {c.name}
                   </Link>
-                  <Badge tone={badge.tone} size="sm">{badge.label}</Badge>
-                </div>
-                <p className="text-xs text-muted-darker mt-1">
-                  {c.waAccount.name} · Plantilla: {c.waTemplate.name}
-                </p>
-                {c.status !== "DRAFT" && (
-                  <div className="mt-3 space-y-1.5">
-                    <div className="flex items-center gap-2 text-xs text-muted-darker">
-                      <div className="flex-1 bg-surface rounded-full h-1.5 overflow-hidden">
-                        <div
-                          className="h-full bg-accent rounded-full transition-all"
+                }
+                badges={<Badge tone={badge.tone} size="sm">{badge.label}</Badge>}
+                subtitle={
+                  <>
+                    {c.waAccount.name} · Plantilla: {c.waTemplate.name}
+                    {c.status !== "DRAFT" && (
+                      <>
+                        {" "}· Env: {c.sentCount} · Entr: {c.deliveredCount} · Leídos: {c.readCount}
+                        {c.failedCount > 0 && <span className="text-danger"> · Fallos: {c.failedCount}</span>}
+                      </>
+                    )}
+                  </>
+                }
+                meta={
+                  c.status !== "DRAFT" ? (
+                    <span className="flex items-center gap-2">
+                      <span className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-light">
+                        <span
+                          className="block h-full rounded-full bg-accent transition-all"
                           style={{ width: `${progress}%` }}
                         />
-                      </div>
-                      <span>{progress}%</span>
-                    </div>
-                    <div className="flex gap-3 text-xs text-muted-darker">
-                      <span>Env: {c.sentCount}</span>
-                      <span>Entr: {c.deliveredCount}</span>
-                      <span>Leídos: {c.readCount}</span>
-                      {c.failedCount > 0 && <span className="text-danger">Fallos: {c.failedCount}</span>}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <Button variant="secondary" size="sm" icon={Eye} onClick={() => router.push(`/whatsapp/campanas/${c.id}`)}>
-                  Detalle
-                </Button>
-                {c.status === "DRAFT" && (
-                  <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setDeleteId(c.id)} className="text-muted-darker hover:text-danger" />
-                )}
-              </div>
-            </div>
+                      </span>
+                      <span className="font-mono">{progress}%</span>
+                    </span>
+                  ) : undefined
+                }
+              />
+              {c.status === "DRAFT" && (
+                <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={Trash2}
+                    onClick={() => setDeleteId(c.id)}
+                    className="text-muted-darker hover:text-danger"
+                    title="Eliminar borrador"
+                  />
+                </span>
+              )}
+            </>
           );
         }}
       />
@@ -273,48 +285,57 @@ function AutomationTab() {
         </Button>
       </div>
 
-      <TileGrid
+      <EntityList
         rows={sources}
         rowKey={(s) => s.id}
         loading={loading}
-        columns="2"
         emptyIcon={Workflow}
         emptyTitle="Sin fuentes de leads"
         emptyDescription="Conecta una hoja de Google Sheets para disparar plantillas automáticamente a leads nuevos."
         onRowClick={(s) => router.push(`/whatsapp/campanas/automatizacion/${s.id}`)}
-        renderTile={(s) => (
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
+        renderRow={(s) => (
+          <>
+            <EntityRow
+              leading={<EntityAvatar id={s.waAccount.id} name={s.name} size="sm" />}
+              title={
                 <Link
                   href={`/whatsapp/campanas/automatizacion/${s.id}`}
                   onClick={(e) => e.stopPropagation()}
-                  className="font-semibold text-sm text-accent hover:underline truncate"
+                  className="hover:text-accent transition-colors"
                 >
                   {s.name}
                 </Link>
-                <Badge tone={s.enabled ? "success" : "neutral"} size="sm">{s.enabled ? "Activa" : "Pausada"}</Badge>
-              </div>
-              <p className="text-xs text-muted-darker mt-1">
-                {s.waAccount.name} · Plantilla: {s.waTemplate.name}
-              </p>
-              <a
-                href={`https://docs.google.com/spreadsheets/d/${s.spreadsheetId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="text-xs text-muted-darker hover:text-accent inline-flex items-center gap-1 mt-1"
-              >
-                {s.sheetName} <ExternalLink size={11} />
-              </a>
-              <div className="mt-2 text-xs text-muted-darker">
-                {s.lastRunAt
-                  ? `Última corrida: ${new Date(s.lastRunAt).toLocaleString("es-MX")} · ${s.lastImportedCount} enviado(s)`
-                  : "Aún no ha corrido"}
-              </div>
-              {s.lastError && <p className="text-xs text-danger mt-1 truncate">{s.lastError}</p>}
-            </div>
-            <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+              }
+              badges={
+                <span className="flex shrink-0 items-center gap-1">
+                  <Badge tone={s.enabled ? "success" : "neutral"} size="sm">{s.enabled ? "Activa" : "Pausada"}</Badge>
+                  {s.lastError && <Badge tone="danger" size="sm" className="hidden md:inline-flex">Error</Badge>}
+                </span>
+              }
+              subtitle={
+                <>
+                  {s.waAccount.name} · Plantilla: {s.waTemplate.name} ·{" "}
+                  <a
+                    href={`https://docs.google.com/spreadsheets/d/${s.spreadsheetId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1 hover:text-accent"
+                  >
+                    {s.sheetName} <ExternalLink size={11} />
+                  </a>
+                  {s.lastError && <span className="text-danger"> · {s.lastError}</span>}
+                </>
+              }
+              meta={
+                <span className="font-mono">
+                  {s.lastRunAt
+                    ? `${new Date(s.lastRunAt).toLocaleString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} · ${s.lastImportedCount} enviado(s)`
+                    : "Aún no ha corrido"}
+                </span>
+              }
+            />
+            <span className="flex shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()}>
               <Switch
                 checked={s.enabled}
                 onCheckedChange={() => handleToggle(s)}
@@ -326,9 +347,10 @@ function AutomationTab() {
                 icon={Trash2}
                 onClick={() => setDeleteId(s.id)}
                 className="text-muted-darker hover:text-danger"
+                title="Eliminar fuente"
               />
-            </div>
-          </div>
+            </span>
+          </>
         )}
       />
 

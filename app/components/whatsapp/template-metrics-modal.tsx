@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTheme } from "next-themes";
-import { Send, CheckCheck, Eye, MousePointerClick, CalendarRange } from "lucide-react";
+import { CalendarRange } from "lucide-react";
 import { Modal } from "@/app/components/ui/modal";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
@@ -10,7 +10,7 @@ import { Spinner } from "@/app/components/ui/spinner";
 import { Banner } from "@/app/components/ui/banner";
 import { DatePicker } from "@/app/components/ui/date-picker";
 import { Button } from "@/app/components/ui/button";
-import { StatCard } from "@/app/components/ui/stat-card";
+import { KpiStrip } from "@/app/components/ui/kpi-strip";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
 import { useHasMounted } from "@/app/hooks/use-has-mounted";
@@ -356,12 +356,15 @@ export function TemplateMetricsModal({ templateId, onClose }: { templateId: stri
             </Banner>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard icon={Send} tone="info" label="Enviados" value={totals.sent} />
-            <StatCard icon={CheckCheck} tone="accent" label="Entregados" value={totals.delivered} sublabel={`${pct(totals.delivered, totals.sent)} de enviados`} />
-            <StatCard icon={Eye} tone="success" label="Leídos" value={totals.read} sublabel={`${pct(totals.read, totals.delivered)} de entregados`} />
-            <StatCard icon={MousePointerClick} tone="warning" label="Clics" value={totals.clicked} sublabel={`${pct(totals.clicked, totals.read)} de leídos`} />
-          </div>
+          <KpiStrip
+            size="compact"
+            items={[
+              { label: "Enviados", value: String(totals.sent) },
+              { label: "Entregados", value: String(totals.delivered), hint: `${pct(totals.delivered, totals.sent)} de enviados` },
+              { label: "Leídos", value: String(totals.read), hint: `${pct(totals.read, totals.delivered)} de entregados` },
+              { label: "Clics", value: String(totals.clicked), hint: `${pct(totals.clicked, totals.read)} de leídos` },
+            ]}
+          />
 
           <Card>
             <CardHeader>

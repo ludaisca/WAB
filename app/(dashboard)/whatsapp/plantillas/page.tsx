@@ -10,7 +10,8 @@ import { Badge } from "@/app/components/ui/badge";
 import { Spinner } from "@/app/components/ui/spinner";
 import { EmptyState } from "@/app/components/ui/empty-state";
 import { PageHeader } from "@/app/components/ui/page-header";
-import { TileGrid } from "@/app/components/ui/tile-grid";
+import { EntityList, EntityRow } from "@/app/components/ui/entity-list";
+import { EntityAvatar } from "@/app/components/ui/avatar";
 import { useToast } from "@/app/components/ui/toast";
 import { TemplateFormModal } from "./_form";
 import { TemplateMetricsModal } from "@/app/components/whatsapp/template-metrics-modal";
@@ -170,35 +171,33 @@ function TemplatesContent() {
           </CardBody>
         </Card>
       ) : (
-        <TileGrid
+        <EntityList
           rows={templates}
           rowKey={(t) => t.id}
           loading={loading}
           error={fetchError}
           onRetry={fetchTemplates}
-          columns="3"
           emptyIcon={MessageSquareText}
           emptyTitle="Sin plantillas"
           emptyDescription="No hay plantillas en esta cuenta. Sincroniza desde Meta o crea una nueva."
           onRowClick={(t) => setMetricsTemplateId(t.id)}
-          renderTile={(t) => {
+          renderRow={(t) => {
             const badge = STATUS_BADGE[t.status] ?? { label: t.status, tone: "neutral" as const };
             return (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-sm truncate">{t.name}</span>
-                  <Badge tone={badge.tone} size="sm">{badge.label}</Badge>
-                </div>
-                <div className="flex flex-wrap gap-2 text-xs text-muted-darker">
-                  <span>{t.language}</span>
-                  <span>·</span>
-                  <span>{t.category}</span>
-                </div>
-                <p className="text-xs text-muted-darker">
-                  Sincronizada: {new Date(t.syncedAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
-                </p>
-                <p className="text-xs text-accent">Ver métricas →</p>
-              </div>
+              <EntityRow
+                leading={<EntityAvatar id={t.waAccountId} name={t.name} size="sm" />}
+                title={t.name}
+                badges={<Badge tone={badge.tone} size="sm">{badge.label}</Badge>}
+                subtitle={<>{t.language} · {t.category}</>}
+                meta={
+                  <>
+                    <span className="font-mono">
+                      {new Date(t.syncedAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    <span className="text-accent">Ver métricas →</span>
+                  </>
+                }
+              />
             );
           }}
         />

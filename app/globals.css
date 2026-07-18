@@ -4,16 +4,17 @@
    BASE TOKENS — dark (default)
    ───────────────────────────────────────────────── */
 :root {
-  /* Surfaces */
-  --background:    #101613;
-  --foreground:    #eef0f5;
-  --surface:       #1a2420;
-  --surface-light: #22302a;
-  --border:        #2c3b33;
+  /* Surfaces — warm charcoal (hue tierra, no verde: el verde vive solo en
+     --accent; los neutros cálidos hacen el fondo "de madera", no "de terminal") */
+  --background:    #14120f;
+  --foreground:    #f2efe9;
+  --surface:       #1c1915;
+  --surface-light: #26221b;
+  --border:        #342e24;
 
   /* Text */
-  --muted:         #9aa0ae;
-  --muted-darker:  #6b7280;
+  --muted:         #a69f92;
+  --muted-darker:  #7c7568;
 
   /* Brand — WhatsApp green, refined */
   --accent:        #22C55E;
@@ -52,6 +53,12 @@
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
 
+  /* Hue por entidad (cuentas WhatsApp) — lightness/chroma fijos por tema, solo
+     varía el hue. La paleta esquiva ~150° (accent verde) y ~180° (success teal)
+     para que el color de cuenta nunca se confunda con estados semánticos.
+     Solo asignar vía HUE_CLASS de lib/…/hue.ts — nunca interpolar "hue-N". */
+  --entity: oklch(0.78 0.11 60); /* fallback si falta la clase hue-N */
+
   /* Durations */
   --dur-fast: 120ms;
   --dur:      200ms;
@@ -66,12 +73,12 @@
   color-scheme: light;
 
   --background:    #faf9f5;
-  --foreground:    #16171c;
-  --surface:       #f0f3ef;
-  --surface-light: #e6ebe3;
-  --border:        #d9e0d5;
-  --muted:         #5b6270;
-  --muted-darker:  #8b93a3;
+  --foreground:    #1b1813;
+  --surface:       #f3f0e9;
+  --surface-light: #ebe6db;
+  --border:        #ded7c8;
+  --muted:         #5d574b;
+  --muted-darker:  #8f8878;
 
   --accent:        #15803D;
   --accent-hover:  #14532D;
@@ -99,6 +106,31 @@
 
   --ring:       var(--accent);
   --ring-offset: var(--background);
+}
+
+/* ─────────────────────────────────────────────────
+   HUE POR ENTIDAD — 8 clases, dark (default) + light
+   ───────────────────────────────────────────────── */
+.hue-0 { --entity: oklch(0.78 0.11 25);  }
+.hue-1 { --entity: oklch(0.80 0.11 60);  }
+.hue-2 { --entity: oklch(0.82 0.10 95);  }
+.hue-3 { --entity: oklch(0.78 0.10 200); }
+.hue-4 { --entity: oklch(0.76 0.11 240); }
+.hue-5 { --entity: oklch(0.76 0.11 280); }
+.hue-6 { --entity: oklch(0.78 0.11 320); }
+.hue-7 { --entity: oklch(0.77 0.12 350); }
+
+.light .hue-0 { --entity: oklch(0.50 0.13 25);  }
+.light .hue-1 { --entity: oklch(0.52 0.12 60);  }
+.light .hue-2 { --entity: oklch(0.53 0.11 95);  }
+.light .hue-3 { --entity: oklch(0.50 0.10 200); }
+.light .hue-4 { --entity: oklch(0.48 0.12 240); }
+.light .hue-5 { --entity: oklch(0.48 0.12 280); }
+.light .hue-6 { --entity: oklch(0.50 0.12 320); }
+.light .hue-7 { --entity: oklch(0.50 0.13 350); }
+
+.hue-0, .hue-1, .hue-2, .hue-3, .hue-4, .hue-5, .hue-6, .hue-7 {
+  --entity-bg: color-mix(in oklab, var(--entity) 14%, transparent);
 }
 
 /* ─────────────────────────────────────────────────
@@ -130,6 +162,9 @@
   --color-info-bg:        var(--info-bg);
   --color-info-border:    var(--info-border);
 
+  --color-entity:    var(--entity);
+  --color-entity-bg: var(--entity-bg, color-mix(in oklab, var(--entity) 14%, transparent));
+
   --shadow-sm: var(--shadow-sm);
   --shadow-md: var(--shadow-md);
   --shadow-lg: var(--shadow-lg);
@@ -137,6 +172,28 @@
   --font-sans:    var(--font-body), system-ui, sans-serif;
   --font-display: var(--font-display), Georgia, serif;
   --font-mono:    var(--font-data), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Escala tipográfica del rediseño — text-hero (números protagonistas en
+     Fraunces/Plex), text-page-title (h1 de página), text-eyebrow (etiquetas
+     uppercase de sección). */
+  --text-hero: 2.75rem;
+  --text-hero--line-height: 1.05;
+  --text-page-title: 1.875rem;
+  --text-page-title--line-height: 1.2;
+  --text-eyebrow: 0.6875rem;
+  --text-eyebrow--line-height: 1rem;
+}
+
+/* ─────────────────────────────────────────────────
+   ESQUINA DE BURBUJA — firma visual del rediseño.
+   Solo en elementos de identidad (avatares, botón primario, item activo del
+   sidebar, burbujas propias, popovers) — no propagar a cualquier superficie.
+   ───────────────────────────────────────────────── */
+@utility rounded-bubble {
+  border-radius: var(--radius-xl) var(--radius-xl) var(--radius-xl) var(--radius-sm);
+}
+@utility rounded-bubble-br {
+  border-radius: var(--radius-xl) var(--radius-xl) var(--radius-sm) var(--radius-xl);
 }
 
 /* ─────────────────────────────────────────────────
@@ -238,6 +295,13 @@ body {
   to   { background-position:  200% center; }
 }
 
+/* Punto "en vivo" — actividad reciente (presencia en el inbox, última
+   actividad). El bloque prefers-reduced-motion de arriba lo neutraliza. */
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.55; transform: scale(0.82); }
+}
+
 .animate-fade-in-up  { animation: fade-in-up  0.6s ease-out both; }
 .animate-fade-in     { animation: fade-in     0.6s ease-out both; }
 .animate-fade-out    { animation: fade-out    var(--dur) var(--ease) both; }
@@ -249,6 +313,7 @@ body {
 .animate-slide-out-right { animation: slide-out-right var(--dur-slow) var(--ease) both; }
 .animate-slide-up    { animation: slide-up    var(--dur) var(--ease) both; }
 .animate-slide-down  { animation: slide-down  var(--dur) var(--ease) both; }
+.animate-pulse-live  { animation: pulse-live  2.4s var(--ease) infinite; }
 
 .animation-delay-100 { animation-delay: 100ms; }
 .animation-delay-200 { animation-delay: 200ms; }

@@ -257,7 +257,7 @@ export default function CuentaDetailPage() {
   const badge = STATUS_BADGE[account.status] ?? { label: account.status, tone: "neutral" as const };
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-2xl mx-auto">
       <div>
         <Link href="/whatsapp/cuentas" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground transition-colors mb-3">
           <ArrowLeft size={14} />

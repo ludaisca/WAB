@@ -2,28 +2,15 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import {
-  BarChart3,
-  TrendingUp,
-  MessageCircle,
-  Bot,
-  Phone,
-  DollarSign,
-  Zap,
-  UserCheck,
-  Mail,
-  Send,
-  Megaphone,
-  Target,
-} from "lucide-react";
-import { CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
-import { BentoGrid, BentoTile } from "@/app/components/ui/bento-grid";
-import { StatCard } from "@/app/components/ui/stat-card";
+import { Bot, Megaphone, UserCheck, Zap } from "lucide-react";
 import { Badge } from "@/app/components/ui/badge";
 import { PageHeader } from "@/app/components/ui/page-header";
+import { KpiStrip, type KpiItem } from "@/app/components/ui/kpi-strip";
+import { SectionHeader } from "@/app/components/ui/section-header";
+import { Workbench, WorkbenchMain, WorkbenchAside } from "@/app/components/ui/workbench";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import type { Estadisticas } from "@/lib/estadisticas/get-stats";
-import { LABEL_TEXT } from "@/lib/whatsapp/export-columns";
+import { CAMPAIGN_ORIGIN_LABEL, LABEL_TEXT } from "@/lib/whatsapp/export-columns";
 
 const BOT_STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" | "danger" | "neutral" }> = {
   ACTIVE: { label: "Activo", tone: "success" },
@@ -37,11 +24,6 @@ const QUALIFIED_LABEL_BADGE: Record<string, "danger" | "success" | "info" | "neu
   interesado: "info",
   frio: "neutral",
   descartado: "neutral",
-};
-
-const CAMPAIGN_ORIGIN_LABEL: Record<string, string> = {
-  manual: "Campaña masiva",
-  automatizacion: "Automatización",
 };
 
 const CAMPAIGN_ORIGIN_BADGE: Record<string, "accent" | "info"> = {
@@ -84,7 +66,7 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
       key: "interactions",
       header: "Interacciones",
       headerClassName: "text-right",
-      cellClassName: "text-right",
+      cellClassName: "text-right font-mono text-xs",
       render: (b) => b.interactions,
     },
     {
@@ -102,21 +84,21 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
       key: "resolvedCount",
       header: "Resueltos",
       headerClassName: "text-right",
-      cellClassName: "text-right",
+      cellClassName: "text-right font-mono text-xs",
       render: (a) => a.resolvedCount,
     },
     {
       key: "avgFirstResponseMinutes",
       header: "1ra respuesta (prom.)",
       headerClassName: "text-right",
-      cellClassName: "text-right",
+      cellClassName: "text-right font-mono text-xs",
       render: (a) => (a.avgFirstResponseMinutes != null ? `${a.avgFirstResponseMinutes} min` : "—"),
     },
     {
       key: "avgResolutionMinutes",
       header: "Resolución (prom.)",
       headerClassName: "text-right",
-      cellClassName: "text-right",
+      cellClassName: "text-right font-mono text-xs",
       render: (a) => (a.avgResolutionMinutes != null ? `${a.avgResolutionMinutes} min` : "—"),
     },
   ], []);
@@ -132,22 +114,22 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
       header: "Origen",
       render: (r) => <Badge tone={CAMPAIGN_ORIGIN_BADGE[r.origin]} size="sm">{CAMPAIGN_ORIGIN_LABEL[r.origin]}</Badge>,
     },
-    { key: "sent", header: "Enviados", headerClassName: "text-right", cellClassName: "text-right", render: (r) => r.sent, hideBelow: "md" },
-    { key: "delivered", header: "Entregados", headerClassName: "text-right", cellClassName: "text-right", render: (r) => r.delivered, hideBelow: "sm" },
-    { key: "read", header: "Leídos", headerClassName: "text-right", cellClassName: "text-right", render: (r) => r.read },
-    { key: "failed", header: "Fallidos", headerClassName: "text-right", cellClassName: "text-right", render: (r) => r.failed, hideBelow: "md" },
+    { key: "sent", header: "Enviados", headerClassName: "text-right", cellClassName: "text-right font-mono text-xs", render: (r) => r.sent, hideBelow: "md" },
+    { key: "delivered", header: "Entregados", headerClassName: "text-right", cellClassName: "text-right font-mono text-xs", render: (r) => r.delivered, hideBelow: "sm" },
+    { key: "read", header: "Leídos", headerClassName: "text-right", cellClassName: "text-right font-mono text-xs", render: (r) => r.read },
+    { key: "failed", header: "Fallidos", headerClassName: "text-right", cellClassName: "text-right font-mono text-xs", render: (r) => r.failed, hideBelow: "md" },
     {
       key: "deliveryRate",
       header: "Tasa entrega",
       headerClassName: "text-right",
-      cellClassName: "text-right",
+      cellClassName: "text-right font-mono text-xs",
       render: (r) => (r.deliveryRate != null ? `${r.deliveryRate}%` : "—"),
     },
     {
       key: "readRate",
       header: "Tasa lectura",
       headerClassName: "text-right",
-      cellClassName: "text-right",
+      cellClassName: "text-right font-mono text-xs",
       render: (r) => (r.readRate != null ? `${r.readRate}%` : "—"),
     },
   ], []);
@@ -156,40 +138,54 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
   const maxAccountChats = Math.max(...stats.accountBreakdown.map((a) => a.chats), 1);
   const maxQualifiedByCampaign = Math.max(...stats.qualifiedChatsByCampaign.map((c) => c.count), 1);
 
+  const kpis: KpiItem[] = [
+    { label: "Cuentas", value: String(stats.accounts), href: "/whatsapp/cuentas" },
+    { label: "Chats activos", value: String(stats.chats), href: "/whatsapp/chat" },
+    { label: "Mensajes", value: stats.messages.toLocaleString("es-MX"), href: "/whatsapp/chat" },
+    { label: "Bots IA", value: `${stats.activeBots}/${stats.bots}`, hint: "activos", href: "/whatsapp/bots" },
+    {
+      label: "Campañas",
+      value: `${stats.campaignsCompleted}/${stats.campaigns}`,
+      hint: "completadas",
+      href: "/whatsapp/campanas",
+    },
+  ];
+
+  const budgetPct =
+    stats.monthlyBudgetUsd != null && stats.monthlyBudgetUsd > 0
+      ? Math.min(100, (stats.monthlyCost / stats.monthlyBudgetUsd) * 100)
+      : null;
+
   return (
-    <div className="space-y-6">
-      <PageHeader title="Estadísticas" description="Métricas globales de uso de la plataforma." />
+    <div className="space-y-10">
+      <div className="animate-fade-in-up">
+        <PageHeader title="Estadísticas" description="Métricas globales de uso de la plataforma." />
+      </div>
 
-      <BentoGrid>
-        <StatCard label="Cuentas" value={String(stats.accounts)} icon={Phone} tone="accent" href="/whatsapp/cuentas" />
-        <StatCard label="Chats activos" value={String(stats.chats)} icon={MessageCircle} tone="info" href="/whatsapp/chat" />
-        <StatCard label="Mensajes" value={String(stats.messages)} icon={Mail} tone="success" href="/whatsapp/chat" />
-        <StatCard label="Bots IA" value={`${stats.activeBots}/${stats.bots}`} icon={Bot} tone="success" sublabel="activos" href="/whatsapp/bots" />
+      <div className="animate-fade-in-up animation-delay-100">
+        <KpiStrip items={kpis} />
+      </div>
 
-        <BentoTile span={{ sm: 2, lg: 2 }} rowSpan={2}>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <BarChart3 size={16} className="text-accent" />
-              <CardTitle>Mensajes diarios</CardTitle>
-            </div>
-          </CardHeader>
-          <CardBody>
+      <Workbench>
+        <WorkbenchMain>
+          <section className="animate-fade-in-up animation-delay-200">
+            <SectionHeader eyebrow="Actividad" title="Mensajes diarios" />
             {stats.dailyMessages.length === 0 ? (
-              <p className="text-sm text-muted py-4 text-center">Sin datos aún</p>
+              <p className="py-6 text-center text-sm text-muted">Sin datos aún</p>
             ) : (
-              <div className="space-y-2">
+              <div className="mt-4 space-y-2">
                 {stats.dailyMessages.map((d) => (
                   <div key={d.date} className="flex items-center gap-3">
-                    <span className="text-xs text-muted-darker w-20 shrink-0">
+                    <span className="w-20 shrink-0 font-mono text-xs text-muted-darker">
                       {new Date(d.date + "T00:00:00").toLocaleDateString("es-MX", { day: "2-digit", month: "short" })}
                     </span>
-                    <div className="flex-1 bg-surface rounded-full h-5 overflow-hidden">
+                    <div className="h-5 flex-1 overflow-hidden rounded-full bg-surface">
                       <div
-                        className="h-full bg-accent rounded-full transition-all flex items-center justify-end pr-2"
+                        className="flex h-full items-center justify-end rounded-full bg-accent pr-2 transition-all"
                         style={{ width: `${(d.count / maxCount) * 100}%`, minWidth: d.count > 0 ? "2rem" : 0 }}
                       >
                         {d.count > 0 && (
-                          <span className="text-[10px] text-on-accent font-medium">{d.count}</span>
+                          <span className="font-mono text-[10px] font-medium text-on-accent">{d.count}</span>
                         )}
                       </div>
                     </div>
@@ -197,95 +193,192 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
                 ))}
               </div>
             )}
-          </CardBody>
-        </BentoTile>
+          </section>
 
-        <StatCard
-          label="Costo estimado IA"
-          value={formatCost(stats.totalCost)}
-          icon={DollarSign}
-          tone="accent"
-        />
+          <section className="animate-fade-in-up animation-delay-300">
+            <SectionHeader eyebrow="Difusión" title="Mensajes por campaña / automatización" />
+            <div className="mt-4">
+              <Table
+                columns={campaignColumns}
+                rows={stats.campaignMessageBreakdown}
+                rowKey={(r) => `${r.origin}-${r.id}`}
+                emptyIcon={Megaphone}
+                emptyTitle="Sin envíos todavía"
+                emptyDescription="Aparecerán aquí una vez que se envíe una campaña masiva o se dispare una automatización de leads."
+                mobileCard={(r) => (
+                  <div className="w-full min-w-0 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-sm font-medium">{r.name}</span>
+                      <Badge tone={CAMPAIGN_ORIGIN_BADGE[r.origin]} size="sm">{CAMPAIGN_ORIGIN_LABEL[r.origin]}</Badge>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-darker">
+                      <span>{r.sent} enviados</span>
+                      <span>{r.delivered} entregados</span>
+                      <span>{r.read} leídos</span>
+                      {r.failed > 0 && <span className="text-danger">{r.failed} fallidos</span>}
+                    </div>
+                  </div>
+                )}
+              />
+            </div>
+          </section>
 
-        {stats.monthlyBudgetUsd != null && (
-          <BentoTile>
-            <CardBody>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs text-muted-darker">Presupuesto del mes</p>
-                <p className="text-xs font-medium">
-                  {formatCost(stats.monthlyCost)} / {formatCost(stats.monthlyBudgetUsd)}
+          <section className="animate-fade-in-up animation-delay-300">
+            <SectionHeader eyebrow="Automatización" title="Uso por bot" />
+            <div className="mt-4">
+              <Table
+                columns={botColumns}
+                rows={stats.botBreakdown}
+                rowKey={(b) => b.id}
+                emptyIcon={Bot}
+                emptyTitle="Sin bots todavía"
+                mobileCard={(b) => {
+                  const status = botColumns.find((c) => c.key === "status")!;
+                  const cost = botColumns.find((c) => c.key === "totalCost")!;
+                  return (
+                    <div className="w-full min-w-0 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <Link href={`/whatsapp/bots/${b.id}`} className="truncate text-sm font-medium hover:text-accent transition-colors">
+                          {b.name}
+                        </Link>
+                        {status.render(b)}
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-xs text-muted-darker">
+                        <span>{b.interactions} interacciones</span>
+                        {cost.render(b)}
+                      </div>
+                    </div>
+                  );
+                }}
+              />
+            </div>
+          </section>
+
+          <section className="animate-fade-in-up animation-delay-400">
+            <SectionHeader eyebrow="Equipo" title="Rendimiento por agente" />
+            <div className="mt-4">
+              <Table
+                columns={agentColumns}
+                rows={stats.agentPerformance}
+                rowKey={(a) => a.userId}
+                emptyIcon={UserCheck}
+                emptyTitle="Sin datos todavía"
+                emptyDescription="Aparecerán agentes aquí una vez que se asignen y respondan chats."
+                mobileCard={(a) => {
+                  const firstResponse = agentColumns.find((c) => c.key === "avgFirstResponseMinutes")!;
+                  const resolution = agentColumns.find((c) => c.key === "avgResolutionMinutes")!;
+                  return (
+                    <div className="w-full min-w-0 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-sm font-medium">{a.userName ?? "Sin nombre"}</span>
+                        <span className="shrink-0 text-xs text-muted-darker">{a.resolvedCount} resueltos</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-muted-darker">
+                        <span>1ra: {firstResponse.render(a)}</span>
+                        <span>Res: {resolution.render(a)}</span>
+                      </div>
+                    </div>
+                  );
+                }}
+              />
+            </div>
+          </section>
+        </WorkbenchMain>
+
+        <WorkbenchAside>
+          <section className="animate-fade-in-up animation-delay-200">
+            <SectionHeader eyebrow="Inteligencia artificial" title="Inversión en IA" />
+            <div className="mt-3 space-y-4">
+              <div>
+                <p className="font-mono text-hero font-semibold tracking-tight">{formatCost(stats.totalCost)}</p>
+                <p className="text-xs text-muted">costo estimado histórico</p>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <Zap size={13} className="text-info shrink-0 self-center" />
+                <span className="font-mono text-sm font-medium">{stats.totalTokens.toLocaleString("es-MX")}</span>
+                <span className="text-xs text-muted">tokens consumidos</span>
+              </div>
+
+              {stats.monthlyBudgetUsd != null && budgetPct != null && (
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs text-muted-darker">Presupuesto del mes</p>
+                    <p className="font-mono text-xs font-medium">
+                      {formatCost(stats.monthlyCost)} / {formatCost(stats.monthlyBudgetUsd)}
+                    </p>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-surface">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        stats.monthlyCost >= stats.monthlyBudgetUsd ? "bg-danger" : "bg-accent"
+                      }`}
+                      style={{ width: `${budgetPct}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="animate-fade-in-up animation-delay-300">
+            <SectionHeader eyebrow="Leads" title="Chats calificados" />
+            <div className="mt-3 space-y-3">
+              <div>
+                <p className="font-mono text-hero font-semibold tracking-tight">{stats.qualifiedChats.total}</p>
+                {/* Deduplicado por chat (mejor score) — por eso puede no coincidir
+                    con la pestaña "Leads calificados", que lista cada evaluación. */}
+                <p className="text-xs text-muted" title="Chats únicos con al menos una calificación — no evaluaciones individuales">
+                  chats únicos, no evaluaciones
                 </p>
               </div>
-              <div className="bg-surface rounded-full h-2 overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${
-                    stats.monthlyCost >= stats.monthlyBudgetUsd ? "bg-danger" : "bg-accent"
-                  }`}
-                  style={{ width: `${Math.min(100, (stats.monthlyCost / stats.monthlyBudgetUsd) * 100)}%` }}
-                />
-              </div>
-            </CardBody>
-          </BentoTile>
-        )}
+              {stats.qualifiedChats.byLabel.length === 0 ? (
+                <p className="text-xs text-muted-darker">Sin calificaciones todavía</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {stats.qualifiedChats.byLabel.map((l) => (
+                    <Badge key={l.label} tone={QUALIFIED_LABEL_BADGE[l.label] ?? "neutral"} size="sm">
+                      {LABEL_TEXT[l.label] ?? l.label}: {l.count}
+                    </Badge>
+                  ))}
+                </div>
+              )}
 
-        <StatCard
-          label="Tokens consumidos"
-          value={stats.totalTokens.toLocaleString()}
-          icon={Zap}
-          tone="info"
-        />
-
-        <StatCard
-          label="Campañas completadas"
-          value={`${stats.campaignsCompleted}/${stats.campaigns}`}
-          icon={TrendingUp}
-          tone="success"
-          href="/whatsapp/campanas"
-        />
-
-        <BentoTile>
-          <CardBody>
-            <div className="flex items-center gap-1.5 mb-2">
-              <Target size={14} className="text-accent" />
-              <p className="text-xs text-muted-darker">Chats calificados</p>
-            </div>
-            <p className="text-2xl font-bold tracking-tight mb-2">{stats.qualifiedChats.total}</p>
-            {stats.qualifiedChats.byLabel.length === 0 ? (
-              <p className="text-xs text-muted-darker">Sin calificaciones todavía</p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {stats.qualifiedChats.byLabel.map((l) => (
-                  <Badge key={l.label} tone={QUALIFIED_LABEL_BADGE[l.label] ?? "neutral"} size="sm">
-                    {LABEL_TEXT[l.label] ?? l.label}: {l.count}
-                  </Badge>
-                ))}
-              </div>
-            )}
-          </CardBody>
-        </BentoTile>
-
-        <BentoTile span={{ sm: 2, lg: 2 }}>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Send size={16} className="text-accent" />
-              <CardTitle>Entregas por origen</CardTitle>
-            </div>
-          </CardHeader>
-          <CardBody>
-            {stats.campaignMessagesByOrigin.every((o) => o.total === 0) ? (
-              <p className="text-sm text-muted py-4 text-center">Sin envíos todavía</p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {stats.campaignMessagesByOrigin.map((o) => (
-                  <div key={o.origin} className="rounded-lg border border-border p-3 space-y-2">
-                    <div className="flex items-center gap-1.5">
-                      {o.origin === "manual" ? (
-                        <Megaphone size={14} className="text-accent" />
-                      ) : (
-                        <Zap size={14} className="text-info" />
-                      )}
-                      <p className="text-sm font-medium">{CAMPAIGN_ORIGIN_LABEL[o.origin]}</p>
+              {stats.qualifiedChatsByCampaign.length > 0 && (
+                <div className="space-y-2.5 pt-2">
+                  <p className="text-eyebrow font-medium uppercase tracking-wider text-muted-darker">Por campaña</p>
+                  {stats.qualifiedChatsByCampaign.map((c) => (
+                    <div key={c.id ?? "__none__"} className="flex items-center gap-3">
+                      <div className="flex min-w-0 flex-1 items-center gap-2">
+                        <p className="truncate text-sm">{c.name}</p>
+                        {c.origin && (
+                          <Badge tone={CAMPAIGN_ORIGIN_BADGE[c.origin]} size="sm" className="shrink-0">
+                            {CAMPAIGN_ORIGIN_LABEL[c.origin]}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="h-2 w-20 shrink-0 overflow-hidden rounded-full bg-surface">
+                        <div
+                          className="h-full rounded-full bg-accent transition-all"
+                          style={{ width: `${(c.count / maxQualifiedByCampaign) * 100}%` }}
+                        />
+                      </div>
+                      <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-darker">{c.count}</span>
                     </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="animate-fade-in-up animation-delay-300">
+            <SectionHeader eyebrow="Difusión" title="Entregas por origen" />
+            {stats.campaignMessagesByOrigin.every((o) => o.total === 0) ? (
+              <p className="py-4 text-center text-sm text-muted">Sin envíos todavía</p>
+            ) : (
+              <div className="mt-3 divide-y divide-border">
+                {stats.campaignMessagesByOrigin.map((o) => (
+                  <div key={o.origin} className="space-y-2 py-3 first:pt-0">
+                    <p className="text-sm font-medium">{CAMPAIGN_ORIGIN_LABEL[o.origin]}</p>
                     {o.total === 0 ? (
                       <p className="text-xs text-muted-darker">Sin envíos todavía</p>
                     ) : (
@@ -296,7 +389,7 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
                           <Badge tone="info" size="sm">Leídos: {o.read}</Badge>
                           {o.failed > 0 && <Badge tone="danger" size="sm">Fallidos: {o.failed}</Badge>}
                         </div>
-                        <div className="flex items-center justify-between text-xs text-muted-darker pt-1">
+                        <div className="flex items-center justify-between font-mono text-xs text-muted-darker">
                           <span>Entrega: {o.deliveryRate != null ? `${o.deliveryRate}%` : "—"}</span>
                           <span>Lectura: {o.readRate != null ? `${o.readRate}%` : "—"}</span>
                         </div>
@@ -306,181 +399,34 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
                 ))}
               </div>
             )}
-          </CardBody>
-        </BentoTile>
+          </section>
 
-        <BentoTile span={{ sm: 2, lg: 2 }}>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Target size={16} className="text-accent" />
-              <CardTitle>Calificados por campaña</CardTitle>
-            </div>
-          </CardHeader>
-          <CardBody>
-            {stats.qualifiedChatsByCampaign.length === 0 ? (
-              <p className="text-sm text-muted py-4 text-center">Sin calificaciones todavía</p>
-            ) : (
-              <div className="space-y-3">
-                {stats.qualifiedChatsByCampaign.map((c) => (
-                  <div key={c.id ?? "__none__"} className="flex items-center gap-3">
-                    <div className="min-w-0 flex-1 flex items-center gap-2">
-                      <p className="text-sm font-medium truncate">{c.name}</p>
-                      {c.origin && (
-                        <Badge tone={CAMPAIGN_ORIGIN_BADGE[c.origin]} size="sm" className="shrink-0">
-                          {CAMPAIGN_ORIGIN_LABEL[c.origin]}
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="w-32 shrink-0 bg-surface rounded-full h-2 overflow-hidden">
-                      <div
-                        className="h-full bg-accent rounded-full transition-all"
-                        style={{ width: `${(c.count / maxQualifiedByCampaign) * 100}%` }}
-                      />
-                    </div>
-                    <span className="text-xs text-muted-darker w-8 text-right shrink-0">{c.count}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardBody>
-        </BentoTile>
-
-        <BentoTile span={{ sm: 2, lg: 4 }}>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Megaphone size={16} className="text-accent" />
-              <CardTitle>Mensajes por campaña / automatización</CardTitle>
-            </div>
-          </CardHeader>
-          <CardBody>
-            <Table
-              columns={campaignColumns}
-              rows={stats.campaignMessageBreakdown}
-              rowKey={(r) => `${r.origin}-${r.id}`}
-              emptyIcon={Megaphone}
-              emptyTitle="Sin envíos todavía"
-              emptyDescription="Aparecerán aquí una vez que se envíe una campaña masiva o se dispare una automatización de leads."
-              mobileCard={(r) => (
-                <div className="space-y-1 min-w-0 w-full">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium text-sm truncate">{r.name}</span>
-                    <Badge tone={CAMPAIGN_ORIGIN_BADGE[r.origin]} size="sm">{CAMPAIGN_ORIGIN_LABEL[r.origin]}</Badge>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-darker flex-wrap">
-                    <span>{r.sent} enviados</span>
-                    <span>{r.delivered} entregados</span>
-                    <span>{r.read} leídos</span>
-                    {r.failed > 0 && <span className="text-danger">{r.failed} fallidos</span>}
-                  </div>
-                </div>
-              )}
-            />
-          </CardBody>
-        </BentoTile>
-
-        <BentoTile span={{ sm: 2, lg: 2 }}>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Bot size={16} className="text-accent" />
-              <CardTitle>Uso por bot</CardTitle>
-            </div>
-          </CardHeader>
-          <CardBody>
-            <Table
-              columns={botColumns}
-              rows={stats.botBreakdown}
-              rowKey={(b) => b.id}
-              emptyIcon={Bot}
-              emptyTitle="Sin bots todavía"
-              mobileCard={(b) => {
-                const status = botColumns.find((c) => c.key === "status")!;
-                const cost = botColumns.find((c) => c.key === "totalCost")!;
-                return (
-                  <div className="space-y-1 min-w-0 w-full">
-                    <div className="flex items-center justify-between gap-2">
-                      <Link href={`/whatsapp/bots/${b.id}`} className="font-medium text-sm hover:text-accent transition-colors truncate">
-                        {b.name}
-                      </Link>
-                      {status.render(b)}
-                    </div>
-                    <div className="flex items-center justify-between gap-2 text-xs text-muted-darker">
-                      <span>{b.interactions} interacciones</span>
-                      {cost.render(b)}
-                    </div>
-                  </div>
-                );
-              }}
-            />
-          </CardBody>
-        </BentoTile>
-
-        <BentoTile span={{ sm: 2, lg: 2 }}>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Phone size={16} className="text-accent" />
-              <CardTitle>Chats por número</CardTitle>
-            </div>
-          </CardHeader>
-          <CardBody>
+          <section className="animate-fade-in-up animation-delay-400">
+            <SectionHeader eyebrow="Canales" title="Chats por número" />
             {stats.accountBreakdown.length === 0 ? (
-              <p className="text-sm text-muted py-4 text-center">Sin cuentas todavía</p>
+              <p className="py-4 text-center text-sm text-muted">Sin cuentas todavía</p>
             ) : (
-              <div className="space-y-3">
+              <div className="mt-3 space-y-3">
                 {stats.accountBreakdown.map((a) => (
                   <div key={a.id} className="flex items-center gap-3">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">{a.name}</p>
-                      {a.phoneNumber && <p className="text-xs text-muted-darker truncate">{a.phoneNumber}</p>}
+                      <p className="truncate text-sm font-medium">{a.name}</p>
+                      {a.phoneNumber && <p className="truncate font-mono text-xs text-muted-darker">{a.phoneNumber}</p>}
                     </div>
-                    <div className="w-32 shrink-0 bg-surface rounded-full h-2 overflow-hidden">
+                    <div className="h-2 w-20 shrink-0 overflow-hidden rounded-full bg-surface">
                       <div
-                        className="h-full bg-accent rounded-full transition-all"
+                        className="h-full rounded-full bg-accent transition-all"
                         style={{ width: `${(a.chats / maxAccountChats) * 100}%` }}
                       />
                     </div>
-                    <span className="text-xs text-muted-darker w-8 text-right shrink-0">{a.chats}</span>
+                    <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-darker">{a.chats}</span>
                   </div>
                 ))}
               </div>
             )}
-          </CardBody>
-        </BentoTile>
-
-        <BentoTile span={{ sm: 2, lg: 4 }}>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <UserCheck size={16} className="text-accent" />
-              <CardTitle>Rendimiento por agente</CardTitle>
-            </div>
-          </CardHeader>
-          <CardBody>
-            <Table
-              columns={agentColumns}
-              rows={stats.agentPerformance}
-              rowKey={(a) => a.userId}
-              emptyIcon={UserCheck}
-              emptyTitle="Sin datos todavía"
-              emptyDescription="Aparecerán agentes aquí una vez que se asignen y respondan chats."
-              mobileCard={(a) => {
-                const firstResponse = agentColumns.find((c) => c.key === "avgFirstResponseMinutes")!;
-                const resolution = agentColumns.find((c) => c.key === "avgResolutionMinutes")!;
-                return (
-                  <div className="space-y-1 min-w-0 w-full">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium text-sm truncate">{a.userName ?? "Sin nombre"}</span>
-                      <span className="text-xs text-muted-darker shrink-0">{a.resolvedCount} resueltos</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-muted-darker">
-                      <span>1ra: {firstResponse.render(a)}</span>
-                      <span>Res: {resolution.render(a)}</span>
-                    </div>
-                  </div>
-                );
-              }}
-            />
-          </CardBody>
-        </BentoTile>
-      </BentoGrid>
+          </section>
+        </WorkbenchAside>
+      </Workbench>
     </div>
   );
 }

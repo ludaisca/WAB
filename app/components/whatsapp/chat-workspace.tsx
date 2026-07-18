@@ -32,6 +32,9 @@ import { ChatAssigneePicker } from "@/app/components/whatsapp/chat-assignee-pick
 import { ChatTagPicker } from "@/app/components/whatsapp/chat-tag-picker";
 import { LeadScoreBadge } from "@/app/components/whatsapp/lead-score-badge";
 import { ChatCostBadge } from "@/app/components/whatsapp/chat-cost-badge";
+import { mediaEndpointFor, isImageMime, isAudioMime, isVideoMime } from "@/lib/whatsapp/media-shared";
+import { EntityAvatar } from "@/app/components/ui/avatar";
+import { hueClassFor } from "@/app/components/ui/hue";
 
 const CHATS_PAGE_SIZE = 30;
 
@@ -140,26 +143,16 @@ const accountTone = hashTone;
 // design system offers); a campaign badge always carries its name as text, so
 // a same-tone collision between two campaigns is still unambiguous.
 const campaignTone = hashTone;
-
-// Tailwind v4 has no safelist/config for this project to pick up a dynamic
-// `bg-${tone}` string from — the dot indicator needs literal class names.
-const ACCOUNT_DOT_CLASS: Record<AccountTone, string> = {
-  info: "bg-info",
-  success: "bg-success",
-  warning: "bg-warning",
-  danger: "bg-danger",
-  accent: "bg-accent",
-};
+// El punto/nombre del grupo por cuenta usa el sistema hue-N (8 colores por
+// entidad, ver lib hue.ts + globals.css) — mismo color que el EntityAvatar de
+// cada fila, para que el inbox multi-cuenta se lea de un vistazo. Los Badge
+// (campaña/cuenta en el header del hilo) siguen con los 5 tonos semánticos.
 
 function formatBytes(bytes: number | null): string {
   if (!bytes) return "";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function mediaEndpoint(messageId: string): string {
-  return `/api/whatsapp/messages/${encodeURIComponent(messageId)}/media`;
 }
 
 interface PreviewMedia {
@@ -170,7 +163,7 @@ interface PreviewMedia {
 }
 
 function MediaContent({ msg, onPreview }: { msg: Message; onPreview: (media: PreviewMedia) => void }) {
-  const mediaSrc = msg.mediaUrl ? mediaEndpoint(msg.id) : null;
+  const mediaSrc = msg.mediaUrl ? mediaEndpointFor(msg.id) : null;
 
   if (msg.messageType === "image" || msg.messageType === "sticker") {
     if (!mediaSrc) {
@@ -279,10 +272,10 @@ function MessageBubble({ msg, onPreview }: { msg: Message; onPreview: (media: Pr
   return (
     <div className={`flex ${isInbound ? "justify-start" : "justify-end"}`}>
       <div
-        className={`max-w-[75%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
+        className={`max-w-[75%] px-3.5 py-2.5 text-sm leading-relaxed ${
           isInbound
-            ? "bg-surface text-foreground rounded-tl-sm"
-            : "bg-accent text-on-accent rounded-tr-sm"
+            ? "rounded-2xl rounded-tl-sm bg-surface text-foreground"
+            : "rounded-bubble-br bg-accent text-on-accent"
         }`}
       >
         {hasMedia && (
@@ -649,7 +642,11 @@ export function ChatWorkspace({
           });
           if (anyChange) refreshChats();
         }
-      } catch {}
+      } catch (err) {
+        // Poll de 5s: un toast por cada blip de red sería spam — el siguiente
+        // tick reintenta solo. Se registra para no perder el diagnóstico.
+        console.warn("Fallo el poll de mensajes, se reintenta en 5s", err);
+      }
     }, 5000);
     return () => clearInterval(interval);
   }, [selectedChatId, refreshChats]);
@@ -677,10 +674,9 @@ export function ChatWorkspace({
   }, [router, clearAttachment, buildFilterSearchParams]);
 
   function detectMessageType(file: File): "image" | "audio" | "video" | "document" | "sticker" {
-    const t = file.type.toLowerCase();
-    if (t.startsWith("image/")) return "image";
-    if (t.startsWith("audio/")) return "audio";
-    if (t.startsWith("video/")) return "video";
+    if (isImageMime(file.type)) return "image";
+    if (isAudioMime(file.type)) return "audio";
+    if (isVideoMime(file.type)) return "video";
     return "document";
   }
 
@@ -876,8 +872,8 @@ export function ChatWorkspace({
             <div>
               {Object.entries(groupedChats).map(([accountId, accountChats]) => (
                 <div key={accountId}>
-                  <div className="flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-darker bg-surface/50 border-b border-border">
-                    <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${ACCOUNT_DOT_CLASS[accountTone(accountId)]}`} />
+                  <div className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-darker bg-surface/50 border-b border-border ${hueClassFor(accountId)}`}>
+                    <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-entity animate-pulse-live" />
                     {accountChats[0]?.account?.name ?? accountId}
                   </div>
                   {accountChats.map((chat) => (
@@ -889,6 +885,12 @@ export function ChatWorkspace({
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
+                        <EntityAvatar
+                          id={chat.accountId}
+                          name={chat.name ?? chat.remoteJid}
+                          size="sm"
+                          className="mt-0.5"
+                        />
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium truncate">
                             {chat.name ?? chat.remoteJid}
@@ -1091,12 +1093,12 @@ export function ChatWorkspace({
 
               {attachment && (
                 <div className="flex items-center gap-3 rounded-lg border border-border bg-background p-2">
-                  {attachmentPreview && attachment.type.startsWith("image/") ? (
+                  {attachmentPreview && isImageMime(attachment.type) ? (
                     // eslint-disable-next-line @next/next/no-img-element -- local preview blob
                     <img src={attachmentPreview} alt={attachment.name} className="h-12 w-12 rounded object-cover animate-fade-in" />
-                  ) : attachment.type.startsWith("audio/") ? (
+                  ) : isAudioMime(attachment.type) ? (
                     <FileAudio size={18} className="text-muted-darker shrink-0" />
-                  ) : attachment.type.startsWith("video/") ? (
+                  ) : isVideoMime(attachment.type) ? (
                     <Video size={18} className="text-muted-darker shrink-0" />
                   ) : (
                     <FileText size={18} className="text-muted-darker shrink-0" />

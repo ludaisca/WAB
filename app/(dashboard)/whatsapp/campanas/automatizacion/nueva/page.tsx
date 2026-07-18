@@ -13,10 +13,10 @@ import { FormField } from "@/app/components/ui/form-field";
 import { Spinner } from "@/app/components/ui/spinner";
 import { useToast } from "@/app/components/ui/toast";
 import { getTemplateVariables } from "@/lib/whatsapp/template-variables";
+import type { SheetTab } from "@/lib/google/sheets-read";
 
 interface Account { id: string; name: string; channel: string; }
 interface Template { id: string; name: string; language: string; category: string; status: string; components: unknown; }
-interface SheetTab { title: string; }
 
 const TEMPLATE_STATUS_LABEL: Record<string, string> = {
   PENDING: "En revisión",
@@ -239,7 +239,7 @@ export default function NewLeadSheetSourcePage() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-3xl mx-auto">
       <Link href="/whatsapp/campanas" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground transition-colors mb-3">
         <ArrowLeft size={14} /> Volver a campañas
       </Link>
