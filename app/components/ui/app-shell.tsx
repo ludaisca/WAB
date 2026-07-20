@@ -64,6 +64,12 @@ function SidebarContent({
 
     return (
       <li key={item.href} className="relative w-full">
+        {active && (
+          <span
+            aria-hidden="true"
+            className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-accent animate-scale-in-spring"
+          />
+        )}
         <Link
           href={item.href}
           onClick={onClose}

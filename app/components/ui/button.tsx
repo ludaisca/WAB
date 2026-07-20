@@ -12,7 +12,7 @@ type Size = "sm" | "md" | "lg";
 // burbuja del rediseño y mezclar rounded-lg + rounded-bubble-br en el mismo
 // elemento dejaría el resultado a merced del orden del CSS generado.
 const VARIANT: Record<Variant, string> = {
-  primary:   "rounded-bubble-br bg-accent text-on-accent font-semibold hover:bg-accent-hover disabled:opacity-60",
+  primary:   "rounded-bubble-br bg-accent text-on-accent font-semibold shadow-sm hover:bg-accent-hover hover:shadow-accent disabled:opacity-60",
   secondary: "rounded-lg border border-border text-foreground bg-transparent hover:bg-surface-light disabled:opacity-60",
   ghost:     "rounded-lg text-muted hover:bg-surface-light hover:text-foreground disabled:opacity-60",
   danger:    "rounded-lg bg-danger-bg text-danger border border-danger-border hover:bg-danger/20 disabled:opacity-60",
@@ -55,7 +55,12 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const base = cn(
-      "inline-flex items-center justify-center transition-colors cursor-pointer select-none",
+      // transition sobre color/sombra/transform + press (active:scale) para dar
+      // respuesta táctil. link no lleva press (es texto). reduced-motion neutraliza
+      // la duración globalmente.
+      "inline-flex items-center justify-center cursor-pointer select-none",
+      "transition-[background-color,box-shadow,transform,opacity] duration-150 ease-out",
+      variant !== "link" && "active:scale-[0.97]",
       "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2",
       variant !== "link" && SIZE[size],
       VARIANT[variant],

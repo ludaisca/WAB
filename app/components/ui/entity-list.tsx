@@ -75,12 +75,16 @@ export function EntityList<T>({
 
   return (
     <div className={cn("divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface", className)}>
-      {rows.map((row) => (
+      {rows.map((row, i) => (
         <div
           key={rowKey(row)}
           onClick={onRowClick ? () => onRowClick(row) : undefined}
+          // Entrada escalonada: cap a 8 filas para que las últimas no esperen de
+          // más. React reutiliza el DOM por rowKey, así que al refiltrar solo
+          // animan las filas nuevas, no las que persisten.
+          style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
           className={cn(
-            "group relative flex items-center gap-3 px-4 py-3 transition-colors",
+            "group relative flex items-center gap-3 px-4 py-3 transition-colors animate-fade-in-up",
             onRowClick && "cursor-pointer hover:bg-surface-light/60"
           )}
         >

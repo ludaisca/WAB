@@ -10,6 +10,7 @@ import { Textarea } from "@/app/components/ui/textarea";
 import { Input } from "@/app/components/ui/input";
 import { FormField } from "@/app/components/ui/form-field";
 import { Spinner } from "@/app/components/ui/spinner";
+import { SkeletonDetail } from "@/app/components/ui/skeleton";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { Banner } from "@/app/components/ui/banner";
 import { Table, type TableColumn } from "@/app/components/ui/table";
@@ -226,7 +227,9 @@ export default function BotDetailPage() {
     },
   ], []);
 
-  if (loading) return <div className="flex items-center justify-center py-16"><Spinner /></div>;
+  // Skeleton con la misma anatomía y ancho que la página cargada, en vez de un
+  // spinner centrado que descarta el layout y lo hace "aparecer" de golpe.
+  if (loading) return <div className="space-y-6 max-w-3xl mx-auto"><SkeletonDetail cards={2} /></div>;
   if (!bot) return <Banner tone="danger" title="Bot no encontrado">El bot solicitado no existe.</Banner>;
 
   return (

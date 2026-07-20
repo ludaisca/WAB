@@ -91,7 +91,7 @@ export default function BotsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in-up">
       <PageHeader
         title="Bots IA"
         description="Configura bots con IA para responder automáticamente mensajes de WhatsApp."

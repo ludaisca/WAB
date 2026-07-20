@@ -124,10 +124,11 @@ export function Table<T>({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {rows.map((row) => (
+            {rows.map((row, i) => (
               <tr
                 key={rowKey(row)}
-                className={cn("hover:bg-surface-light/40 transition-colors", onRowClick && "cursor-pointer")}
+                style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
+                className={cn("animate-fade-in-up hover:bg-surface-light/40 transition-colors", onRowClick && "cursor-pointer")}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
               >
                 {columns.map((col) => (
@@ -163,11 +164,12 @@ export function Table<T>({
       </div>
 
       <div className="sm:hidden divide-y divide-border -mx-5">
-        {rows.map((row) => (
+        {rows.map((row, i) => (
           <div
             key={rowKey(row)}
+            style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
             className={cn(
-              "px-5 py-4 flex items-start justify-between gap-3 hover:bg-surface-light/20 transition-colors",
+              "animate-fade-in-up px-5 py-4 flex items-start justify-between gap-3 hover:bg-surface-light/20 transition-colors",
               onRowClick && "cursor-pointer"
             )}
             onClick={onRowClick ? () => onRowClick(row) : undefined}

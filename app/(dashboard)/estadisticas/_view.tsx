@@ -9,6 +9,8 @@ import { KpiStrip, type KpiItem } from "@/app/components/ui/kpi-strip";
 import { SectionHeader } from "@/app/components/ui/section-header";
 import { Workbench, WorkbenchMain, WorkbenchAside } from "@/app/components/ui/workbench";
 import { Table, type TableColumn } from "@/app/components/ui/table";
+import { TrendChart, DonutChart, FunnelBars } from "@/app/components/ui/chart";
+import { AnimatedNumber } from "@/app/components/ui/animated-number";
 import type { Estadisticas } from "@/lib/estadisticas/get-stats";
 import { CAMPAIGN_ORIGIN_LABEL, LABEL_TEXT } from "@/lib/whatsapp/export-columns";
 
@@ -18,12 +20,16 @@ const BOT_STATUS_BADGE: Record<string, { label: string; tone: "success" | "warni
   ERROR: { label: "Error", tone: "danger" },
 };
 
-const QUALIFIED_LABEL_BADGE: Record<string, "danger" | "success" | "info" | "neutral"> = {
-  prioridad_alta: "danger",
-  oportunidad: "success",
-  interesado: "info",
-  frio: "neutral",
-  descartado: "neutral",
+// Colores de la dona de calificaciones. Son tokens de ESTADO (no la paleta
+// categórica): cada etiqueta tiene un significado fijo, así que el color lo
+// refuerza en vez de solo distinguir. La dona lleva etiquetas directas
+// (nombre + valor + %), de modo que la identidad nunca depende solo del color.
+const QUALIFIED_LABEL_COLOR: Record<string, string> = {
+  prioridad_alta: "var(--danger)",
+  oportunidad: "var(--success)",
+  interesado: "var(--info)",
+  frio: "var(--muted)",
+  descartado: "var(--muted-darker)",
 };
 
 const CAMPAIGN_ORIGIN_BADGE: Record<string, "accent" | "info"> = {
@@ -134,14 +140,36 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
     },
   ], []);
 
-  const maxCount = Math.max(...stats.dailyMessages.map((d) => d.count), 1);
   const maxAccountChats = Math.max(...stats.accountBreakdown.map((a) => a.chats), 1);
   const maxQualifiedByCampaign = Math.max(...stats.qualifiedChatsByCampaign.map((c) => c.count), 1);
 
+  // El chart recibe la fecha ya formateada como etiqueta del eje X.
+  const dailySeries = useMemo(
+    () =>
+      stats.dailyMessages.map((d) => ({
+        label: new Date(d.date + "T00:00:00").toLocaleDateString("es-MX", {
+          day: "2-digit",
+          month: "short",
+        }),
+        count: d.count,
+      })),
+    [stats.dailyMessages]
+  );
+
+  const qualifiedSlices = useMemo(
+    () =>
+      stats.qualifiedChats.byLabel.map((l) => ({
+        name: LABEL_TEXT[l.label] ?? l.label,
+        value: l.count,
+        color: QUALIFIED_LABEL_COLOR[l.label] ?? "var(--muted-darker)",
+      })),
+    [stats.qualifiedChats.byLabel]
+  );
+
   const kpis: KpiItem[] = [
-    { label: "Cuentas", value: String(stats.accounts), href: "/whatsapp/cuentas" },
-    { label: "Chats activos", value: String(stats.chats), href: "/whatsapp/chat" },
-    { label: "Mensajes", value: stats.messages.toLocaleString("es-MX"), href: "/whatsapp/chat" },
+    { label: "Cuentas", value: String(stats.accounts), numeric: stats.accounts, href: "/whatsapp/cuentas" },
+    { label: "Chats activos", value: String(stats.chats), numeric: stats.chats, href: "/whatsapp/chat" },
+    { label: "Mensajes", value: stats.messages.toLocaleString("es-MX"), numeric: stats.messages, href: "/whatsapp/chat" },
     { label: "Bots IA", value: `${stats.activeBots}/${stats.bots}`, hint: "activos", href: "/whatsapp/bots" },
     {
       label: "Campañas",
@@ -170,29 +198,16 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
         <WorkbenchMain>
           <section className="animate-fade-in-up animation-delay-200">
             <SectionHeader eyebrow="Actividad" title="Mensajes diarios" />
-            {stats.dailyMessages.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted">Sin datos aún</p>
-            ) : (
-              <div className="mt-4 space-y-2">
-                {stats.dailyMessages.map((d) => (
-                  <div key={d.date} className="flex items-center gap-3">
-                    <span className="w-20 shrink-0 font-mono text-xs text-muted-darker">
-                      {new Date(d.date + "T00:00:00").toLocaleDateString("es-MX", { day: "2-digit", month: "short" })}
-                    </span>
-                    <div className="h-5 flex-1 overflow-hidden rounded-full bg-surface">
-                      <div
-                        className="flex h-full items-center justify-end rounded-full bg-accent pr-2 transition-all"
-                        style={{ width: `${(d.count / maxCount) * 100}%`, minWidth: d.count > 0 ? "2rem" : 0 }}
-                      >
-                        {d.count > 0 && (
-                          <span className="font-mono text-[10px] font-medium text-on-accent">{d.count}</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* Serie temporal → área con línea, no barras horizontales: el eje X
+                ordenado por fecha hace legible la tendencia, que era lo que la
+                lista de barras escondía. */}
+            <div className="mt-4">
+              <TrendChart
+                data={dailySeries}
+                series={[{ key: "count", name: "Mensajes" }]}
+                height={260}
+              />
+            </div>
           </section>
 
           <section className="animate-fade-in-up animation-delay-300">
@@ -295,7 +310,9 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
               </div>
               <div className="flex items-baseline gap-2">
                 <Zap size={13} className="text-info shrink-0 self-center" />
-                <span className="font-mono text-sm font-medium">{stats.totalTokens.toLocaleString("es-MX")}</span>
+                <span className="font-mono text-sm font-medium">
+                  <AnimatedNumber value={stats.totalTokens} />
+                </span>
                 <span className="text-xs text-muted">tokens consumidos</span>
               </div>
 
@@ -324,23 +341,21 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
             <SectionHeader eyebrow="Leads" title="Chats calificados" />
             <div className="mt-3 space-y-3">
               <div>
-                <p className="font-mono text-hero font-semibold tracking-tight">{stats.qualifiedChats.total}</p>
+                <p className="font-mono text-hero font-semibold tracking-tight">
+                  <AnimatedNumber value={stats.qualifiedChats.total} />
+                </p>
                 {/* Deduplicado por chat (mejor score) — por eso puede no coincidir
                     con la pestaña "Leads calificados", que lista cada evaluación. */}
                 <p className="text-xs text-muted" title="Chats únicos con al menos una calificación — no evaluaciones individuales">
                   chats únicos, no evaluaciones
                 </p>
               </div>
-              {stats.qualifiedChats.byLabel.length === 0 ? (
+              {qualifiedSlices.length === 0 ? (
                 <p className="text-xs text-muted-darker">Sin calificaciones todavía</p>
               ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {stats.qualifiedChats.byLabel.map((l) => (
-                    <Badge key={l.label} tone={QUALIFIED_LABEL_BADGE[l.label] ?? "neutral"} size="sm">
-                      {LABEL_TEXT[l.label] ?? l.label}: {l.count}
-                    </Badge>
-                  ))}
-                </div>
+                // fold={false}: cada etiqueta es un estado con significado propio;
+                // plegar la más pequeña en "Otros" borraría una categoría real.
+                <DonutChart data={qualifiedSlices} height={168} fold={false} totalLabel="calificados" />
               )}
 
               {stats.qualifiedChatsByCampaign.length > 0 && (
@@ -383,16 +398,19 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
                       <p className="text-xs text-muted-darker">Sin envíos todavía</p>
                     ) : (
                       <>
-                        <div className="flex flex-wrap gap-1.5">
-                          <Badge tone="neutral" size="sm">Enviados: {o.sent}</Badge>
-                          <Badge tone="success" size="sm">Entregados: {o.delivered}</Badge>
-                          <Badge tone="info" size="sm">Leídos: {o.read}</Badge>
-                          {o.failed > 0 && <Badge tone="danger" size="sm">Fallidos: {o.failed}</Badge>}
-                        </div>
-                        <div className="flex items-center justify-between font-mono text-xs text-muted-darker">
-                          <span>Entrega: {o.deliveryRate != null ? `${o.deliveryRate}%` : "—"}</span>
-                          <span>Lectura: {o.readRate != null ? `${o.readRate}%` : "—"}</span>
-                        </div>
+                        {/* Embudo: enviados → entregados → leídos ya expresa las
+                            tasas de forma visual, así que las líneas de % sueltas
+                            sobraban. Los fallidos no son un paso del embudo. */}
+                        <FunnelBars
+                          steps={[
+                            { name: "Enviados", value: o.sent },
+                            { name: "Entregados", value: o.delivered },
+                            { name: "Leídos", value: o.read },
+                          ]}
+                        />
+                        {o.failed > 0 && (
+                          <Badge tone="danger" size="sm">Fallidos: {o.failed}</Badge>
+                        )}
                       </>
                     )}
                   </div>

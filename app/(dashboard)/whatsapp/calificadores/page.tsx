@@ -84,7 +84,7 @@ export default function CalificadoresPage() {
   const [tab, setTab] = useState<Tab>("calificadores");
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in-up">
       <PageHeader
         title="Calificadores de Leads"
         description="Crea agentes de IA que analizan una conversación y la califican con tu propio criterio — cada uno con su prompt libre, para el negocio que vendas."

@@ -22,10 +22,16 @@ export function Dropdown({
   onOpenChange,
 }: DropdownProps) {
   const [internalOpen, setInternalOpen] = useState(false);
+  const [render, setRender] = useState(controlledOpen ?? false);
   const ref = useRef<HTMLDivElement>(null);
 
   const isOpen = controlledOpen !== undefined ? controlledOpen : internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
+
+  // Montar el menú de inmediato al abrir; se desmonta cuando termina la animación
+  // de salida (onAnimationEnd). setState durante el render es el patrón oficial de
+  // React para derivar estado de props previas — no va en un efecto.
+  if (isOpen && !render) setRender(true);
 
   const toggle = useCallback(() => setOpen(!isOpen), [isOpen, setOpen]);
   const close = useCallback(() => setOpen(false), [setOpen]);
@@ -51,7 +57,11 @@ export function Dropdown({
   }, [isOpen, close]);
 
   return (
-    <div ref={ref} className={cn("relative inline-block", className)}>
+    <div
+      ref={ref}
+      data-state={isOpen ? "open" : "closed"}
+      className={cn("group/dd relative inline-block", className)}
+    >
       <div
         role="button"
         tabIndex={0}
@@ -61,13 +71,18 @@ export function Dropdown({
       >
         {trigger}
       </div>
-      {isOpen && (
+      {render && (
         <div
           className={cn(
-            "absolute z-50 mt-1.5 min-w-[180px] rounded-xl border border-border bg-surface shadow-lg py-1 animate-fade-in",
-            align === "right" ? "right-0" : "left-0"
+            "absolute z-50 mt-1.5 min-w-[180px] rounded-xl border border-border bg-surface shadow-lg py-1",
+            // El origen ancla el scale al trigger para que el menú "emerja" desde él.
+            align === "right" ? "right-0 origin-top-right" : "left-0 origin-top-left",
+            isOpen ? "animate-scale-in-spring" : "animate-scale-out"
           )}
           onClick={close}
+          onAnimationEnd={(e) => {
+            if (e.target === e.currentTarget && !isOpen) setRender(false);
+          }}
         >
           {children}
         </div>
@@ -147,7 +162,12 @@ export function DropdownButton({
     >
       {Icon && <Icon size={size === "sm" ? 13 : 15} className="text-muted-darker" />}
       <span className="font-medium">{label}</span>
-      {chevron && <ChevronDown size={size === "sm" ? 12 : 14} className="text-muted-darker" />}
+      {chevron && (
+        <ChevronDown
+          size={size === "sm" ? 12 : 14}
+          className="text-muted-darker transition-transform duration-200 group-data-[state=open]/dd:rotate-180"
+        />
+      )}
     </div>
   );
 }

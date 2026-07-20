@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Transiciones de página nativas (React 19.2 / Next 16). Next dispara
+  // document.startViewTransition en las navegaciones del App Router; el
+  // cross-fade sutil se estiliza en globals.css (::view-transition-*).
+  experimental: {
+    viewTransition: true,
+  },
   // Next dev blocks cross-origin requests to dev resources (HMR websocket, RSC
   // payloads) by default. Needed while testing through an ngrok tunnel for the
   // Meta webhook — without this, HMR silently fails and forces hard reloads.

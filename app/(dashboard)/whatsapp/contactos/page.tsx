@@ -114,7 +114,7 @@ export default function ContactosPage() {
   }, [fetchAccounts]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in-up">
       <PageHeader
         title="Contactos"
         description="Etiquetas, estado de lead y notas por contacto."

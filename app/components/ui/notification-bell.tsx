@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, MessageSquare, Megaphone, Bot as BotIcon, DollarSign, Phone } from "lucide-react";
 import { Dropdown } from "./dropdown";
@@ -41,6 +41,21 @@ export function NotificationBell() {
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
+  // Ping efímero: se dispara solo cuando el conteo AUMENTA (llega algo nuevo por
+  // el polling), no de forma permanente — un pulso infinito en cada pantalla
+  // distraería.
+  const [justArrived, setJustArrived] = useState(false);
+  const prevUnread = useRef(0);
+
+  useEffect(() => {
+    if (unreadCount > prevUnread.current) {
+      setJustArrived(true);
+      prevUnread.current = unreadCount;
+      const t = setTimeout(() => setJustArrived(false), 4000);
+      return () => clearTimeout(t);
+    }
+    prevUnread.current = unreadCount;
+  }, [unreadCount]);
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -93,10 +108,15 @@ export function NotificationBell() {
           className="relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-darker transition-colors hover:bg-surface-light hover:text-foreground"
           aria-label="Notificaciones"
         >
-          <Bell size={18} />
+          <Bell size={18} className={cn(justArrived && "animate-scale-in-spring")} />
           {unreadCount > 0 && (
-            <span className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-on-accent">
-              {unreadCount > 99 ? "99+" : unreadCount}
+            <span className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center">
+              {justArrived && (
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
+              )}
+              <span className="relative flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-on-accent">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
             </span>
           )}
         </button>

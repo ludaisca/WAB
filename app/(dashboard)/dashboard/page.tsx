@@ -98,6 +98,7 @@ export default async function DashboardPage() {
     {
       label: "Chats activos",
       value: String(chatsTotal),
+      numeric: chatsTotal,
       delta: unreadCount > 0 ? `${unreadCount} sin leer` : undefined,
       deltaTone: unreadCount > 0 ? "danger" : "neutral",
       hint: "conversaciones",

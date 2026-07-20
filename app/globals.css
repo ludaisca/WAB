@@ -38,10 +38,25 @@
   --info-bg:       rgba(96, 165, 250, 0.10);
   --info-border:   rgba(96, 165, 250, 0.25);
 
-  /* Elevation */
+  /* Elevation — escala + sombra tintada (glow de accent) + highlight interior.
+     El glow y el highlight son la clave del look "material": una superficie que
+     recibe luz por arriba y proyecta color, no solo negro. */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.4);
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.45), 0 1px 2px rgba(0,0,0,0.3);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.5), 0 2px 4px rgba(0,0,0,0.35);
   --shadow-lg: 0 12px 32px rgba(0,0,0,0.55), 0 4px 8px rgba(0,0,0,0.4);
+  --shadow-2xl: 0 24px 60px rgba(0,0,0,0.6), 0 8px 20px rgba(0,0,0,0.45);
+  --shadow-accent: 0 6px 20px -4px color-mix(in oklab, var(--accent) 50%, transparent);
+  --highlight-top: inset 0 1px 0 rgba(255,255,255,0.06);
+
+  /* Atmósfera — gradientes sutiles + glass para overlays (glassmorphism ligero).
+     --glow-ambient es un halo de accent casi imperceptible en la parte superior
+     del fondo; da profundidad sin colorear la UI. */
+  --gradient-accent:  linear-gradient(135deg, var(--accent), var(--accent-hover));
+  --gradient-surface: linear-gradient(180deg, var(--surface-light), var(--surface));
+  --glow-ambient: radial-gradient(1100px 520px at 50% -8%, color-mix(in oklab, var(--accent) 6%, transparent), transparent 72%);
+  --glass-bg:   color-mix(in oklab, var(--background) 70%, transparent);
+  --glass-blur: 12px;
 
   /* Focus */
   --ring:      var(--accent);
@@ -52,6 +67,7 @@
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
 
   /* Hue por entidad (cuentas WhatsApp) — lightness/chroma fijos por tema, solo
      varía el hue. La paleta esquiva ~150° (accent verde) y ~180° (success teal)
@@ -59,11 +75,30 @@
      Solo asignar vía HUE_CLASS de lib/…/hue.ts — nunca interpolar "hue-N". */
   --entity: oklch(0.78 0.11 60); /* fallback si falta la clase hue-N */
 
-  /* Durations */
-  --dur-fast: 120ms;
-  --dur:      200ms;
-  --dur-slow: 320ms;
-  --ease:     cubic-bezier(0.4, 0, 0.2, 1);
+  /* Paleta categórica de gráficas (identidad de serie, NO estado).
+     Validada con scripts/validate_palette.js del skill dataviz contra las
+     superficies reales de esta app tras el rediseño cálido (#1c1915 oscuro /
+     #f3f0e9 claro): ALL CHECKS PASS en ambos modos (banda de luminosidad, piso
+     de croma, separación CVD y contraste). En claro, magenta y amarillo quedan
+     bajo 3:1 → obligan leyenda/etiquetas visibles, nunca color solo.
+     No usar los tokens semánticos (accent/success/danger) como series: están
+     reservados para significado de estado. */
+  --chart-1: #3987e5; /* azul    */
+  --chart-2: #008300; /* verde   */
+  --chart-3: #d55181; /* magenta */
+  --chart-4: #c98500; /* amarillo*/
+
+  /* Durations & easing — una curva por intención, no una sola para todo.
+     ease-out-expo para entradas (decelerate fuerte, sensación "cara");
+     ease-spring añade un overshoot mínimo para micro-interacciones vivas. */
+  --dur-fast:   120ms;
+  --dur:        200ms;
+  --dur-slow:   320ms;
+  --dur-slower: 480ms;
+  --ease:            cubic-bezier(0.4, 0, 0.2, 1);      /* standard */
+  --ease-out-expo:   cubic-bezier(0.16, 1, 0.3, 1);     /* decelerate — entradas */
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);        /* énfasis */
+  --ease-spring:     cubic-bezier(0.34, 1.56, 0.64, 1); /* overshoot sutil */
 }
 
 /* ─────────────────────────────────────────────────
@@ -100,9 +135,25 @@
   --info-bg:        #dbeafe;
   --info-border:    #93c5fd;
 
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.06);
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.05);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06);
   --shadow-lg: 0 12px 32px rgba(0,0,0,0.12), 0 4px 8px rgba(0,0,0,0.08);
+  --shadow-2xl: 0 24px 60px rgba(0,0,0,0.14), 0 8px 20px rgba(0,0,0,0.10);
+  --shadow-accent: 0 6px 20px -4px color-mix(in oklab, var(--accent) 35%, transparent);
+  --highlight-top: inset 0 1px 0 rgba(255,255,255,0.7);
+
+  /* Series de gráfica en claro — pasos propios validados contra #f3f0e9, no un
+     "flip" automático de los de oscuro. */
+  --chart-1: #2a78d6;
+  --chart-2: #008300;
+  --chart-3: #e87ba4;
+  --chart-4: #eda100;
+
+  /* Gradientes (accent/surface) heredan de :root — sus var() ya apuntan a los
+     tokens de color redefinidos arriba. Solo se ajustan glow y glass para luz. */
+  --glow-ambient: radial-gradient(1100px 520px at 50% -8%, color-mix(in oklab, var(--accent) 5%, transparent), transparent 72%);
+  --glass-bg: color-mix(in oklab, var(--background) 68%, transparent);
 
   --ring:       var(--accent);
   --ring-offset: var(--background);
@@ -165,9 +216,12 @@
   --color-entity:    var(--entity);
   --color-entity-bg: var(--entity-bg, color-mix(in oklab, var(--entity) 14%, transparent));
 
-  --shadow-sm: var(--shadow-sm);
-  --shadow-md: var(--shadow-md);
-  --shadow-lg: var(--shadow-lg);
+  --shadow-xs:     var(--shadow-xs);
+  --shadow-sm:     var(--shadow-sm);
+  --shadow-md:     var(--shadow-md);
+  --shadow-lg:     var(--shadow-lg);
+  --shadow-2xl:    var(--shadow-2xl);
+  --shadow-accent: var(--shadow-accent);
 
   --font-sans:    var(--font-body), system-ui, sans-serif;
   --font-display: var(--font-display), Georgia, serif;
@@ -180,8 +234,18 @@
   --text-hero--line-height: 1.05;
   --text-page-title: 1.875rem;
   --text-page-title--line-height: 1.2;
+  --text-section-title: 1.25rem;
+  --text-section-title--line-height: 1.3;
+  --text-card-title: 1.0625rem;
+  --text-card-title--line-height: 1.4;
+  --text-caption: 0.8125rem;
+  --text-caption--line-height: 1.1rem;
   --text-eyebrow: 0.6875rem;
   --text-eyebrow--line-height: 1rem;
+
+  /* Tracking para etiquetas eyebrow uppercase (el text-eyebrow lo pedía y no
+     había token). */
+  --tracking-eyebrow: 0.1em;
 }
 
 /* ─────────────────────────────────────────────────
@@ -209,7 +273,10 @@ html {
 }
 
 body {
-  background: var(--background);
+  /* Halo de accent casi imperceptible arriba + fondo base. `fixed` lo ancla al
+     viewport para que no se desplace con el scroll (profundidad, no textura). */
+  background: var(--glow-ambient), var(--background);
+  background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans);
 }
@@ -302,8 +369,25 @@ body {
   50%      { opacity: 0.55; transform: scale(0.82); }
 }
 
-.animate-fade-in-up  { animation: fade-in-up  0.6s ease-out both; }
-.animate-fade-in     { animation: fade-in     0.6s ease-out both; }
+/* Entrada con desenfoque — el blur→nítido da una sensación premium en cabeceras
+   y tarjetas héroe. */
+@keyframes fade-in-blur {
+  from { opacity: 0; transform: translateY(10px); filter: blur(6px); }
+  to   { opacity: 1; transform: translateY(0);    filter: blur(0); }
+}
+
+/* Escala con overshoot mínimo — para popovers/menús que "emergen". */
+@keyframes scale-in-spring {
+  0%   { opacity: 0; transform: scale(0.94); }
+  60%  { opacity: 1; transform: scale(1.008); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.animate-fade-in-up  { animation: fade-in-up  var(--dur-slower) var(--ease-out-expo) both; }
+.animate-fade-in     { animation: fade-in     var(--dur-slow)   var(--ease) both; }
+.animate-fade-in-blur    { animation: fade-in-blur    var(--dur-slower) var(--ease-out-expo) both; }
+.animate-scale-in-spring { animation: scale-in-spring var(--dur-slow)   var(--ease-spring) both; }
+.animate-shimmer     { animation: shimmer 1.5s linear infinite; }
 .animate-fade-out    { animation: fade-out    var(--dur) var(--ease) both; }
 .animate-scale-in    { animation: scale-in    var(--dur) var(--ease) both; }
 .animate-scale-out   { animation: scale-out   var(--dur) var(--ease) both; }
@@ -319,3 +403,33 @@ body {
 .animation-delay-200 { animation-delay: 200ms; }
 .animation-delay-300 { animation-delay: 300ms; }
 .animation-delay-400 { animation-delay: 400ms; }
+.animation-delay-500 { animation-delay: 500ms; }
+.animation-delay-600 { animation-delay: 600ms; }
+.animation-delay-700 { animation-delay: 700ms; }
+
+/* ─────────────────────────────────────────────────
+   GLASS — superficie translúcida para overlays (header, popovers premium)
+   ───────────────────────────────────────────────── */
+@utility glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+
+/* ─────────────────────────────────────────────────
+   VIEW TRANSITIONS — cross-fade sutil entre rutas (API nativa, GPU, 0 JS).
+   Habilitado en next.config.ts (experimental.viewTransition).
+   ───────────────────────────────────────────────── */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--dur-slow);
+  animation-timing-function: var(--ease-out-expo);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

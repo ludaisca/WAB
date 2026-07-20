@@ -8,6 +8,9 @@ import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card"
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Spinner } from "@/app/components/ui/spinner";
+import { SkeletonDetail } from "@/app/components/ui/skeleton";
+import { AnimatedNumber } from "@/app/components/ui/animated-number";
+import { FunnelBars } from "@/app/components/ui/chart";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { Banner } from "@/app/components/ui/banner";
 import { Pagination } from "@/app/components/ui/pagination";
@@ -134,7 +137,7 @@ export default function CampaignDetailPage() {
     },
   ], []);
 
-  if (loading) return <div className="flex items-center justify-center py-16"><Spinner /></div>;
+  if (loading) return <div className="space-y-6 max-w-3xl mx-auto"><SkeletonDetail cards={2} /></div>;
   if (!campaign) return <Banner tone="danger" title="Campaña no encontrada">La campaña solicitada no existe.</Banner>;
 
   const statusBadge = STATUS_BADGE[campaign.status] ?? { label: campaign.status, tone: "neutral" as const };
@@ -175,12 +178,33 @@ export default function CampaignDetailPage() {
             <Card key={k}>
               <CardBody>
                 <p className="text-xs text-muted-darker">{labels[k]}</p>
-                <p className="text-2xl font-bold mt-1">{campaign[k]}</p>
+                <p className="mt-1 font-mono text-2xl font-bold">
+                  <AnimatedNumber value={campaign[k]} />
+                </p>
               </CardBody>
             </Card>
           );
         })}
       </div>
+
+      {/* Embudo: las 4 cifras de arriba no muestran la relación entre ellas —
+          aquí se ve la caída enviados → entregados → leídos de un vistazo. */}
+      {campaign.status !== "DRAFT" && campaign.sentCount > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Embudo de entrega</CardTitle>
+          </CardHeader>
+          <CardBody>
+            <FunnelBars
+              steps={[
+                { name: "Enviados", value: campaign.sentCount },
+                { name: "Entregados", value: campaign.deliveredCount },
+                { name: "Leídos", value: campaign.readCount },
+              ]}
+            />
+          </CardBody>
+        </Card>
+      )}
 
       {campaign.status !== "DRAFT" && (
         <Card>

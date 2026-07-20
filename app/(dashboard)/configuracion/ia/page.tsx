@@ -9,6 +9,7 @@ import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
 import { FormField } from "@/app/components/ui/form-field";
 import { Spinner } from "@/app/components/ui/spinner";
+import { SkeletonDetail } from "@/app/components/ui/skeleton";
 import { PageHeader } from "@/app/components/ui/page-header";
 import { Switch } from "@/app/components/ui/switch";
 import { useToast } from "@/app/components/ui/toast";
@@ -174,7 +175,7 @@ export default function IASettingsPage() {
     }
   }
 
-  if (loading) return <div className="flex items-center justify-center py-16"><Spinner /></div>;
+  if (loading) return <div className="space-y-6 max-w-2xl mx-auto"><SkeletonDetail cards={2} /></div>;
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">

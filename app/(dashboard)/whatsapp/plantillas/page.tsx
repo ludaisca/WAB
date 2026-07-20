@@ -115,7 +115,7 @@ function TemplatesContent() {
   const missingWabaId = selectedAccount && !selectedAccount.wabaId;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in-up">
       <PageHeader
         title="Plantillas"
         description="Gestiona las plantillas de mensaje de tus cuentas WhatsApp."

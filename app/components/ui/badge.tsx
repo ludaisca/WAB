@@ -22,11 +22,13 @@ interface BadgeProps {
   tone?: Tone;
   size?: Size;
   icon?: React.ElementType;
+  /** Punto pulsante antes del texto — para estados "vivos" (Activo, Enviando…). */
+  pulse?: boolean;
   className?: string;
   children: React.ReactNode;
 }
 
-export function Badge({ tone = "neutral", size = "md", icon: Icon, className, children }: BadgeProps) {
+export function Badge({ tone = "neutral", size = "md", icon: Icon, pulse, className, children }: BadgeProps) {
   return (
     <span
       className={cn(
@@ -36,6 +38,12 @@ export function Badge({ tone = "neutral", size = "md", icon: Icon, className, ch
         className
       )}
     >
+      {pulse && (
+        <span className="relative flex h-1.5 w-1.5 shrink-0" aria-hidden="true">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-current opacity-60" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-current" />
+        </span>
+      )}
       {Icon && <Icon size={12} className="shrink-0" />}
       {children}
     </span>

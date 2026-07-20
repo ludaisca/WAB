@@ -58,7 +58,7 @@ export default function CampaignsPage() {
   const [tab, setTab] = useState<Tab>("campanas");
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in-up">
       <PageHeader
         title="Campañas"
         description="Envía mensajes masivos usando plantillas de WhatsApp, manualmente o disparados en automático desde una hoja de Google Sheets."

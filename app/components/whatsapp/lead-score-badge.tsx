@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Sparkles, RefreshCw } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { Dropdown, DropdownButton } from "@/app/components/ui/dropdown";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
@@ -251,7 +251,8 @@ export function LeadScoreBadge({ chatId }: { chatId: string }) {
               <Button
                 size="sm"
                 variant="secondary"
-                icon={loading ? RefreshCw : Sparkles}
+                icon={Sparkles}
+                loading={loading}
                 onClick={handleScore}
                 disabled={loading || !scorerId}
                 className="w-full"

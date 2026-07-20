@@ -9,6 +9,7 @@ import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Switch } from "@/app/components/ui/switch";
 import { Spinner } from "@/app/components/ui/spinner";
+import { SkeletonDetail } from "@/app/components/ui/skeleton";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { Banner } from "@/app/components/ui/banner";
 import { Table, type TableColumn } from "@/app/components/ui/table";
@@ -167,7 +168,7 @@ export default function LeadSheetSourceDetailPage() {
   ];
 
   if (loading) {
-    return <div className="flex justify-center py-16"><Spinner /></div>;
+    return <div className="space-y-6"><SkeletonDetail cards={2} /></div>;
   }
   if (!source) {
     return <p className="text-sm text-muted-darker">Fuente no encontrada.</p>;

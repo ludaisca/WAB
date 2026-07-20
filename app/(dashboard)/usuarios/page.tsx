@@ -80,7 +80,7 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in-up">
       <PageHeader
         title="Usuarios"
         description="Gestión de usuarios y roles del sistema."

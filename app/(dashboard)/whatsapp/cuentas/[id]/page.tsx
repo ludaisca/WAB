@@ -11,6 +11,7 @@ import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
 import { Spinner } from "@/app/components/ui/spinner";
+import { SkeletonDetail } from "@/app/components/ui/skeleton";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { Banner } from "@/app/components/ui/banner";
 import { Switch } from "@/app/components/ui/switch";
@@ -237,8 +238,8 @@ export default function CuentaDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <Spinner />
+      <div className="space-y-6 max-w-2xl mx-auto">
+        <SkeletonDetail cards={3} />
       </div>
     );
   }

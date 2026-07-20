@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cn } from "./cn";
+import { AnimatedNumber } from "./animated-number";
 
 // Franja KPI del layout workbench — sustituye la fila de 4 StatCard con cajas.
 // Una sola fila densa con divisores, sin bordes ni iconos: puramente
@@ -11,6 +12,13 @@ export interface KpiItem {
   label: string;
   /** Cifra ya formateada por el caller (es-MX, unidades, "1/1", "$0.42"…). */
   value: string;
+  /** Alternativa a `value`: si se pasa, la cifra se anima con count-up. Las
+   *  props de formato (decimals/compact/prefix/suffix) controlan la salida. */
+  numeric?: number;
+  numericDecimals?: number;
+  numericCompact?: boolean;
+  numericPrefix?: string;
+  numericSuffix?: string;
   /** Variación o dato secundario junto al valor, p. ej. "+12%" o "3 sin leer". */
   delta?: string;
   deltaTone?: "success" | "danger" | "neutral";
@@ -38,7 +46,17 @@ function KpiContent({ item, hero }: { item: KpiItem; hero: boolean }) {
             hero ? "text-hero" : "text-2xl"
           )}
         >
-          {item.value}
+          {item.numeric !== undefined ? (
+            <AnimatedNumber
+              value={item.numeric}
+              decimals={item.numericDecimals}
+              compact={item.numericCompact}
+              prefix={item.numericPrefix}
+              suffix={item.numericSuffix}
+            />
+          ) : (
+            item.value
+          )}
         </span>
         {item.delta && (
           <span className={cn("font-mono text-xs", DELTA_TONE[item.deltaTone ?? "neutral"])}>
