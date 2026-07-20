@@ -307,18 +307,34 @@ export default function BotDetailPage() {
       </div>
 
       {tab === "config" && (
-        <Card>
-          <CardBody>
-            <dl className="space-y-3">
-              <Row label="Prompt del sistema" value={bot.systemPrompt} />
-              <Row label="Temperatura" value={String(bot.temperature)} />
-              <Row label="Max tokens" value={String(bot.maxTokens)} />
-              <Row label="Memoria" value={bot.memoryType === "RECENT" ? `Reciente (${bot.memoryLimit} msgs)` : bot.memoryType === "SUMMARY" ? "Resumen acumulativo" : "Ninguna"} />
-              <Row label="RAG" value={bot.ragEnabled ? "Activado" : "Desactivado"} />
-              <Row label="Creado" value={new Date(bot.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" })} />
-            </dl>
-          </CardBody>
-        </Card>
+        <div className="space-y-4">
+          {/* El prompt es lo más importante de esta pestaña y antes iba truncado
+              en un dd al 60% alineado a la derecha — ilegible. Ahora ocupa su
+              propio bloque a ancho completo y respeta los saltos de línea. */}
+          <Card>
+            <CardHeader><CardTitle>Prompt del sistema</CardTitle></CardHeader>
+            <CardBody>
+              <p className="whitespace-pre-wrap rounded-lg border border-border bg-background/40 p-3.5 text-sm leading-relaxed text-foreground">
+                {bot.systemPrompt}
+              </p>
+            </CardBody>
+          </Card>
+
+          {/* Parámetros y metadatos, separados del prompt: son datos escaneables,
+              no texto de lectura. */}
+          <Card>
+            <CardHeader><CardTitle>Parámetros</CardTitle></CardHeader>
+            <CardBody>
+              <dl className="divide-y divide-border">
+                <Row label="Temperatura" value={String(bot.temperature)} mono />
+                <Row label="Max tokens" value={bot.maxTokens.toLocaleString("es-MX")} mono />
+                <Row label="Memoria" value={bot.memoryType === "RECENT" ? `Reciente (${bot.memoryLimit} msgs)` : bot.memoryType === "SUMMARY" ? "Resumen acumulativo" : "Ninguna"} />
+                <Row label="RAG" value={bot.ragEnabled ? "Activado" : "Desactivado"} />
+                <Row label="Creado" value={new Date(bot.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" })} mono />
+              </dl>
+            </CardBody>
+          </Card>
+        </div>
       )}
 
       {tab === "knowledge" && (
@@ -483,11 +499,18 @@ export default function BotDetailPage() {
 
 // Jerarquía: la etiqueta recede (xs, muted) y el valor manda (foreground). Sin
 // esto las dos columnas pesaban igual y el bloque se leía como un muro plano.
-function Row({ label, value }: { label: string; value: string }) {
+// Las separaciones las pone el divide-y del <dl> padre.
+function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3 last:border-0 last:pb-0">
+    <div className="flex items-baseline justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
       <dt className="shrink-0 text-xs text-muted-darker">{label}</dt>
-      <dd className="max-w-[60%] truncate text-right text-sm font-medium text-foreground">{value}</dd>
+      <dd
+        className={`max-w-[60%] truncate text-right text-foreground ${
+          mono ? "font-mono text-xs" : "text-sm font-medium"
+        }`}
+      >
+        {value}
+      </dd>
     </div>
   );
 }

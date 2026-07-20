@@ -12,6 +12,7 @@ import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
 import { Spinner } from "@/app/components/ui/spinner";
 import { SkeletonDetail } from "@/app/components/ui/skeleton";
+import { KpiStrip } from "@/app/components/ui/kpi-strip";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { Banner } from "@/app/components/ui/banner";
 import { Switch } from "@/app/components/ui/switch";
@@ -280,24 +281,34 @@ export default function CuentaDetailPage() {
         <CardHeader>
           <CardTitle>Información de la cuenta</CardTitle>
         </CardHeader>
-        <CardBody>
-          <dl className="space-y-4">
-            <div className="flex justify-between border-b border-border pb-3">
-              <dt className="text-sm text-muted-darker">Número</dt>
-              <dd className="text-sm font-mono">{account.phoneNumber ?? "—"}</dd>
-            </div>
-            <div className="flex justify-between border-b border-border pb-3">
-              <dt className="text-sm text-muted-darker">Phone Number ID</dt>
-              <dd className="text-sm font-mono">{account.phoneNumberId}</dd>
-            </div>
-            <div className="flex justify-between border-b border-border pb-3">
-              <dt className="text-sm text-muted-darker">WABA ID</dt>
-              <dd className="text-sm font-mono">{account.wabaId ?? "—"}</dd>
-            </div>
-            <div className="flex justify-between items-center border-b border-border pb-3 gap-3">
-              <dt className="text-sm text-muted-darker shrink-0">App ID</dt>
+        {/* Antes: 9 filas de tres asuntos distintos (identificadores técnicos,
+            métricas y fechas) en una sola lista plana. Ahora van agrupadas, y las
+            métricas —que son cifras— usan la franja KPI en vez de pares dt/dd. */}
+        <CardBody className="space-y-6">
+          <KpiStrip
+            size="compact"
+            items={[
+              {
+                label: "Chats activos",
+                value: String(account._count.chats),
+                numeric: account._count.chats,
+              },
+              {
+                label: "Plantillas",
+                value: String(account._count.templates),
+                numeric: account._count.templates,
+              },
+            ]}
+          />
+
+          <InfoGroup title="Identificadores">
+            <InfoRow label="Número" value={account.phoneNumber ?? "—"} mono />
+            <InfoRow label="Phone Number ID" value={account.phoneNumberId} mono />
+            <InfoRow label="WABA ID" value={account.wabaId ?? "—"} mono />
+            <div className="flex items-center justify-between gap-3 py-2.5">
+              <span className="shrink-0 text-xs text-muted-darker">App ID</span>
               {editingAppId ? (
-                <div className="flex items-center gap-2 flex-1 justify-end">
+                <div className="flex flex-1 items-center justify-end gap-2">
                   <Input
                     value={appIdDraft}
                     onChange={(e) => setAppIdDraft(e.target.value)}
@@ -312,53 +323,48 @@ export default function CuentaDetailPage() {
                   </Button>
                 </div>
               ) : (
-                <dd className="text-sm font-mono flex items-center gap-2">
+                <span className="flex items-center gap-2 font-mono text-xs text-foreground">
                   {account.appId ?? "—"}
                   <button onClick={startEditAppId} className="text-muted-darker hover:text-foreground transition-colors" aria-label="Editar App ID">
                     <Pencil size={13} />
                   </button>
-                </dd>
+                </span>
               )}
             </div>
+          </InfoGroup>
+
+          <InfoGroup title="Estado">
             {account.qualityRating && (
-              <div className="flex justify-between border-b border-border pb-3">
-                <dt className="text-sm text-muted-darker">Calidad del número</dt>
-                <dd className="flex items-center gap-2">
+              <div className="flex items-center justify-between gap-4 py-2.5">
+                <span className="shrink-0 text-xs text-muted-darker">Calidad del número</span>
+                <span className="flex items-center gap-2">
                   <Badge tone={qualityTone(account.qualityRating)} size="sm">{account.qualityRating}</Badge>
                   {account.messagingTier && (
                     <span className="text-xs text-muted-darker">{account.messagingTier}</span>
                   )}
-                </dd>
+                </span>
               </div>
             )}
-            <div className="flex justify-between border-b border-border pb-3">
-              <dt className="text-sm text-muted-darker">Chats activos</dt>
-              <dd className="text-sm font-medium">{account._count.chats}</dd>
-            </div>
-            <div className="flex justify-between border-b border-border pb-3">
-              <dt className="text-sm text-muted-darker">Plantillas</dt>
-              <dd className="text-sm font-medium">{account._count.templates}</dd>
-            </div>
-            <div className="flex justify-between border-b border-border pb-3">
-              <dt className="text-sm text-muted-darker">Última actividad</dt>
-              <dd className="text-sm">
-                {account.lastActivity
+            <InfoRow
+              label="Última actividad"
+              mono
+              value={
+                account.lastActivity
                   ? new Date(account.lastActivity).toLocaleDateString("es-MX", {
                       day: "2-digit", month: "long", year: "numeric",
                       hour: "2-digit", minute: "2-digit",
                     })
-                  : "—"}
-              </dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-sm text-muted-darker">Creada</dt>
-              <dd className="text-sm">
-                {new Date(account.createdAt).toLocaleDateString("es-MX", {
-                  day: "2-digit", month: "long", year: "numeric",
-                })}
-              </dd>
-            </div>
-          </dl>
+                  : "—"
+              }
+            />
+            <InfoRow
+              label="Creada"
+              mono
+              value={new Date(account.createdAt).toLocaleDateString("es-MX", {
+                day: "2-digit", month: "long", year: "numeric",
+              })}
+            />
+          </InfoGroup>
         </CardBody>
       </Card>
 
@@ -475,6 +481,34 @@ export default function CuentaDetailPage() {
         tone="danger"
         onConfirm={handleDelete}
       />
+    </div>
+  );
+}
+
+// Agrupa filas relacionadas bajo un eyebrow. Reemplaza al <dl> plano de 9 filas
+// que mezclaba identificadores técnicos, métricas y fechas sin jerarquía.
+function InfoGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="mb-1 text-eyebrow font-medium uppercase tracking-eyebrow text-muted-darker">
+        {title}
+      </p>
+      <dl className="divide-y divide-border">{children}</dl>
+    </div>
+  );
+}
+
+function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-2.5">
+      <dt className="shrink-0 text-xs text-muted-darker">{label}</dt>
+      <dd
+        className={`truncate text-right text-foreground ${
+          mono ? "font-mono text-xs" : "text-sm font-medium"
+        }`}
+      >
+        {value}
+      </dd>
     </div>
   );
 }
