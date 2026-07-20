@@ -5,6 +5,7 @@ import { getTemplateVariables, renderTemplateText } from "@/lib/whatsapp/templat
 import { sendTemplateMessage } from "@/lib/whatsapp/send-template";
 import { saveMediaFromMeta, isImageMime, isVideoMime } from "@/lib/whatsapp/media-store";
 import { shouldUpdateName } from "@/lib/whatsapp/contact-name";
+import { parseLeadDate } from "@/lib/google/parse-lead-date";
 import type { LeadSheetSource, WAAccount, WATemplate } from "@prisma/client";
 
 // Tope por corrida del tick automático — evita que una ráfaga de filas nuevas (o una
@@ -71,6 +72,7 @@ export async function importNewLeadsForSource(
     throw new Error(`No se encontró la columna de teléfono "${source.phoneColumn}" en la hoja`);
   }
   const nameIdx = source.nameColumn ? findColumnIndex(header, source.nameColumn) : -1;
+  const dateIdx = source.dateColumn ? findColumnIndex(header, source.dateColumn) : -1;
   const bodyColumnNames = (source.bodyColumns as unknown as string[]) ?? [];
   const bodyIdxs = bodyColumnNames.map((c) => findColumnIndex(header, c));
 
@@ -83,8 +85,16 @@ export async function importNewLeadsForSource(
       const phone = normalizePhone(row[phoneIdx] ?? "");
       if (!phone || existingByPhone.has(phone)) continue;
       const seedContactName = nameIdx !== -1 ? row[nameIdx] || null : null;
+      const seedDate = parseLeadDate(dateIdx !== -1 ? row[dateIdx] : null);
       await prisma.leadSheetImportedRow.create({
-        data: { sourceId: source.id, phoneNumber: phone, contactName: seedContactName, status: "seeded" },
+        data: {
+          sourceId: source.id,
+          phoneNumber: phone,
+          contactName: seedContactName,
+          status: "seeded",
+          leadDateRaw: seedDate.raw,
+          leadDate: seedDate.date,
+        },
       });
       existingByPhone.set(phone, {
         id: "",
@@ -92,6 +102,9 @@ export async function importNewLeadsForSource(
         phoneNumber: phone,
         contactName: seedContactName,
         status: "seeded",
+        rotatedValue: null,
+        leadDateRaw: seedDate.raw,
+        leadDate: seedDate.date,
         wamid: null,
         deliveredAt: null,
         readAt: null,
@@ -145,6 +158,13 @@ export async function importNewLeadsForSource(
     }
   }
 
+  // Rotación round-robin de una variable del body: reparte los leads entre
+  // ejecutivos 1 a 1. El cursor arranca donde lo dejó la corrida anterior (vive
+  // en la fuente) para que la rotación no se reinicie en cada tick de 5 min.
+  const rotatingValues = (source.rotatingValues as unknown as string[] | null)?.filter(Boolean) ?? [];
+  const rotatingIdx = rotatingValues.length > 0 ? source.rotatingParamIndex : null;
+  let cursor = source.rotationCursor;
+
   const leadAdsTag = await prisma.tag.upsert({
     where: { name: `Lead Ads: ${source.name}` },
     create: { name: `Lead Ads: ${source.name}` },
@@ -152,8 +172,21 @@ export async function importNewLeadsForSource(
   });
 
   for (const { row, phone } of toProcess) {
-    const bodyParams = bodyIdxs.map((idx) => (idx === -1 ? "" : row[idx] ?? ""));
+    // El valor rotado se calcula por lead, pero el cursor solo avanza cuando el
+    // envío sale bien: si a un ejecutivo le falla un lead no pierde su turno.
+    const rotatedValue =
+      rotatingIdx !== null ? rotatingValues[cursor % rotatingValues.length] : null;
+    // Se recorre por la cantidad de variables que pide la plantilla (no por la de
+    // columnas guardadas), para no quedarse corto si la config no cubre todas.
+    const paramCount = Math.max(templateVars.bodyParamCount, bodyIdxs.length);
+    const bodyParams = Array.from({ length: paramCount }, (_, i) => {
+      if (i === rotatingIdx && rotatedValue !== null) return rotatedValue;
+      const idx = bodyIdxs[i] ?? -1;
+      return idx === -1 ? "" : row[idx] ?? "";
+    });
     const contactName = nameIdx !== -1 ? row[nameIdx] || phone : phone;
+    const leadDate = parseLeadDate(dateIdx !== -1 ? row[dateIdx] : null);
+    const leadDateFields = { leadDateRaw: leadDate.raw, leadDate: leadDate.date };
 
     const contact = await prisma.contact.findUnique({
       where: { accountId_remoteJid: { accountId: source.waAccountId, remoteJid: phone } },
@@ -167,8 +200,9 @@ export async function importNewLeadsForSource(
           contactName,
           status: "skipped",
           errorMessage: "El contacto optó por no recibir mensajes de marketing",
+          ...leadDateFields,
         },
-        update: { contactName, status: "skipped", errorMessage: "El contacto optó por no recibir mensajes de marketing" },
+        update: { contactName, status: "skipped", errorMessage: "El contacto optó por no recibir mensajes de marketing", ...leadDateFields },
       });
       result.skipped++;
       continue;
@@ -180,6 +214,7 @@ export async function importNewLeadsForSource(
         templateName,
         language,
         bodyParams,
+        bodyParamNames: templateVars.bodyParamNames,
         headerFormat: templateVars.header.format,
         headerParam: source.headerParam,
         buttonIndex: templateVars.buttonUrl?.index ?? null,
@@ -252,16 +287,18 @@ export async function importNewLeadsForSource(
 
       await prisma.leadSheetImportedRow.upsert({
         where: { sourceId_phoneNumber: { sourceId: source.id, phoneNumber: phone } },
-        create: { sourceId: source.id, phoneNumber: phone, contactName, status: "sent", wamid: wamid ?? null },
-        update: { contactName, status: "sent", wamid: wamid ?? null, errorMessage: null },
+        create: { sourceId: source.id, phoneNumber: phone, contactName, status: "sent", wamid: wamid ?? null, rotatedValue, ...leadDateFields },
+        update: { contactName, status: "sent", wamid: wamid ?? null, errorMessage: null, rotatedValue, ...leadDateFields },
       });
       result.imported++;
+      // El turno solo se consume con un envío exitoso.
+      if (rotatingIdx !== null) cursor++;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error desconocido";
       await prisma.leadSheetImportedRow.upsert({
         where: { sourceId_phoneNumber: { sourceId: source.id, phoneNumber: phone } },
-        create: { sourceId: source.id, phoneNumber: phone, contactName, status: "failed", errorMessage },
-        update: { contactName, status: "failed", errorMessage },
+        create: { sourceId: source.id, phoneNumber: phone, contactName, status: "failed", errorMessage, ...leadDateFields },
+        update: { contactName, status: "failed", errorMessage, ...leadDateFields },
       });
       result.failed++;
     }
@@ -275,6 +312,9 @@ export async function importNewLeadsForSource(
       lastRunAt: new Date(),
       lastImportedCount: result.imported,
       lastError: result.failed > 0 ? `${result.failed} de ${toProcess.length} fallaron en la última corrida` : null,
+      // Se guarda acotado al tamaño de la lista para que el entero no crezca sin
+      // límite; el siguiente tick retoma la rotación donde quedó.
+      ...(rotatingIdx !== null ? { rotationCursor: cursor % rotatingValues.length } : {}),
     },
   });
 

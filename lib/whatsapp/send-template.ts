@@ -6,6 +6,13 @@ export interface SendTemplateParams {
   templateName: string;
   language: string;
   bodyParams?: string[];
+  /**
+   * Nombres de los parámetros del body cuando la plantilla usa parámetros CON
+   * NOMBRE (`{{nombre}}`), alineados por índice con `bodyParams`. Meta rechaza
+   * esas plantillas si el payload no lleva `parameter_name`. Omitir (o null)
+   * para plantillas posicionales (`{{1}}`).
+   */
+  bodyParamNames?: string[] | null;
   headerFormat?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | null;
   // TEXT header → texto plano; IMAGE/VIDEO/DOCUMENT → Meta media id (no una URL).
   headerParam?: string | null;
@@ -38,9 +45,12 @@ export async function sendTemplateMessage(
   const templateComponents: Record<string, unknown>[] = [];
 
   if (params.bodyParams && params.bodyParams.length > 0) {
+    const names = params.bodyParamNames;
     templateComponents.push({
       type: "body",
-      parameters: params.bodyParams.map((text) => ({ type: "text", text })),
+      parameters: params.bodyParams.map((text, i) =>
+        names?.[i] ? { type: "text", parameter_name: names[i], text } : { type: "text", text }
+      ),
     });
   }
 

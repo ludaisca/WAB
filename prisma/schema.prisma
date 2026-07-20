@@ -381,12 +381,25 @@ model LeadSheetSource {
   sheetName     String
   phoneColumn   String
   nameColumn    String?
+  // Columna con la fecha en que el lead dejó sus datos en el formulario. La
+  // elige el usuario al conectar la fuente en vez de inferirse del encabezado:
+  // los exports de Meta Lead Ads no traen un nombre de columna consistente.
+  dateColumn    String?
   // Nombres de columna de la hoja, en el orden {{1}},{{2}},... del body de la plantilla.
   bodyColumns   Json
   // Igual que WACampaign.headerParam/buttonParam: valores estáticos (no por fila) —
   // texto o Meta media id para el header, sufijo de URL para el botón dinámico.
   headerParam   String?
   buttonParam   String?
+  // Rotación round-robin de UNA variable del body, para repartir los leads de
+  // forma equitativa entre ejecutivos (el lead 1 recibe el nombre del ejecutivo A,
+  // el 2 el del B, el 3 vuelve al A...). rotatingParamIndex es 0-based sobre las
+  // variables del body; cuando está puesto, esa posición ignora bodyColumns y
+  // toma su valor de rotatingValues. El cursor persiste entre corridas para que
+  // la rotación no se reinicie en cada tick, y solo avanza con envíos exitosos.
+  rotatingParamIndex Int?
+  rotatingValues     Json?
+  rotationCursor     Int     @default(0)
   enabled       Boolean    @default(true)
   lastRunAt     DateTime?
   lastImportedCount Int    @default(0)
@@ -419,6 +432,14 @@ model LeadSheetImportedRow {
   deliveredAt  DateTime?
   readAt       DateTime?
   errorMessage String?
+  // Valor que tocó en la rotación round-robin (p. ej. el ejecutivo asignado),
+  // para poder auditar a quién se le atribuyó cada lead.
+  rotatedValue String?
+  // Fecha de registro del lead tomada de dateColumn. Se guarda el texto tal cual
+  // viene de la hoja (leadDateRaw) además de la versión parseada, para no perder
+  // el dato cuando el formato no se puede interpretar.
+  leadDateRaw  String?
+  leadDate     DateTime?
   importedAt   DateTime        @default(now())
 
   @@unique([sourceId, phoneNumber])

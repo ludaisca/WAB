@@ -7,6 +7,7 @@ import { ArrowLeft, Save, Upload, RefreshCw } from "lucide-react";
 import { Card, CardBody, CardFooter } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
+import { Textarea } from "@/app/components/ui/textarea";
 import { Select } from "@/app/components/ui/select";
 import { SearchableSelect } from "@/app/components/ui/searchable-select";
 import { FormField } from "@/app/components/ui/form-field";
@@ -55,7 +56,12 @@ export default function NewLeadSheetSourcePage() {
 
   const [phoneColumn, setPhoneColumn] = useState("");
   const [nameColumn, setNameColumn] = useState("");
+  const [dateColumn, setDateColumn] = useState("");
   const [bodyColumns, setBodyColumns] = useState<string[]>([]);
+  // Variable del body que rota entre ejecutivos (null = ninguna) y su lista de
+  // valores, escrita uno por línea.
+  const [rotatingParamIndex, setRotatingParamIndex] = useState<number | null>(null);
+  const [rotatingValuesText, setRotatingValuesText] = useState("");
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -97,6 +103,8 @@ export default function NewLeadSheetSourcePage() {
     setHeaderFileName(null);
     setButtonParam("");
     setBodyColumns([]);
+    setRotatingParamIndex(null);
+    setRotatingValuesText("");
   }
 
   async function handleHeaderFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -177,7 +185,26 @@ export default function NewLeadSheetSourcePage() {
     }
   }
 
+  // Valor centinela del <Select> de columnas para marcar "esta variable rota".
+  const ROTATE = "__ROTATE__";
+
+  const rotatingValues = useMemo(
+    () => rotatingValuesText.split("\n").map((v) => v.trim()).filter(Boolean),
+    [rotatingValuesText]
+  );
+
   function updateBodyColumn(idx: number, value: string) {
+    if (value === ROTATE) {
+      // Solo una variable puede rotar: al marcar una, la anterior se libera.
+      setRotatingParamIndex(idx);
+      setBodyColumns((prev) => {
+        const next = [...prev];
+        next[idx] = "";
+        return next;
+      });
+      return;
+    }
+    if (rotatingParamIndex === idx) setRotatingParamIndex(null);
     setBodyColumns((prev) => {
       const next = [...prev];
       next[idx] = value;
@@ -193,8 +220,13 @@ export default function NewLeadSheetSourcePage() {
     if (!waTemplateId) newErrors.waTemplateId = "Selecciona una plantilla";
     if (!spreadsheetId || !sheetName) newErrors.sheet = "Carga una hoja y selecciona una pestaña";
     if (!phoneColumn) newErrors.phoneColumn = "Selecciona la columna de teléfono";
-    if (bodyParamCount > 0 && bodyColumns.filter(Boolean).length !== bodyParamCount) {
-      newErrors.bodyColumns = `Selecciona las ${bodyParamCount} columna(s) que alimentan las variables del cuerpo`;
+    // La variable rotativa no consume columna, por eso se descuenta del total.
+    const columnsNeeded = bodyParamCount - (rotatingParamIndex !== null ? 1 : 0);
+    if (bodyParamCount > 0 && bodyColumns.filter(Boolean).length !== columnsNeeded) {
+      newErrors.bodyColumns = `Selecciona las ${columnsNeeded} columna(s) que alimentan las variables del cuerpo`;
+    }
+    if (rotatingParamIndex !== null && rotatingValues.length < 2) {
+      newErrors.rotatingValues = "Escribe al menos 2 valores para que haya rotación";
     }
     if (templateVars?.header.required && !headerParam.trim()) {
       newErrors.headerParam = templateVars.header.format === "TEXT"
@@ -221,9 +253,14 @@ export default function NewLeadSheetSourcePage() {
           sheetName,
           phoneColumn,
           nameColumn: nameColumn || undefined,
-          bodyColumns,
+          dateColumn: dateColumn || undefined,
+          // Se envía denso (una entrada por variable, "" en la rotativa) porque el
+          // API valida que la longitud coincida con la de la plantilla.
+          bodyColumns: Array.from({ length: bodyParamCount }, (_, i) => bodyColumns[i] ?? ""),
           headerParam: headerParam.trim() || undefined,
           buttonParam: buttonParam.trim() || undefined,
+          rotatingParamIndex,
+          rotatingValues,
         }),
       });
       const data = await res.json();
@@ -386,6 +423,16 @@ export default function NewLeadSheetSourcePage() {
                           </Select>
                         )}
                       </FormField>
+                      <FormField
+                        label="Columna de fecha de registro"
+                        hint="Opcional. Cuándo dejó sus datos el lead — se muestra tal cual viene en la hoja, junto a la fecha de sincronización."
+                      >
+                        {(id) => (
+                          <Select id={id} value={dateColumn} onChange={(e) => setDateColumn(e.target.value)} placeholder="Ninguna">
+                            {header.map((h, i) => <option key={i} value={h}>{h || `(col ${i + 1})`}</option>)}
+                          </Select>
+                        )}
+                      </FormField>
                     </div>
 
                     {bodyParamCount > 0 && (
@@ -393,16 +440,62 @@ export default function NewLeadSheetSourcePage() {
                         <p className="text-sm font-medium">Variables del cuerpo de la plantilla</p>
                         {errors.bodyColumns && <p className="text-xs text-danger">{errors.bodyColumns}</p>}
                         <div className="grid gap-4 sm:grid-cols-2">
-                          {Array.from({ length: bodyParamCount }).map((_, idx) => (
-                            <FormField key={idx} label={`Variable {{${idx + 1}}}`} required>
-                              {(id) => (
-                                <Select id={id} value={bodyColumns[idx] ?? ""} onChange={(e) => updateBodyColumn(idx, e.target.value)} placeholder="Seleccionar columna">
-                                  {header.map((h, i) => <option key={i} value={h}>{h || `(col ${i + 1})`}</option>)}
-                                </Select>
-                              )}
-                            </FormField>
-                          ))}
+                          {Array.from({ length: bodyParamCount }).map((_, idx) => {
+                            const varLabel = templateVars?.bodyParamNames
+                              ? `Variable {{${templateVars.bodyParamNames[idx]}}}`
+                              : `Variable {{${idx + 1}}}`;
+                            return (
+                              <FormField key={idx} label={varLabel} required>
+                                {(id) => (
+                                  <Select
+                                    id={id}
+                                    value={rotatingParamIndex === idx ? ROTATE : bodyColumns[idx] ?? ""}
+                                    onChange={(e) => updateBodyColumn(idx, e.target.value)}
+                                    placeholder="Seleccionar columna"
+                                  >
+                                    {header.map((h, i) => <option key={i} value={h}>{h || `(col ${i + 1})`}</option>)}
+                                    <option value={ROTATE}>🔁 Rotar entre ejecutivos</option>
+                                  </Select>
+                                )}
+                              </FormField>
+                            );
+                          })}
                         </div>
+
+                        {rotatingParamIndex !== null && (
+                          <FormField
+                            label="Valores a rotar"
+                            required
+                            error={errors.rotatingValues}
+                            hint="Uno por línea. Se asignan en orden y de uno en uno: el primer lead recibe el primero, el segundo lead el segundo, y al llegar al final vuelve a empezar."
+                          >
+                            {(id) => (
+                              <Textarea
+                                id={id}
+                                value={rotatingValuesText}
+                                onChange={(e) => {
+                                  setRotatingValuesText(e.target.value);
+                                  // El aviso "faltan valores" queda incoherente junto al
+                                  // resumen de reparto si no se limpia al escribir.
+                                  if (errors.rotatingValues) {
+                                    setErrors((prev) => {
+                                      const { rotatingValues: _, ...rest } = prev;
+                                      return rest;
+                                    });
+                                  }
+                                }}
+                                placeholder={"Juan X\nCarlos X"}
+                                rows={4}
+                              />
+                            )}
+                          </FormField>
+                        )}
+                        {rotatingParamIndex !== null && rotatingValues.length >= 2 && (
+                          <p className="text-xs text-muted-darker">
+                            {rotatingValues.length} valores en rotación — cada uno recibirá aproximadamente
+                            {" "}{Math.round(100 / rotatingValues.length)}% de los leads.
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>

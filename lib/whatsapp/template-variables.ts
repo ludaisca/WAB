@@ -21,12 +21,44 @@ export type HeaderFormat = "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT";
 export interface TemplateVariables {
   header: { required: boolean; format: HeaderFormat | null };
   bodyParamCount: number;
+  /**
+   * Nombres de los parámetros del body cuando la plantilla usa parámetros CON
+   * NOMBRE (`{{nombre}}`), en orden de primera aparición. `null` cuando son
+   * posicionales (`{{1}}`). El envío necesita saberlo: Meta exige
+   * `parameter_name` en el payload para las plantillas con nombre.
+   */
+  bodyParamNames: string[] | null;
   buttonUrl: { required: boolean; index: number; text: string } | null;
   footerHasVariables: boolean;
 }
 
+// Acepta tanto `{{1}}` como `{{nombre_agente}}` — Meta permite ambos estilos y
+// antes solo se detectaban los numéricos.
+const PLACEHOLDER_RE = /\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g;
+
 function hasVariable(text?: string): boolean {
-  return !!text && /\{\{\s*\d+\s*\}\}/.test(text);
+  return !!text && new RegExp(PLACEHOLDER_RE.source).test(text);
+}
+
+/**
+ * Devuelve cuántos valores hay que suministrar para el body y, si la plantilla
+ * usa parámetros con nombre, cuáles son.
+ *
+ * Para los posicionales el total es el índice MÁXIMO, no la cantidad de
+ * placeholders distintos: una plantilla con `{{1}}` y `{{3}}` necesita 3
+ * posiciones aunque solo aparezcan 2 marcadores.
+ */
+function parseBodyParams(text?: string): { count: number; names: string[] | null } {
+  if (!text) return { count: 0, names: null };
+  const tokens = [...text.matchAll(new RegExp(PLACEHOLDER_RE.source, "g"))].map((m) => m[1]);
+  if (tokens.length === 0) return { count: 0, names: null };
+
+  if (tokens.every((t) => /^\d+$/.test(t))) {
+    return { count: Math.max(...tokens.map(Number)), names: null };
+  }
+  // Con nombre (o mezcla inválida, que Meta rechazaría): se tratan como nombres,
+  // sin duplicados y en orden de aparición.
+  return { count: new Set(tokens).size, names: [...new Set(tokens)] };
 }
 
 interface RenderTemplateTextInput {
@@ -43,15 +75,23 @@ export function renderTemplateText(components: unknown, { bodyParams = [], heade
   const header = list.find((c) => c.type === "HEADER");
   const body = list.find((c) => c.type === "BODY");
 
-  const substitute = (text: string, params: string[]) =>
-    text.replace(/\{\{\s*(\d+)\s*\}\}/g, (_match, n) => params[Number(n) - 1] ?? `{{${n}}}`);
+  // Sustituye por posición para `{{1}}` y por nombre para `{{nombre}}` (en el
+  // segundo caso bodyParams viene alineado con el orden de bodyParamNames).
+  const substitute = (text: string, params: string[], names: string[] | null) =>
+    text.replace(new RegExp(PLACEHOLDER_RE.source, "g"), (match, token: string) => {
+      if (names) {
+        const i = names.indexOf(token);
+        return i === -1 ? match : params[i] ?? match;
+      }
+      return /^\d+$/.test(token) ? params[Number(token) - 1] ?? match : match;
+    });
 
   const parts: string[] = [];
   if (header?.format === "TEXT" && header.text) {
-    parts.push(substitute(header.text, headerParam ? [headerParam] : []));
+    parts.push(substitute(header.text, headerParam ? [headerParam] : [], null));
   }
   if (body?.text) {
-    parts.push(substitute(body.text, bodyParams));
+    parts.push(substitute(body.text, bodyParams, parseBodyParams(body.text).names));
   }
 
   return parts.join("\n\n").trim();
@@ -71,7 +111,7 @@ export function getTemplateVariables(components: unknown): TemplateVariables {
   // there's no static fallback, Meta rejects the send without one.
   const headerRequired = headerFormat === "TEXT" ? hasVariable(header?.text) : headerFormat !== null;
 
-  const bodyMatches = body?.text ? new Set(body.text.match(/\{\{\s*\d+\s*\}\}/g) ?? []) : new Set<string>();
+  const bodyParams = parseBodyParams(body?.text);
 
   let buttonUrl: TemplateVariables["buttonUrl"] = null;
   buttonsComponent?.buttons?.forEach((btn, index) => {
@@ -82,7 +122,8 @@ export function getTemplateVariables(components: unknown): TemplateVariables {
 
   return {
     header: { required: headerRequired, format: headerFormat },
-    bodyParamCount: bodyMatches.size,
+    bodyParamCount: bodyParams.count,
+    bodyParamNames: bodyParams.names,
     buttonUrl,
     footerHasVariables: hasVariable(footer?.text),
   };

@@ -36,7 +36,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       take: 50,
     });
 
-    return NextResponse.json({ ...source, rowCounts, recentRows });
+    // Reparto acumulado por ejecutivo — sobre todo el historial, no solo las 50
+    // filas recientes, que es lo único que permite auditar la equidad. Incluye
+    // nombres que ya salieron de la rotación (el histórico no se reescribe).
+    const rotationCounts = source.rotatingParamIndex === null
+      ? []
+      : await prisma.leadSheetImportedRow.groupBy({
+          by: ["rotatedValue"],
+          where: { sourceId: id, rotatedValue: { not: null }, status: "sent" },
+          _count: { _all: true },
+        });
+
+    return NextResponse.json({ ...source, rowCounts, recentRows, rotationCounts });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -45,7 +45,7 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
-    const { name, waAccountId, waTemplateId, spreadsheetId, sheetName, phoneColumn, nameColumn, bodyColumns, headerParam, buttonParam } =
+    const { name, waAccountId, waTemplateId, spreadsheetId, sheetName, phoneColumn, nameColumn, dateColumn, bodyColumns, headerParam, buttonParam, rotatingParamIndex, rotatingValues } =
       parsed.data;
 
     const accountIds = await getUserAccountIds(session.user.id);
@@ -67,6 +67,12 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+    if (rotatingParamIndex != null && rotatingParamIndex >= expectedParamCount) {
+      return NextResponse.json(
+        { error: "La variable marcada como rotativa no existe en la plantilla" },
+        { status: 400 }
+      );
+    }
 
     const sheets = await getGoogleSheetsClientForUser(session.user.id);
     if (!sheets) {
@@ -81,7 +87,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "La hoja/pestaña indicada está vacía o no existe" }, { status: 400 });
     }
     const header = rows[0].map((h) => h.trim().toLowerCase());
-    const missing = [phoneColumn, ...(nameColumn ? [nameColumn] : []), ...bodyColumns].filter(
+    // La variable rotativa no se alimenta de la hoja, así que su hueco en
+    // bodyColumns viene vacío y no debe validarse contra las columnas.
+    const missing = [
+      phoneColumn,
+      ...(nameColumn ? [nameColumn] : []),
+      ...(dateColumn ? [dateColumn] : []),
+      ...bodyColumns.filter(Boolean),
+    ].filter(
       (col) => !header.includes(col.trim().toLowerCase())
     );
     if (missing.length > 0) {
@@ -101,9 +114,12 @@ export async function POST(req: Request) {
         sheetName,
         phoneColumn,
         nameColumn: nameColumn || null,
+        dateColumn: dateColumn || null,
         bodyColumns,
         headerParam: headerParam || null,
         buttonParam: buttonParam || null,
+        rotatingParamIndex: rotatingParamIndex ?? null,
+        rotatingValues: rotatingParamIndex != null ? rotatingValues.filter(Boolean) : [],
       },
     });
 

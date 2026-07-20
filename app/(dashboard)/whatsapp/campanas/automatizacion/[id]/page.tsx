@@ -23,9 +23,13 @@ interface SourceDetail {
   sheetName: string;
   phoneColumn: string;
   nameColumn: string | null;
+  dateColumn: string | null;
   bodyColumns: string[];
   headerParam: string | null;
   buttonParam: string | null;
+  rotatingParamIndex: number | null;
+  rotatingValues: string[];
+  rotationCursor: number;
   enabled: boolean;
   lastRunAt: string | null;
   lastImportedCount: number;
@@ -34,6 +38,7 @@ interface SourceDetail {
   waAccount: { id: string; name: string };
   waTemplate: { id: string; name: string; language: string };
   rowCounts: { status: string; _count: { _all: number } }[];
+  rotationCounts: { rotatedValue: string | null; _count: { _all: number } }[];
   recentRows: ImportedRow[];
 }
 
@@ -42,6 +47,9 @@ interface ImportedRow {
   phoneNumber: string;
   status: string;
   errorMessage: string | null;
+  rotatedValue: string | null;
+  leadDateRaw: string | null;
+  leadDate: string | null;
   importedAt: string;
 }
 
@@ -102,6 +110,25 @@ export default function LeadSheetSourceDetailPage() {
     () => source?.rowCounts.find((c) => c.status === "seeded")?._count._all ?? 0,
     [source]
   );
+
+  const rotationTotal = useMemo(
+    () => (source?.rotationCounts ?? []).reduce((sum, r) => sum + r._count._all, 0),
+    [source]
+  );
+
+  // Ordenado por volumen: el desbalance se ve de un vistazo si lo hay. Los que
+  // siguen en la rotación van primero para separarlos de los ya retirados.
+  const rotationBreakdown = useMemo(() => {
+    const active = new Set(source?.rotatingValues ?? []);
+    return (source?.rotationCounts ?? [])
+      .map((r) => ({
+        name: r.rotatedValue ?? "—",
+        count: r._count._all,
+        pct: rotationTotal > 0 ? Math.round((r._count._all / rotationTotal) * 100) : 0,
+        active: active.has(r.rotatedValue ?? ""),
+      }))
+      .sort((a, b) => Number(b.active) - Number(a.active) || b.count - a.count);
+  }, [source, rotationTotal]);
 
   // rowCounts ya venía del API pero solo se usaba para contar "seeded" — la
   // distribución por estado no se mostraba en ninguna parte.
@@ -189,8 +216,30 @@ export default function LeadSheetSourceDetailPage() {
         return <Badge tone={badge.tone} size="sm">{badge.label}</Badge>;
       },
     },
+    ...(source?.rotatingParamIndex != null
+      ? [{
+          key: "rotatedValue",
+          header: "Asignado a",
+          render: (r: ImportedRow) => <span className="text-xs">{r.rotatedValue || "—"}</span>,
+          hideBelow: "sm" as const,
+        }]
+      : []),
+    ...(source?.dateColumn
+      ? [{
+          key: "leadDateRaw",
+          header: "Registrado",
+          // Solo se reformatea cuando el formato de la hoja era inequívoco (ver
+          // parseLeadDate); si no, se muestra el texto crudo para no arriesgar una
+          // lectura equivocada de fechas ambiguas (07/03 = 7 de marzo o 3 de julio).
+          render: (r: ImportedRow) => (
+            <span className="font-mono text-xs">
+              {r.leadDate ? new Date(r.leadDate).toLocaleString("es-MX") : r.leadDateRaw || "—"}
+            </span>
+          ),
+        }]
+      : []),
     { key: "errorMessage", header: "Detalle", render: (r) => <span className="text-xs text-muted-darker">{r.errorMessage || "—"}</span>, hideBelow: "sm" },
-    { key: "importedAt", header: "Fecha", render: (r) => <span className="text-xs text-muted-darker">{new Date(r.importedAt).toLocaleString("es-MX")}</span> },
+    { key: "importedAt", header: "Sincronizado", render: (r) => <span className="text-xs text-muted-darker">{new Date(r.importedAt).toLocaleString("es-MX")}</span> },
   ];
 
   if (loading) {
@@ -271,10 +320,39 @@ export default function LeadSheetSourceDetailPage() {
                   <dd className="font-mono text-xs">{source.nameColumn}</dd>
                 </div>
               )}
+              {source.dateColumn && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-darker">Columna de fecha de registro</dt>
+                  <dd className="font-mono text-xs">{source.dateColumn}</dd>
+                </div>
+              )}
               {source.bodyColumns.length > 0 && (
                 <div className="flex justify-between gap-4">
                   <dt className="text-muted-darker">Variables del cuerpo</dt>
-                  <dd className="font-mono text-xs text-right">{source.bodyColumns.map((c, i) => `{{${i + 1}}}=${c}`).join(", ")}</dd>
+                  <dd className="font-mono text-xs text-right">
+                    {source.bodyColumns
+                      .map((c, i) => `{{${i + 1}}}=${i === source.rotatingParamIndex ? "rotación" : c}`)
+                      .join(", ")}
+                  </dd>
+                </div>
+              )}
+              {source.rotatingParamIndex !== null && source.rotatingValues.length > 0 && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-darker">
+                    Rotación en {`{{${source.rotatingParamIndex + 1}}}`}
+                  </dt>
+                  <dd className="text-right text-xs">
+                    <span className="flex flex-wrap justify-end gap-1">
+                      {source.rotatingValues.map((v, i) => (
+                        <Badge key={v} tone={i === source.rotationCursor ? "success" : "neutral"}>
+                          {v}
+                        </Badge>
+                      ))}
+                    </span>
+                    <span className="mt-1 block text-muted-darker">
+                      Siguiente: {source.rotatingValues[source.rotationCursor % source.rotatingValues.length]}
+                    </span>
+                  </dd>
                 </div>
               )}
               <div className="flex justify-between gap-4">
@@ -295,6 +373,37 @@ export default function LeadSheetSourceDetailPage() {
             </p>
           </CardBody>
         </Card>
+
+        {source.rotatingParamIndex !== null && source.rotationCounts.length > 0 && (
+          <Card>
+            <CardHeader><CardTitle>Reparto por ejecutivo</CardTitle></CardHeader>
+            <CardBody>
+              <ul className="space-y-2">
+                {rotationBreakdown.map((r) => (
+                  <li key={r.name} className="flex items-center gap-3 text-sm">
+                    <span className="flex w-32 shrink-0 items-center gap-1.5 truncate">
+                      {r.name}
+                      {!r.active && <Badge tone="neutral" size="sm">retirado</Badge>}
+                    </span>
+                    <span className="h-2 flex-1 overflow-hidden rounded-full bg-surface-light">
+                      <span
+                        className="block h-full rounded-full bg-accent"
+                        style={{ width: `${r.pct}%` }}
+                      />
+                    </span>
+                    <span className="w-24 shrink-0 text-right font-mono text-xs text-muted-darker">
+                      {r.count} ({r.pct}%)
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-4 text-xs text-muted-darker">
+                Sobre {rotationTotal} lead(s) enviados en todo el historial de esta fuente. Incluye
+                nombres retirados de la rotación — las asignaciones pasadas no se reescriben.
+              </p>
+            </CardBody>
+          </Card>
+        )}
 
         <Card>
           <CardHeader><CardTitle>Actividad reciente</CardTitle></CardHeader>

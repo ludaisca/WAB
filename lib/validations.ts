@@ -143,16 +143,25 @@ export const leadSheetSourceSchema = z.object({
   sheetName: z.string().min(1, "La pestaña es requerida"),
   phoneColumn: z.string().min(1, "La columna de teléfono es requerida"),
   nameColumn: z.string().optional(),
+  dateColumn: z.string().optional(),
   bodyColumns: z.array(z.string()).default([]),
   headerParam: z.string().optional(),
   buttonParam: z.string().optional(),
-});
+  // Rotación round-robin: índice (0-based) de la variable del body que rota y la
+  // lista de valores. Se exigen al menos 2 valores — con uno solo no hay rotación.
+  rotatingParamIndex: z.number().int().min(0).nullable().optional(),
+  rotatingValues: z.array(z.string().min(1).max(200)).max(50).default([]),
+}).refine(
+  (d) => d.rotatingParamIndex == null || d.rotatingValues.filter(Boolean).length >= 2,
+  { message: "La rotación necesita al menos 2 valores", path: ["rotatingValues"] }
+);
 
 export const leadSheetSourceUpdateSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   enabled: z.boolean().optional(),
   headerParam: z.string().nullable().optional(),
   buttonParam: z.string().nullable().optional(),
+  rotatingValues: z.array(z.string().min(1).max(200)).max(50).optional(),
 });
 
 export type BotInput = z.infer<typeof botSchema>;
