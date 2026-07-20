@@ -6,14 +6,29 @@ import { importNewLeadsForSource, LEAD_SHEET_MAX_BACKFILL } from "@/lib/google/l
 
 // Acción manual explícita — reprocesa filas marcadas "seeded" (vistas al conectar
 // la fuente, sin enviarles nada) para el caso en que sí se quiera avisar al
-// histórico de una fuente en particular.
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+// histórico de una fuente en particular. Body opcional { dateFrom?, dateTo? }
+// (fechas "YYYY-MM-DD") para acotar el reenvío a la fecha de registro del lead
+// en vez de todo el histórico — ver "Importar por fecha" en el detalle de la fuente.
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
     const { id } = await params;
+
+    // El botón original llama sin body — se tolera que el parseo falle.
+    let dateFrom: Date | null = null;
+    let dateTo: Date | null = null;
+    try {
+      const body = await req.json();
+      if (body?.dateFrom) dateFrom = new Date(`${body.dateFrom}T00:00:00.000Z`);
+      if (body?.dateTo) dateTo = new Date(`${body.dateTo}T23:59:59.999Z`);
+    } catch {
+      // sin body -> comportamiento original, importa todo el histórico "seeded"
+    }
+    if (dateFrom && Number.isNaN(dateFrom.getTime())) dateFrom = null;
+    if (dateTo && Number.isNaN(dateTo.getTime())) dateTo = null;
 
     const accountIds = await getUserAccountIds(session.user.id);
     const source = await prisma.leadSheetSource.findFirst({
@@ -25,7 +40,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     }
 
     try {
-      const result = await importNewLeadsForSource(source, { includeExisting: true, limit: LEAD_SHEET_MAX_BACKFILL });
+      const result = await importNewLeadsForSource(source, {
+        includeExisting: true,
+        limit: LEAD_SHEET_MAX_BACKFILL,
+        dateFrom,
+        dateTo,
+      });
       return NextResponse.json(result);
     } catch (importError) {
       const message = importError instanceof Error ? importError.message : "Error desconocido";

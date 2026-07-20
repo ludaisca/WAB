@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, RefreshCw, History, Trash2, ExternalLink } from "lucide-react";
+import { ArrowLeft, RefreshCw, History, CalendarRange, Trash2, ExternalLink } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
@@ -12,6 +12,9 @@ import { Spinner } from "@/app/components/ui/spinner";
 import { SkeletonDetail } from "@/app/components/ui/skeleton";
 import { DonutChart } from "@/app/components/ui/chart";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
+import { Modal } from "@/app/components/ui/modal";
+import { FormField } from "@/app/components/ui/form-field";
+import { Input } from "@/app/components/ui/input";
 import { Banner } from "@/app/components/ui/banner";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
@@ -88,6 +91,10 @@ export default function LeadSheetSourceDetailPage() {
   const [importing, setImporting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [importConfirmOpen, setImportConfirmOpen] = useState(false);
+  const [importByDateOpen, setImportByDateOpen] = useState(false);
+  const [importingByDate, setImportingByDate] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const fetchSource = useCallback(async () => {
     setLoading(true);
@@ -192,6 +199,28 @@ export default function LeadSheetSourceDetailPage() {
     }
   }
 
+  async function handleImportByDate() {
+    setImportingByDate(true);
+    try {
+      const res = await fetch(`/api/whatsapp/lead-sheet-sources/${id}/import-existing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dateFrom: dateFrom || undefined, dateTo: dateTo || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      success(`Histórico importado: ${data.imported} enviado(s), ${data.failed} fallido(s)`);
+      setImportByDateOpen(false);
+      setDateFrom("");
+      setDateTo("");
+      fetchSource();
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al importar histórico por fecha");
+    } finally {
+      setImportingByDate(false);
+    }
+  }
+
   async function handleDelete() {
     try {
       const res = await fetch(`/api/whatsapp/lead-sheet-sources/${id}`, { method: "DELETE" });
@@ -272,6 +301,16 @@ export default function LeadSheetSourceDetailPage() {
           </Button>
           <Button variant="secondary" size="sm" icon={importing ? undefined : History} onClick={() => setImportConfirmOpen(true)} disabled={importing || seededCount === 0}>
             {importing ? <Spinner /> : "Importar leads existentes"}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={CalendarRange}
+            onClick={() => setImportByDateOpen(true)}
+            disabled={seededCount === 0 || !source.dateColumn}
+            title={!source.dateColumn ? "Esta fuente no tiene columna de fecha configurada" : undefined}
+          >
+            Importar por fecha
           </Button>
           <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setDeleteOpen(true)} className="text-muted-darker hover:text-danger" />
         </div>
@@ -439,6 +478,33 @@ export default function LeadSheetSourceDetailPage() {
         tone="danger"
         onConfirm={handleImportExisting}
       />
+
+      <Modal
+        open={importByDateOpen}
+        onClose={() => setImportByDateOpen(false)}
+        title="Importar por fecha"
+        description={`Envía la plantilla "${source.waTemplate.name}" solo a los leads vistos al conectar la fuente cuya fecha de registro (columna "${source.dateColumn}") caiga en el rango indicado. Deja un campo vacío para no acotar ese extremo. Filas con fecha en formato ambiguo no se incluyen. Esta acción no se puede deshacer.`}
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => setImportByDateOpen(false)} disabled={importingByDate}>
+              Cancelar
+            </Button>
+            <Button variant="danger" size="sm" onClick={handleImportByDate} loading={importingByDate}>
+              Enviar al rango
+            </Button>
+          </>
+        }
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormField label="Desde">
+            {(id) => <Input id={id} type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} max={dateTo || undefined} />}
+          </FormField>
+          <FormField label="Hasta">
+            {(id) => <Input id={id} type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} min={dateFrom || undefined} />}
+          </FormField>
+        </div>
+      </Modal>
     </div>
   );
 }

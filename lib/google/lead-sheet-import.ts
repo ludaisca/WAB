@@ -32,6 +32,13 @@ interface ImportOptions {
   // Solo marca las filas actuales como "seeded" sin enviar nada — usado al crear
   // una fuente, para que el primer tick automático solo dispare con leads nuevos.
   seedOnly?: boolean;
+  // Filtra el histórico por la fecha de registro del lead (columna `dateColumn`),
+  // ambos límites inclusivos — usado por "Importar por fecha". Requiere que la
+  // fila tenga una fecha que parseLeadDate haya podido interpretar sin ambigüedad;
+  // filas sin fecha resuelta (columna vacía o formato ambiguo) quedan fuera del
+  // filtro en vez de arriesgarse a incluir/excluir con una lectura incorrecta.
+  dateFrom?: Date | null;
+  dateTo?: Date | null;
 }
 
 function mediaMessageTypeFromMime(mimeType: string): string {
@@ -122,11 +129,15 @@ export async function importNewLeadsForSource(
     const phone = normalizePhone(row[phoneIdx] ?? "");
     if (!phone) continue;
     const existing = existingByPhone.get(phone);
-    if (!existing) {
-      candidates.push({ row, phone });
-    } else if (opts.includeExisting && existing.status === "seeded") {
-      candidates.push({ row, phone });
+    const isCandidate = !existing || (opts.includeExisting && existing.status === "seeded");
+    if (!isCandidate) continue;
+    if (opts.dateFrom || opts.dateTo) {
+      const { date } = parseLeadDate(dateIdx !== -1 ? row[dateIdx] : null);
+      if (!date) continue;
+      if (opts.dateFrom && date < opts.dateFrom) continue;
+      if (opts.dateTo && date > opts.dateTo) continue;
     }
+    candidates.push({ row, phone });
   }
 
   const limit = opts.limit ?? MAX_ROWS_PER_TICK;
