@@ -24,6 +24,7 @@ import { Select } from "@/app/components/ui/select";
 import { Button } from "@/app/components/ui/button";
 import { Badge } from "@/app/components/ui/badge";
 import { Spinner } from "@/app/components/ui/spinner";
+import { Skeleton, SkeletonChatList } from "@/app/components/ui/skeleton";
 import { EmptyState } from "@/app/components/ui/empty-state";
 import { Modal } from "@/app/components/ui/modal";
 import { useToast } from "@/app/components/ui/toast";
@@ -264,13 +265,28 @@ function MediaContent({ msg, onPreview }: { msg: Message; onPreview: (media: Pre
   return null;
 }
 
-function MessageBubble({ msg, onPreview }: { msg: Message; onPreview: (media: PreviewMedia) => void }) {
+function MessageBubble({
+  msg,
+  onPreview,
+  isLatest,
+}: {
+  msg: Message;
+  onPreview: (media: PreviewMedia) => void;
+  isLatest?: boolean;
+}) {
   const isInbound = msg.direction === "INBOUND";
   const hasMedia = msg.messageType !== "text" && (msg.mediaUrl || msg.mediaId);
   const caption = msg.caption ?? (hasMedia && msg.body && msg.body !== `[${msg.messageType}]` ? msg.body : null);
 
   return (
-    <div className={`flex ${isInbound ? "justify-start" : "justify-end"}`}>
+    // Solo el último mensaje entra animado: React conserva el DOM de los
+    // anteriores por su key, así que al llegar uno nuevo únicamente ese monta y
+    // anima — no se re-anima todo el hilo en cada poll ni al cargar.
+    <div
+      className={`flex ${isInbound ? "justify-start" : "justify-end"} ${
+        isLatest ? "animate-slide-up" : ""
+      }`}
+    >
       <div
         className={`max-w-[75%] px-3.5 py-2.5 text-sm leading-relaxed ${
           isInbound
@@ -294,7 +310,9 @@ function MessageBubble({ msg, onPreview }: { msg: Message; onPreview: (media: Pr
             <span className="text-[10px]">
               {msg.status === "sent" && <Check size={10} />}
               {msg.status === "delivered" && <CheckCheck size={10} />}
-              {msg.status === "read" && <CheckCheck size={10} className="text-info" />}
+              {/* El salto entregado→leído monta un elemento nuevo, así que el
+                  micro-pop marca el cambio de estado sin ser intrusivo. */}
+              {msg.status === "read" && <CheckCheck size={10} className="text-info animate-scale-in-spring" />}
             </span>
           )}
         </div>
@@ -857,8 +875,10 @@ export function ChatWorkspace({
         </div>
         <div className="flex-1 overflow-y-auto">
           {loadingChats ? (
-            <div className="flex items-center justify-center py-12">
-              <Spinner />
+            // Skeleton con la forma real de la lista (avatar + 2 líneas) en vez
+            // de un spinner: la transición a los datos no reacomoda el panel.
+            <div className="p-2">
+              <SkeletonChatList rows={8} />
             </div>
           ) : filteredChats.length === 0 ? (
             <div className="py-8">
@@ -1029,8 +1049,18 @@ export function ChatWorkspace({
 
             <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
               {loadingMessages ? (
-                <div className="flex items-center justify-center py-12">
-                  <Spinner />
+                // Burbujas fantasma alternando lado, para que el hilo no salte
+                // al llegar los mensajes reales.
+                <div className="space-y-3" aria-hidden="true">
+                  {[0, 1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} className={`flex ${i % 3 === 0 ? "justify-end" : "justify-start"}`}>
+                      <Skeleton
+                        className={`h-12 ${i % 2 === 0 ? "w-52" : "w-64"} ${
+                          i % 3 === 0 ? "rounded-bubble-br" : "rounded-2xl rounded-tl-sm"
+                        }`}
+                      />
+                    </div>
+                  ))}
                 </div>
               ) : messages.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
@@ -1062,7 +1092,11 @@ export function ChatWorkspace({
                           </span>
                         </div>
                       )}
-                      <MessageBubble msg={msg} onPreview={setPreviewMedia} />
+                      <MessageBubble
+                        msg={msg}
+                        onPreview={setPreviewMedia}
+                        isLatest={i === messages.length - 1}
+                      />
                     </div>
                   );
                 })}

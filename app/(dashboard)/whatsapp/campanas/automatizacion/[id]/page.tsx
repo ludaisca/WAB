@@ -10,6 +10,7 @@ import { Button } from "@/app/components/ui/button";
 import { Switch } from "@/app/components/ui/switch";
 import { Spinner } from "@/app/components/ui/spinner";
 import { SkeletonDetail } from "@/app/components/ui/skeleton";
+import { DonutChart } from "@/app/components/ui/chart";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { Banner } from "@/app/components/ui/banner";
 import { Table, type TableColumn } from "@/app/components/ui/table";
@@ -53,6 +54,19 @@ const ROW_STATUS_BADGE: Record<string, { label: string; tone: "success" | "warni
   seeded: { label: "Visto al conectar", tone: "neutral" },
 };
 
+// Colores de ESTADO para la dona (no la paleta categórica): cada estado tiene un
+// significado fijo. La dona lleva etiquetas directas, así que la identidad nunca
+// depende solo del color. `read` y `delivered` se distinguen por tono dentro del
+// verde para no fundirse entre sí.
+const ROW_STATUS_COLOR: Record<string, string> = {
+  sent: "var(--info)",
+  delivered: "var(--success)",
+  read: "var(--accent)",
+  failed: "var(--danger)",
+  skipped: "var(--warning)",
+  seeded: "var(--muted-darker)",
+};
+
 export default function LeadSheetSourceDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -86,6 +100,18 @@ export default function LeadSheetSourceDetailPage() {
 
   const seededCount = useMemo(
     () => source?.rowCounts.find((c) => c.status === "seeded")?._count._all ?? 0,
+    [source]
+  );
+
+  // rowCounts ya venía del API pero solo se usaba para contar "seeded" — la
+  // distribución por estado no se mostraba en ninguna parte.
+  const statusSlices = useMemo(
+    () =>
+      (source?.rowCounts ?? []).map((c) => ({
+        name: ROW_STATUS_BADGE[c.status]?.label ?? c.status,
+        value: c._count._all,
+        color: ROW_STATUS_COLOR[c.status] ?? "var(--muted-darker)",
+      })),
     [source]
   );
 
@@ -204,6 +230,17 @@ export default function LeadSheetSourceDetailPage() {
 
       {source.lastError && (
         <Banner tone="danger">{source.lastError}</Banner>
+      )}
+
+      {statusSlices.some((s) => s.value > 0) && (
+        <Card>
+          <CardHeader><CardTitle>Distribución de filas</CardTitle></CardHeader>
+          <CardBody>
+            {/* fold={false}: cada estado tiene significado propio; plegar el más
+                pequeño en "Otros" escondería, p. ej., los fallidos. */}
+            <DonutChart data={statusSlices} height={180} fold={false} totalLabel="filas" />
+          </CardBody>
+        </Card>
       )}
 
       <div className="grid gap-6 lg:grid-cols-2">

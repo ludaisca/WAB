@@ -11,6 +11,7 @@ import { Input } from "@/app/components/ui/input";
 import { FormField } from "@/app/components/ui/form-field";
 import { Spinner } from "@/app/components/ui/spinner";
 import { SkeletonDetail } from "@/app/components/ui/skeleton";
+import { TrendChart } from "@/app/components/ui/chart";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { Banner } from "@/app/components/ui/banner";
 import { Table, type TableColumn } from "@/app/components/ui/table";
@@ -227,6 +228,25 @@ export default function BotDetailPage() {
     },
   ], []);
 
+  // `recent` son interacciones sueltas; se agrupan por día para ver la tendencia
+  // de consumo, que las 3 tarjetas (hoy/mes/total) no muestran.
+  const usageTrend = useMemo(() => {
+    const byDay = new Map<string, number>();
+    for (const u of usageData?.recent ?? []) {
+      const day = u.createdAt.slice(0, 10);
+      byDay.set(day, (byDay.get(day) ?? 0) + u.totalTokens);
+    }
+    return Array.from(byDay.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([day, tokens]) => ({
+        label: new Date(day + "T00:00:00").toLocaleDateString("es-MX", {
+          day: "2-digit",
+          month: "short",
+        }),
+        tokens,
+      }));
+  }, [usageData]);
+
   // Skeleton con la misma anatomía y ancho que la página cargada, en vez de un
   // spinner centrado que descarta el layout y lo hace "aparecer" de golpe.
   if (loading) return <div className="space-y-6 max-w-3xl mx-auto"><SkeletonDetail cards={2} /></div>;
@@ -408,6 +428,19 @@ export default function BotDetailPage() {
             </Card>
           </div>
 
+          {usageTrend.length > 1 && (
+            <Card>
+              <CardHeader><CardTitle>Consumo de tokens</CardTitle></CardHeader>
+              <CardBody>
+                <TrendChart
+                  data={usageTrend}
+                  series={[{ key: "tokens", name: "Tokens" }]}
+                  height={200}
+                />
+              </CardBody>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>
@@ -448,11 +481,13 @@ export default function BotDetailPage() {
   );
 }
 
+// Jerarquía: la etiqueta recede (xs, muted) y el valor manda (foreground). Sin
+// esto las dos columnas pesaban igual y el bloque se leía como un muro plano.
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between border-b border-border pb-3">
-      <dt className="text-sm text-muted-darker">{label}</dt>
-      <dd className="text-sm max-w-[60%] text-right truncate">{value}</dd>
+    <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3 last:border-0 last:pb-0">
+      <dt className="shrink-0 text-xs text-muted-darker">{label}</dt>
+      <dd className="max-w-[60%] truncate text-right text-sm font-medium text-foreground">{value}</dd>
     </div>
   );
 }
