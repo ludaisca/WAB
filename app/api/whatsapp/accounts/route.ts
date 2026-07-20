@@ -12,6 +12,11 @@ export async function POST(req: Request) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    // Alta de números reservada al admin: los demás roles solo acceden a
+    // cuentas que se les compartieron (WAAccountShare), nunca propias.
+    if (session.user.role !== "admin") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
 
     const body = await req.json();
     const parsed = waAccountSchema.safeParse(body);

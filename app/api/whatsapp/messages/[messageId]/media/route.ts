@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getUserAccountIds } from "@/lib/shared-accounts";
+import { chatAccessWhere } from "@/lib/whatsapp/chat-visibility";
 import { resolveAbsolutePath, mediaReadStream } from "@/lib/whatsapp/media-store";
 
 export async function GET(
@@ -15,10 +15,12 @@ export async function GET(
     }
 
     const { messageId } = await params;
-    const accountIds = await getUserAccountIds(session.user.id);
+    // Se resuelve contra el chat, no contra la cuenta: si el rol tiene oculto
+    // ese chat, tampoco puede tirar de sus adjuntos por messageId.
+    const accessWhere = await chatAccessWhere(session.user.id, session.user.role);
 
     const message = await prisma.wAMessage.findFirst({
-      where: { id: messageId, chat: { accountId: { in: accountIds } } },
+      where: { id: messageId, chat: accessWhere },
       select: {
         id: true,
         mediaUrl: true,

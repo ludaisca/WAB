@@ -30,6 +30,7 @@ interface AccountDetail {
   errorMessage: string | null;
   lastActivity: string | null;
   autoAssignEnabled: boolean;
+  hideUnattributedChats: boolean;
   qualityRating: string | null;
   messagingTier: string | null;
   qualityUpdatedAt: string | null;
@@ -237,6 +238,22 @@ export default function CuentaDetailPage() {
     }
   }
 
+  async function handleToggleHideUnattributed(enabled: boolean) {
+    if (!account) return;
+    setAccount({ ...account, hideUnattributedChats: enabled });
+    try {
+      const res = await fetch(`/api/whatsapp/accounts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hideUnattributedChats: enabled }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      setAccount((prev) => prev && { ...prev, hideUnattributedChats: !enabled });
+      toastError("Error al actualizar la visibilidad de chats");
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6 max-w-2xl mx-auto">
@@ -325,9 +342,11 @@ export default function CuentaDetailPage() {
               ) : (
                 <span className="flex items-center gap-2 font-mono text-xs text-foreground">
                   {account.appId ?? "—"}
+                  {isAdmin && (
                   <button onClick={startEditAppId} className="text-muted-darker hover:text-foreground transition-colors" aria-label="Editar App ID">
                     <Pencil size={13} />
                   </button>
+                  )}
                 </span>
               )}
             </div>
@@ -392,22 +411,34 @@ export default function CuentaDetailPage() {
         </CardBody>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Asignación de chats</CardTitle>
-        </CardHeader>
-        <CardBody>
-          <div className="flex items-center justify-between py-1">
-            <div>
-              <p className="text-sm font-medium text-foreground">Auto-asignación de chats nuevos</p>
-              <p className="text-xs text-muted-darker">
-                Reparte automáticamente los chats sin asignar entre los agentes con acceso a esta cuenta, según su carga actual.
-              </p>
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Asignación y visibilidad de chats</CardTitle>
+          </CardHeader>
+          <CardBody className="space-y-4">
+            <div className="flex items-center justify-between py-1">
+              <div>
+                <p className="text-sm font-medium text-foreground">Auto-asignación de chats nuevos</p>
+                <p className="text-xs text-muted-darker">
+                  Reparte automáticamente los chats sin asignar entre los agentes con acceso a esta cuenta, según su carga actual.
+                </p>
+              </div>
+              <Switch checked={account.autoAssignEnabled} onCheckedChange={handleToggleAutoAssign} />
             </div>
-            <Switch checked={account.autoAssignEnabled} onCheckedChange={handleToggleAutoAssign} />
-          </div>
-        </CardBody>
-      </Card>
+
+            <div className="flex items-center justify-between py-1">
+              <div>
+                <p className="text-sm font-medium text-foreground">Ocultar chats sin campaña</p>
+                <p className="text-xs text-muted-darker">
+                  Los roles Usuario y Ejecutivo solo verán los chats de esta cuenta que provengan de una campaña o de una automatización. Tú, como administrador, sigues viéndolos todos.
+                </p>
+              </div>
+              <Switch checked={account.hideUnattributedChats} onCheckedChange={handleToggleHideUnattributed} />
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {isAdmin && (
         <Card>
@@ -463,13 +494,15 @@ export default function CuentaDetailPage() {
         <Button variant="secondary" icon={RefreshCw} onClick={fetchAccount}>
           Actualizar
         </Button>
-        <Button
-          variant="danger"
-          icon={Trash2}
-          onClick={() => setDeleteOpen(true)}
-        >
-          Eliminar
-        </Button>
+        {isAdmin && (
+          <Button
+            variant="danger"
+            icon={Trash2}
+            onClick={() => setDeleteOpen(true)}
+          >
+            Eliminar
+          </Button>
+        )}
       </div>
 
       <ConfirmDialog

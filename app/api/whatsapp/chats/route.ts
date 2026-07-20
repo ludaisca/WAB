@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
 import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
+import { getChatVisibilityFilter } from "@/lib/whatsapp/chat-visibility";
 
 export async function GET(req: Request) {
   try {
@@ -56,6 +57,11 @@ export async function GET(req: Request) {
     } else if (hasRepliedParam === "no") {
       messageFilters.push({ messages: { none: { direction: "INBOUND" } } });
     }
+
+    // La visibilidad por rol viaja en el mismo AND que los filtros de
+    // messages[] — asignarla aparte a where.AND la pisaría (o al revés).
+    const visibility = await getChatVisibilityFilter(session.user.id, session.user.role, accountIds);
+    if (visibility) messageFilters.push(visibility);
 
     if (messageFilters.length > 0) {
       where.AND = messageFilters;

@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getUserAccountIds } from "@/lib/shared-accounts";
+import { chatAccessWhere } from "@/lib/whatsapp/chat-visibility";
 import { scoreChatWithScorer, LeadScoringError } from "@/lib/whatsapp/lead-scoring";
 
-async function getOwnedChat(userId: string, chatId: string) {
-  const accountIds = await getUserAccountIds(userId);
+async function getOwnedChat(userId: string, role: string | undefined, chatId: string) {
   return prisma.wAChat.findFirst({
-    where: { id: chatId, accountId: { in: accountIds } },
+    where: { id: chatId, ...(await chatAccessWhere(userId, role)) },
     include: { account: { select: { userId: true } } },
   });
 }
@@ -23,7 +22,7 @@ export async function GET(
     }
 
     const { chatId } = await params;
-    const chat = await getOwnedChat(session.user.id, chatId);
+    const chat = await getOwnedChat(session.user.id, session.user.role, chatId);
     if (!chat) {
       return NextResponse.json({ error: "Chat no encontrado" }, { status: 404 });
     }
@@ -52,7 +51,7 @@ export async function POST(
     }
 
     const { chatId } = await params;
-    const chat = await getOwnedChat(session.user.id, chatId);
+    const chat = await getOwnedChat(session.user.id, session.user.role, chatId);
     if (!chat) {
       return NextResponse.json({ error: "Chat no encontrado" }, { status: 404 });
     }

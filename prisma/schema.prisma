@@ -112,6 +112,10 @@ model WAAccount {
   errorMessage      String?
   lastActivity      DateTime?
   autoAssignEnabled Boolean          @default(false)
+  // Cuando está activo, los roles `user` y `ejecutivo` solo ven los chats de
+  // esta cuenta que tengan atribución (campaña masiva o automatización de
+  // Sheets). El admin siempre ve todo. Ver lib/whatsapp/chat-visibility.ts.
+  hideUnattributedChats Boolean      @default(false)
   // Reportados por el webhook `phone_number_quality_update` de Meta — no se
   // consultan por API, solo llegan de forma reactiva (push). qualityRating es
   // el valor crudo que manda Meta (p. ej. "GREEN"/"YELLOW"/"RED" o el nombre

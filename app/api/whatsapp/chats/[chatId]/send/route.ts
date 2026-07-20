@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendMessageSchema } from "@/lib/validations";
 import { sendWhatsAppMessage } from "@/lib/whatsapp/send";
-import { getUserAccountIds } from "@/lib/shared-accounts";
+import { chatAccessWhere } from "@/lib/whatsapp/chat-visibility";
 
 export async function POST(
   req: Request,
@@ -16,13 +16,10 @@ export async function POST(
     }
 
     const { chatId } = await params;
-    const accountIds = await getUserAccountIds(session.user.id);
+    const accessWhere = await chatAccessWhere(session.user.id, session.user.role);
 
     const chat = await prisma.wAChat.findFirst({
-      where: {
-        id: chatId,
-        accountId: { in: accountIds },
-      },
+      where: { id: chatId, ...accessWhere },
       include: { account: true },
     });
 

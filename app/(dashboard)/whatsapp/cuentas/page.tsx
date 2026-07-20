@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Search, Plus, RefreshCw, Phone, Trash2, Settings2 } from "lucide-react";
 import { Card } from "@/app/components/ui/card";
@@ -49,6 +50,10 @@ export default function CuentasPage() {
 function CuentasView() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
+  // Alta/baja de números es admin-only en la API; ocultarlo aquí evita ofrecer
+  // acciones que van a devolver 403.
+  const isAdmin = session?.user?.role === "admin";
   const { success, error: toastError } = useToast();
   const [accounts, setAccounts] = useState<WaAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -168,7 +173,9 @@ function CuentasView() {
             <Button variant="secondary" size="sm" icon={RefreshCw} onClick={fetchAccounts}>
               Actualizar
             </Button>
-            <Button icon={Plus} size="sm" onClick={() => setFormOpen(true)}>Agregar número</Button>
+            {isAdmin && (
+              <Button icon={Plus} size="sm" onClick={() => setFormOpen(true)}>Agregar número</Button>
+            )}
           </>
         }
       />
@@ -215,9 +222,11 @@ function CuentasView() {
               <DropdownItem icon={Settings2} onClick={() => router.push(`/whatsapp/cuentas/${a.id}`)}>
                 Detalles
               </DropdownItem>
-              <DropdownItem icon={Trash2} onClick={() => setDeleteId(a.id)}>
-                Eliminar
-              </DropdownItem>
+              {isAdmin && (
+                <DropdownItem icon={Trash2} onClick={() => setDeleteId(a.id)}>
+                  Eliminar
+                </DropdownItem>
+              )}
             </>
           )}
           mobileCard={(a) => {

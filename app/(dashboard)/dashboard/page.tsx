@@ -4,6 +4,7 @@ import { MessageCircle, Plus, Settings, ArrowRight } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
+import { getChatVisibilityFilter } from "@/lib/whatsapp/chat-visibility";
 import {
   countActiveBots,
   countBots,
@@ -40,6 +41,14 @@ export default async function DashboardPage() {
 
   const accountIds = await getUserAccountIds(userId);
 
+  // "Conversaciones recientes" muestra nombre y último mensaje, así que tiene
+  // que respetar la misma visibilidad por rol que el inbox.
+  const visibility = await getChatVisibilityFilter(userId, session.user.role, accountIds);
+  const visibleChatsWhere = {
+    accountId: { in: accountIds },
+    ...(visibility ? { AND: [visibility] } : {}),
+  };
+
   const [
     accountsTotal,
     accountsConnected,
@@ -54,9 +63,9 @@ export default async function DashboardPage() {
     Promise.resolve(accountIds.length),
     countConnectedAccounts(accountIds),
     countChats(accountIds),
-    prisma.wAChat.aggregate({ where: { accountId: { in: accountIds } }, _sum: { unreadCount: true } }),
+    prisma.wAChat.aggregate({ where: visibleChatsWhere, _sum: { unreadCount: true } }),
     prisma.wAChat.findMany({
-      where: { accountId: { in: accountIds } },
+      where: visibleChatsWhere,
       orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
       take: 8,
       select: {

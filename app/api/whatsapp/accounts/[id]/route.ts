@@ -38,6 +38,7 @@ export async function GET(
         errorMessage: true,
         lastActivity: true,
         autoAssignEnabled: true,
+        hideUnattributedChats: true,
         qualityRating: true,
         messagingTier: true,
         qualityUpdatedAt: true,
@@ -72,6 +73,10 @@ export async function PATCH(
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
+    if (session.user.role !== "admin") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
+
     const { id } = await params;
 
     const existing = await prisma.wAAccount.findFirst({
@@ -102,6 +107,10 @@ export async function PATCH(
 
     if (typeof body?.autoAssignEnabled === "boolean") {
       data.autoAssignEnabled = body.autoAssignEnabled;
+    }
+
+    if (typeof body?.hideUnattributedChats === "boolean") {
+      data.hideUnattributedChats = body.hideUnattributedChats;
     }
 
     if (accessToken) {
@@ -142,6 +151,7 @@ export async function PATCH(
         errorMessage: true,
         lastActivity: true,
         autoAssignEnabled: true,
+        hideUnattributedChats: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -164,6 +174,10 @@ export async function DELETE(
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
+    if (session.user.role !== "admin") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
     const { id } = await params;

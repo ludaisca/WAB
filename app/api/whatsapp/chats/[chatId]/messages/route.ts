@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getUserAccountIds } from "@/lib/shared-accounts";
+import { chatAccessWhere } from "@/lib/whatsapp/chat-visibility";
 
 export async function GET(
   req: Request,
@@ -14,13 +14,10 @@ export async function GET(
     }
 
     const { chatId } = await params;
-    const accountIds = await getUserAccountIds(session.user.id);
+    const accessWhere = await chatAccessWhere(session.user.id, session.user.role);
 
     const chat = await prisma.wAChat.findFirst({
-      where: {
-        id: chatId,
-        accountId: { in: accountIds },
-      },
+      where: { id: chatId, ...accessWhere },
     });
 
     if (!chat) {
