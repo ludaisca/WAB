@@ -94,7 +94,14 @@ export async function saveMediaFromBuffer(
 
 export function resolveAbsolutePath(relativePath: string): string {
   const safe = path.normalize(relativePath).replace(/^(\.\.\/?)+/, "");
-  return path.join(MEDIA_ROOT, safe);
+  const root = path.resolve(MEDIA_ROOT);
+  const resolved = path.resolve(root, safe);
+  // Defensa en profundidad: aunque `mediaUrl` viene de la DB (no de input directo),
+  // se verifica que la ruta resuelta no escape de MEDIA_ROOT antes de leer bytes.
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+    throw new Error("Ruta de medio fuera del directorio permitido");
+  }
+  return resolved;
 }
 
 export function mediaReadStream(relativePath: string) {

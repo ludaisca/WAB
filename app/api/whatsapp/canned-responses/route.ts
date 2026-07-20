@@ -26,8 +26,8 @@ export async function GET(req: Request) {
 
     return NextResponse.json(cannedResponses);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Error interno del servidor";
+    console.error("[api] Error interno:", error);
+    const message = "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -67,8 +67,8 @@ export async function POST(req: Request) {
     ) {
       return NextResponse.json({ error: "Ya existe un atajo con ese nombre en esta cuenta" }, { status: 409 });
     }
-    const message =
-      error instanceof Error ? error.message : "Error interno del servidor";
+    console.error("[api] Error interno:", error);
+    const message = "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -40,8 +40,8 @@ export async function GET(
 
     return NextResponse.json(notes);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Error interno del servidor";
+    console.error("[api] Error interno:", error);
+    const message = "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -87,8 +87,8 @@ export async function POST(
 
     return NextResponse.json(note, { status: 201 });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Error interno del servidor";
+    console.error("[api] Error interno:", error);
+    const message = "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

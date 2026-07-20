@@ -1,8 +1,16 @@
 function escapeCsvField(value: string): string {
-  if (/[",\n]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
+  // Neutraliza inyección de fórmulas (CSV injection): Excel/Sheets interpretan un
+  // campo que empieza con = + - @ (o tab/CR) como fórmula ejecutable. Como los
+  // nombres/valores vienen del perfil de WhatsApp del lead (input no confiable),
+  // se antepone un apóstrofo para forzar que se traten como texto literal.
+  let safe = value;
+  if (/^[=+\-@\t\r]/.test(safe)) {
+    safe = `'${safe}`;
   }
-  return value;
+  if (/[",\n\r]/.test(safe)) {
+    return `"${safe.replace(/"/g, '""')}"`;
+  }
+  return safe;
 }
 
 export function toCsv(headers: string[], rows: string[][]): string {

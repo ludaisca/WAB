@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createHmac, createHash } from "crypto";
+import { createHmac, createHash, timingSafeEqual } from "crypto";
 import type { RecipientStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ingestInboundMessage } from "@/lib/whatsapp/ingest-message";
@@ -134,7 +134,14 @@ async function validateSignature(
     const secret = decrypt(appSecret);
     const expected = createHmac("sha256", secret).update(body).digest("hex");
     const received = signature.replace("sha256=", "");
-    return expected === received;
+    // Comparación en tiempo constante: `===` sobre strings hace short-circuit en
+    // el primer byte distinto y filtra por timing cuánto del prefijo acertó un
+    // atacante. Si difieren en longitud (firma malformada) no hay nada que
+    // comparar → false sin lanzar.
+    const expectedBuf = Buffer.from(expected, "hex");
+    const receivedBuf = Buffer.from(received, "hex");
+    if (expectedBuf.length !== receivedBuf.length) return false;
+    return timingSafeEqual(expectedBuf, receivedBuf);
   } catch {
     return false;
   }

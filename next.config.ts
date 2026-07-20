@@ -6,6 +6,15 @@ const nextConfig: NextConfig = {
   // Meta webhook — without this, HMR silently fails and forces hard reloads.
   allowedDevOrigins: ["*.ngrok-free.dev", "*.ngrok-free.app", "*.ngrok.io"],
   async headers() {
+    // `unsafe-eval` solo se necesita en desarrollo (HMR / React Refresh de
+    // Turbopack). En producción el bundle no lo requiere, así que se omite para
+    // endurecer la defensa XSS. `unsafe-inline` en style-src se mantiene porque
+    // Tailwind y los estilos inline de Next lo necesitan en ambos entornos.
+    const scriptSrc =
+      process.env.NODE_ENV === "production"
+        ? "'self' 'unsafe-inline'"
+        : "'self' 'unsafe-inline' 'unsafe-eval'";
+    const csp = `default-src 'self'; script-src ${scriptSrc}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'`;
     return [
       {
         source: "/(.*)",
@@ -14,7 +23,7 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "geolocation=(), microphone=(), camera=()" },
-          { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'" },
+          { key: "Content-Security-Policy", value: csp },
           ...(process.env.NODE_ENV === "production"
             ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }]
             : []),

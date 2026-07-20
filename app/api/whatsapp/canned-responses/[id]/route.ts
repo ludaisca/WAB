@@ -54,8 +54,8 @@ export async function PATCH(
     ) {
       return NextResponse.json({ error: "Ya existe un atajo con ese nombre en esta cuenta" }, { status: 409 });
     }
-    const message =
-      error instanceof Error ? error.message : "Error interno del servidor";
+    console.error("[api] Error interno:", error);
+    const message = "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -80,8 +80,8 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Error interno del servidor";
+    console.error("[api] Error interno:", error);
+    const message = "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
