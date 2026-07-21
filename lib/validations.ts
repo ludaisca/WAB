@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  EXPORT_COLUMNS,
+  CAMPAIGN_EXPORT_COLUMNS,
+  CHATS_EXPORT_COLUMNS,
+  CONTACTS_EXPORT_COLUMNS,
+} from "@/lib/whatsapp/export-columns";
 
 export const loginSchema = z.object({
   email: z.string().email("Email inválido"),
@@ -234,3 +240,113 @@ export type ContactUpdateInput = z.infer<typeof contactUpdateSchema>;
 export type NoteInput = z.infer<typeof noteSchema>;
 export type TagInput = z.infer<typeof tagSchema>;
 export type CannedResponseInput = z.infer<typeof cannedResponseSchema>;
+
+// Exportaciones configurables a Google Sheets (ver SheetExport en schema.prisma).
+// `filters` cambia de forma según `dataset` — un z.discriminatedUnion (primera vez
+// en este archivo) es más seguro que un .refine() a mano sobre 4 formas genuinamente
+// distintas, que es el patrón usado en el resto del archivo (ver leadSheetSourceSchema).
+function columnKeysEnum(defs: { key: string }[]) {
+  return z.enum(defs.map((d) => d.key) as [string, ...string[]]);
+}
+
+const leadScoresColumnEnum = columnKeysEnum(EXPORT_COLUMNS);
+const campaignResultsColumnEnum = columnKeysEnum(CAMPAIGN_EXPORT_COLUMNS);
+const chatsColumnEnum = columnKeysEnum(CHATS_EXPORT_COLUMNS);
+const contactsColumnEnum = columnKeysEnum(CONTACTS_EXPORT_COLUMNS);
+
+// Los arrays de filtro solo aceptan `undefined` (= "sin filtro, todo lo accesible")
+// u omitidos con al menos 1 elemento — un `[]` explícito se rechaza (.min(1)) para
+// no producir "0 filas" en silencio por un error del cliente.
+const leadScoresFiltersSchema = z.object({
+  accountIds: z.array(z.string().min(1)).min(1).optional(),
+  scorerIds: z.array(z.string().min(1)).min(1).optional(),
+  labels: z.array(z.string().min(1)).min(1).optional(),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+}).default({});
+
+const campaignResultsFiltersSchema = z.object({
+  accountIds: z.array(z.string().min(1)).min(1).optional(),
+  // Ids de WACampaign (origen manual) y/o LeadSheetSource (automatización)
+  // mezclados — ver lib/google/dataset-queries.ts:buildCampaignResultRows.
+  campaignIds: z.array(z.string().min(1)).min(1).optional(),
+  origins: z.array(z.enum(["manual", "automatizacion"])).min(1).optional(),
+  statuses: z.array(z.enum(["PENDING", "SENT", "DELIVERED", "READ", "FAILED", "SKIPPED"])).min(1).optional(),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+}).default({});
+
+const chatsFiltersSchema = z.object({
+  accountIds: z.array(z.string().min(1)).min(1).optional(),
+  statuses: z.array(z.enum(["OPEN", "PENDING", "RESOLVED"])).min(1).optional(),
+  tagIds: z.array(z.string().min(1)).min(1).optional(),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+}).default({});
+
+const contactsFiltersSchema = z.object({
+  accountIds: z.array(z.string().min(1)).min(1).optional(),
+  tagIds: z.array(z.string().min(1)).min(1).optional(),
+  leadStatuses: z.array(z.enum(["NEW", "CONTACTED", "QUALIFIED", "CUSTOMER", "LOST"])).min(1).optional(),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+}).default({});
+
+export const SHEET_EXPORT_FILTERS_SCHEMAS = {
+  LEAD_SCORES: leadScoresFiltersSchema,
+  CAMPAIGN_RESULTS: campaignResultsFiltersSchema,
+  CHATS: chatsFiltersSchema,
+  CONTACTS: contactsFiltersSchema,
+} as const;
+
+const sheetExportBaseFields = {
+  name: z.string().min(1, "El nombre es requerido").max(200),
+  // Id ya extraído por el cliente vía /preview (mismo patrón que leadSheetSourceSchema),
+  // no una URL cruda.
+  spreadsheetId: z.string().min(1, "La hoja de Google Sheets es requerida"),
+  sheetName: z.string().min(1, "La pestaña es requerida"),
+};
+
+export const sheetExportCreateSchema = z.discriminatedUnion("dataset", [
+  z.object({
+    ...sheetExportBaseFields,
+    dataset: z.literal("LEAD_SCORES"),
+    columns: z.array(leadScoresColumnEnum).min(1, "Elige al menos una columna"),
+    filters: leadScoresFiltersSchema,
+  }),
+  z.object({
+    ...sheetExportBaseFields,
+    dataset: z.literal("CAMPAIGN_RESULTS"),
+    columns: z.array(campaignResultsColumnEnum).min(1, "Elige al menos una columna"),
+    filters: campaignResultsFiltersSchema,
+  }),
+  z.object({
+    ...sheetExportBaseFields,
+    dataset: z.literal("CHATS"),
+    columns: z.array(chatsColumnEnum).min(1, "Elige al menos una columna"),
+    filters: chatsFiltersSchema,
+  }),
+  z.object({
+    ...sheetExportBaseFields,
+    dataset: z.literal("CONTACTS"),
+    columns: z.array(contactsColumnEnum).min(1, "Elige al menos una columna"),
+    filters: contactsFiltersSchema,
+  }),
+]);
+
+// `dataset` es inmutable tras crear — cambiarlo invalidaría columns/filters
+// enteros, así que no es un discriminated union: para cambiar de dataset se
+// borra y se crea otro. `filters`/`columns` se revalidan en la ruta contra
+// `existing.dataset` (SHEET_EXPORT_FILTERS_SCHEMAS / EXPORT_COLUMNS_BY_DATASET),
+// no aquí — este schema solo valida la forma superficial.
+export const sheetExportUpdateSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  spreadsheetId: z.string().min(1).optional(),
+  sheetName: z.string().min(1).optional(),
+  columns: z.array(z.string().min(1)).min(1, "Elige al menos una columna").optional(),
+  filters: z.record(z.string(), z.unknown()).optional(),
+  enabled: z.boolean().optional(),
+});
+
+export type SheetExportCreateInput = z.infer<typeof sheetExportCreateSchema>;
+export type SheetExportUpdateInput = z.infer<typeof sheetExportUpdateSchema>;

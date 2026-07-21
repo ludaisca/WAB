@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { resolveSpreadsheetTabs } from "@/lib/google/sheets-read";
 
-// Usado por el formulario de alta de una fuente: recibe la URL (o el ID crudo) de
-// una hoja de Google Sheets pegada por el usuario y devuelve sus pestañas, para
-// construir el resto del formulario de mapeo sin que el usuario tenga que adivinar.
+// Mismo cuerpo que app/api/whatsapp/lead-sheet-sources/preview/route.ts (ambas
+// delegan en el helper compartido) — namespace propio para que el formulario
+// de exportaciones no dependa de una ruta de una feature distinta.
 export async function POST(req: Request) {
   try {
     const session = await auth();

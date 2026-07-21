@@ -29,6 +29,7 @@ model User {
   notifications  Notification[]
   sentMessages   WAMessage[]
   leadSheetSources LeadSheetSource[]
+  sheetExports     SheetExport[]
 
   @@map("users")
 }
@@ -84,11 +85,64 @@ model GoogleAccount {
   enabled              Boolean   @default(true)
   lastSyncedAt         DateTime?
   lastSyncError        String?
+  // Compare-and-swap para el backfill único de las 2 exportaciones legado
+  // (Leads calificados/Resultados de campaña) hacia SheetExport — null hasta
+  // que un runner lo reclama vía updateMany(where:{legacyExportsMigratedAt:null}).
+  // Sync-now corre fuera de la cola BullMQ y el tick de 15 min corre dentro,
+  // así que pueden solaparse: un simple count()===0 tendría ventana de carrera.
+  legacyExportsMigratedAt DateTime?
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("google_accounts")
+}
+
+// Exportación configurable a una hoja de Google Sheets — reemplaza la
+// sincronización hardcodeada de 2 datasets fijos que existía antes (ver
+// GoogleAccount.legacyExportsMigratedAt para la migración). Cada usuario puede
+// crear varias, cada una eligiendo dataset, columnas, filtros y hoja/pestaña
+// destino de forma independiente. Ownership directo por userId (no vía
+// WAAccount/getUserAccountIds) — GoogleAccount ya es 1:1 por usuario.
+model SheetExport {
+  id            String              @id @default(cuid())
+  userId        String
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  dataset       SheetExportDataset
+  spreadsheetId String
+  sheetName     String
+  // Subconjunto de las keys de EXPORT_COLUMNS_BY_DATASET[dataset] — el orden
+  // real de escritura lo decide el orden canónico de esa definición, no el
+  // orden guardado aquí (ver lib/google/sheet-export-runner.ts).
+  columns       String[]            @default([])
+  // Forma depende de `dataset` — ver los 4 schemas de lib/validations.ts y
+  // lib/google/dataset-queries.ts. Un id referenciado (tag/campaña/calificador)
+  // que luego se borra no rompe nada: simplemente deja de matchear en la query.
+  filters       Json                @default("{}")
+  enabled       Boolean             @default(true)
+  lastSyncedAt  DateTime?
+  lastSyncError String?
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+
+  // Sin esto, dos exportaciones apuntando a la misma pestaña se pisarían en
+  // cada ciclo de sync (writeSheetTab hace clear+update del rango completo)
+  // sin ningún error visible — el POST captura P2002 y devuelve 409. Global
+  // (no incluye userId a propósito): dos USUARIOS distintos con acceso Editor
+  // a la misma hoja externa también se pisarían entre sí si cada uno pudiera
+  // crear su propio export sobre la misma (spreadsheetId, sheetName) — no hay
+  // caso legítimo para dos exports escribiendo la misma pestaña a la vez.
+  @@unique([spreadsheetId, sheetName])
+  @@index([userId])
+  @@map("sheet_exports")
+}
+
+enum SheetExportDataset {
+  LEAD_SCORES
+  CAMPAIGN_RESULTS
+  CHATS
+  CONTACTS
 }
 
 model WAAccount {

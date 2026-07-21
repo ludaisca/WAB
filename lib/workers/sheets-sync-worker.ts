@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { syncGoogleSheetsForUser } from "@/lib/google/sheets-sync";
+import { syncExportsForUser } from "@/lib/google/sheet-export-runner";
 import { isRevokedGrantError } from "@/lib/google/errors";
 import type { GoogleAccount } from "@prisma/client";
 
@@ -8,7 +8,7 @@ export async function processSheetsSyncTick() {
 
   for (const account of accounts) {
     try {
-      await syncGoogleSheetsForUser(account.userId);
+      await syncExportsForUser(account.userId);
     } catch (err) {
       await handleSyncError(account, err);
     }

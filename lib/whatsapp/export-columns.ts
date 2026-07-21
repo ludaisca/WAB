@@ -155,3 +155,81 @@ export const CAMPAIGN_EXPORT_COLUMNS: ExportColumnDef<CampaignResultRow>[] = [
   { key: "deliveredAt", label: "Entregado", get: (r) => formatDateOrEmpty(r.deliveredAt) },
   { key: "readAt", label: "Leído", get: (r) => formatDateOrEmpty(r.readAt) },
 ];
+
+// Datasets nuevos de la exportación configurable a Sheets (ver SheetExport en
+// prisma/schema.prisma) — mismo contrato ExportColumnDef que los 2 de arriba.
+
+export const CHAT_STATUS_LABEL: Record<string, string> = {
+  OPEN: "Abierto",
+  PENDING: "Pendiente",
+  RESOLVED: "Resuelto",
+};
+
+export const LEAD_STATUS_LABEL: Record<string, string> = {
+  NEW: "Nuevo",
+  CONTACTED: "Contactado",
+  QUALIFIED: "Calificado",
+  CUSTOMER: "Cliente",
+  LOST: "Perdido",
+};
+
+export interface ChatExportRow {
+  id: string;
+  name: string | null;
+  remoteJid: string;
+  status: string;
+  createdAt: string;
+  lastMessageAt: string | null;
+  account: { id: string; name: string };
+  assignedTo: { name: string | null } | null;
+  contact: { realName: string | null } | null;
+  tags: string[];
+  campaign: { id: string; name: string; origin: "manual" | "automatizacion" } | null;
+}
+
+export const CHATS_EXPORT_COLUMNS: ExportColumnDef<ChatExportRow>[] = [
+  { key: "lead", label: "Lead", get: (r) => r.name || r.remoteJid.split("@")[0] },
+  { key: "realName", label: "Nombre real", get: (r) => r.contact?.realName ?? "" },
+  { key: "phone", label: "Teléfono", get: (r) => r.remoteJid.split("@")[0] },
+  { key: "account", label: "Cuenta", get: (r) => r.account.name },
+  { key: "status", label: "Estado", get: (r) => CHAT_STATUS_LABEL[r.status] ?? r.status },
+  { key: "assignedTo", label: "Asignado a", get: (r) => r.assignedTo?.name ?? "" },
+  { key: "tags", label: "Etiquetas", get: (r) => r.tags.join(" | ") },
+  { key: "campaign", label: "Campaña", get: (r) => r.campaign?.name ?? "" },
+  { key: "origin", label: "Origen", get: (r) => (r.campaign ? CAMPAIGN_ORIGIN_LABEL[r.campaign.origin] : "") },
+  { key: "createdAt", label: "Creado", get: (r) => formatDate(r.createdAt) },
+  { key: "lastMessageAt", label: "Último mensaje", get: (r) => formatDateOrEmpty(r.lastMessageAt) },
+];
+
+export interface ContactExportRow {
+  id: string;
+  name: string | null;
+  realName: string | null;
+  remoteJid: string;
+  leadStatus: string;
+  optedOutMarketing: boolean;
+  createdAt: string;
+  account: { id: string; name: string };
+  tags: string[];
+}
+
+export const CONTACTS_EXPORT_COLUMNS: ExportColumnDef<ContactExportRow>[] = [
+  { key: "name", label: "Nombre", get: (r) => r.name ?? "" },
+  { key: "realName", label: "Nombre real", get: (r) => r.realName ?? "" },
+  { key: "phone", label: "Teléfono", get: (r) => r.remoteJid.split("@")[0] },
+  { key: "account", label: "Cuenta", get: (r) => r.account.name },
+  { key: "leadStatus", label: "Estado de lead", get: (r) => LEAD_STATUS_LABEL[r.leadStatus] ?? r.leadStatus },
+  { key: "tags", label: "Etiquetas", get: (r) => r.tags.join(" | ") },
+  { key: "optedOut", label: "Baja de marketing", get: (r) => (r.optedOutMarketing ? "Sí" : "No") },
+  { key: "createdAt", label: "Creado", get: (r) => formatDate(r.createdAt) },
+];
+
+export type SheetExportDataset = "LEAD_SCORES" | "CAMPAIGN_RESULTS" | "CHATS" | "CONTACTS";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 4 formas de fila distintas, unificadas solo para poder indexar por dataset
+export const EXPORT_COLUMNS_BY_DATASET: Record<SheetExportDataset, ExportColumnDef<any>[]> = {
+  LEAD_SCORES: EXPORT_COLUMNS,
+  CAMPAIGN_RESULTS: CAMPAIGN_EXPORT_COLUMNS,
+  CHATS: CHATS_EXPORT_COLUMNS,
+  CONTACTS: CONTACTS_EXPORT_COLUMNS,
+};

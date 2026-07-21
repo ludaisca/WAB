@@ -369,7 +369,7 @@ export default function SettingsPage() {
             <CardTitle>Google Sheets</CardTitle>
           </div>
           <p className="text-sm text-muted-darker mb-4">
-            Sincroniza automáticamente tus leads calificados y resultados de campaña a una hoja de Google, cada 15 minutos.
+            Sincroniza automáticamente los reportes que configures a tus hojas de Google, cada 15 minutos.
           </p>
 
           {!loadingGoogleStatus && !googleStatus.connected && (
@@ -397,6 +397,9 @@ export default function SettingsPage() {
                   : "Nunca"}
               </p>
               <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" icon={FileSpreadsheet} href="/configuracion/exportaciones">
+                  Administrar exportaciones
+                </Button>
                 {googleStatus.spreadsheetId && (
                   <Button
                     size="sm"
