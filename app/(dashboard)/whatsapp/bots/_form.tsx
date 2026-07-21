@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Wand2 } from "lucide-react";
 import { Modal } from "@/app/components/ui/modal";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -53,6 +53,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [adjusting, setAdjusting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string }>>([]);
   const [models, setModels] = useState<ModelOption[]>(FALLBACK_MODELS.openrouter);
@@ -144,6 +145,26 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
       .catch(() => toastError("Error al cargar bot"))
       .finally(() => setLoading(false));
   }, [open, editId, toastError]);
+
+  async function handleAdjustPrompt() {
+    if (!systemPrompt.trim()) return;
+    setAdjusting(true);
+    try {
+      const res = await fetch("/api/whatsapp/bots/adjust-prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: systemPrompt.trim(), provider, model }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Error al ajustar el prompt");
+      setSystemPrompt(data.adjustedPrompt);
+      success("Prompt ajustado para este sistema");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al ajustar el prompt");
+    } finally {
+      setAdjusting(false);
+    }
+  }
 
   function handleClose() {
     resetForm();
@@ -266,7 +287,22 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
 
           <FormField label="Prompt del sistema" required error={errors.systemPrompt} hint="Define cómo se comportará el bot. Incluye instrucciones, tono y límites.">
             {(id) => (
-              <Textarea id={id} value={systemPrompt} onChange={(e) => setSystemPrompt(e.target.value)} placeholder="Eres un asistente virtual de soporte técnico..." rows={6} error={errors.systemPrompt} />
+              <div className="space-y-2">
+                <Textarea id={id} value={systemPrompt} onChange={(e) => setSystemPrompt(e.target.value)} placeholder="Eres un asistente virtual de soporte técnico..." rows={6} error={errors.systemPrompt} />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  icon={Wand2}
+                  onClick={handleAdjustPrompt}
+                  disabled={adjusting || !systemPrompt.trim()}
+                >
+                  {adjusting ? <Spinner size="sm" /> : "Ajustar prompt"}
+                </Button>
+                <p className="text-xs text-muted-darker">
+                  ¿Pegaste un prompt de otro sistema (n8n, Make, etc.)? Este botón lo reescribe para que funcione aquí: quita formatos JSON, tools o variables que este bot no soporta, sin perder el contenido de negocio.
+                </p>
+              </div>
             )}
           </FormField>
 
