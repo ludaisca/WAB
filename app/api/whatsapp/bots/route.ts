@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { botSchema } from "@/lib/validations";
+import { getUserAccountIds } from "@/lib/shared-accounts";
 
 export async function POST(req: Request) {
   try {
@@ -38,11 +39,11 @@ export async function POST(req: Request) {
     } = parsed.data;
 
     if (waAccountId) {
-      const account = await prisma.wAAccount.findFirst({
-        where: { id: waAccountId, userId: session.user.id },
-      });
-
-      if (!account) {
+      // getUserAccountIds() (propias + compartidas), no userId directo — un
+      // admin con una cuenta compartida por otro admin debe poder asociarle
+      // un bot, igual que ya puede con chats/plantillas/campañas.
+      const accountIds = await getUserAccountIds(session.user.id);
+      if (!accountIds.includes(waAccountId)) {
         return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
       }
     }

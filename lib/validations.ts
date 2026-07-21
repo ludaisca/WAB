@@ -55,6 +55,7 @@ export const waAccountUpdateSchema = z.object({
   appSecret: z.string().optional(),
   wabaId: z.string().optional(),
   appId: z.string().optional(),
+  origen: z.string().max(200).optional().or(z.literal("")),
 });
 
 export const sendMessageSchema = z.object({
@@ -125,7 +126,10 @@ export const leadScorerBotUpdateSchema = z.object({
     .nullable()
     .optional(),
   scheduleAccountIds: z.array(z.string()).optional(),
-});
+}).refine(
+  (data) => !data.scheduleEnabled || data.scheduleIntervalMinutes != null,
+  { message: "Selecciona cada cuánto debe ejecutarse el calificador", path: ["scheduleIntervalMinutes"] }
+);
 
 export const campaignSchema = z.object({
   name: z.string().min(1, "El nombre es requerido").max(200),
@@ -205,6 +209,9 @@ export const templateCreateSchema = z.object({
       type: buttonTypeEnum,
       text: z.string().min(1, "Texto requerido").max(25, "Máximo 25 caracteres"),
       url: z.string().url("URL inválida").optional(),
+    }).refine((b) => b.type !== "URL" || !!b.url?.trim(), {
+      message: "La URL es requerida para botones de tipo URL",
+      path: ["url"],
     })).max(10, "Máximo 10 botones").optional(),
   }),
 });

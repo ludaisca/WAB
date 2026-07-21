@@ -10,6 +10,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    if (session.user.role === "ejecutivo") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
     const { id } = await params;
 
     const accountIds = await getUserAccountIds(session.user.id);
@@ -60,6 +63,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    if (session.user.role === "ejecutivo") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
     const { id } = await params;
 
     const body = await req.json();
@@ -91,6 +97,9 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+    if (session.user.role === "ejecutivo") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
     const { id } = await params;
 

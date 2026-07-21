@@ -8,7 +8,7 @@
 import type { ChatStatus, LeadStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
-import { chatAccessWhere } from "@/lib/whatsapp/chat-visibility";
+import { chatAccessWhere, getChatVisibilityFilter } from "@/lib/whatsapp/chat-visibility";
 import {
   type LeadScoreRow,
   type CampaignResultRow,
@@ -69,12 +69,21 @@ const LEAD_SHEET_STATUS_MAP: Record<string, CampaignResultStatus> = {
   skipped: "SKIPPED",
 };
 
-export async function buildLeadScoreRows(accountIds: string[], filters: LeadScoresFilters): Promise<LeadScoreRow[]> {
+export async function buildLeadScoreRows(
+  userId: string,
+  role: string | undefined,
+  accountIds: string[],
+  filters: LeadScoresFilters
+): Promise<LeadScoreRow[]> {
   const updatedAt = dateRange(filters.dateFrom, filters.dateTo);
+  // Igual que en GET /api/whatsapp/lead-scores: sin esto, un export configurado
+  // por un user/ejecutivo con hideUnattributedChats activo filtraría por cuenta
+  // pero no por visibilidad, exportando a Sheets chats que su propio inbox esconde.
+  const visibility = await getChatVisibilityFilter(userId, role, accountIds);
 
   const scores = await prisma.wALeadScore.findMany({
     where: {
-      chat: { accountId: { in: accountIds } },
+      chat: { accountId: { in: accountIds }, ...(visibility ? { AND: [visibility] } : {}) },
       ...(filters.scorerIds?.length ? { scorerId: { in: filters.scorerIds } } : {}),
       ...(filters.labels?.length ? { label: { in: filters.labels } } : {}),
       ...(updatedAt ? { updatedAt } : {}),
@@ -88,7 +97,7 @@ export async function buildLeadScoreRows(accountIds: string[], filters: LeadScor
           remoteJid: true,
           status: true,
           accountId: true,
-          account: { select: { id: true, name: true } },
+          account: { select: { id: true, name: true, origen: true } },
           contact: { select: { realName: true } },
           messages: CHAT_ATTRIBUTION_MESSAGE_QUERY,
         },
@@ -136,13 +145,18 @@ export async function buildCampaignResultRows(
             ...(filters.statuses?.length ? { status: { in: recipientStatuses ?? [] } } : {}),
             ...(dateRange(filters.dateFrom, filters.dateTo) ? { sentAt: dateRange(filters.dateFrom, filters.dateTo) } : {}),
           },
-          include: { campaign: { select: { name: true, waTemplate: { select: { name: true } } } } },
+          include: {
+            campaign: {
+              select: { name: true, waTemplate: { select: { name: true } }, waAccount: { select: { origen: true } } },
+            },
+          },
           orderBy: { sentAt: "desc" },
         })
       ).map((r) => ({
         origin: "manual" as const,
         campaignName: r.campaign.name,
         templateName: r.campaign.waTemplate.name,
+        accountOrigen: r.campaign.waAccount.origen,
         phoneNumber: r.phoneNumber,
         contactName: r.contactName,
         status: r.status,
@@ -167,13 +181,18 @@ export async function buildCampaignResultRows(
             ...statusFilter,
             ...(dateRange(filters.dateFrom, filters.dateTo) ? { importedAt: dateRange(filters.dateFrom, filters.dateTo) } : {}),
           },
-          include: { source: { select: { name: true, waTemplate: { select: { name: true } } } } },
+          include: {
+            source: {
+              select: { name: true, waTemplate: { select: { name: true } }, waAccount: { select: { origen: true } } },
+            },
+          },
           orderBy: { importedAt: "desc" },
         })
       ).map((r) => ({
         origin: "automatizacion" as const,
         campaignName: r.source.name,
         templateName: r.source.waTemplate.name,
+        accountOrigen: r.source.waAccount.origen,
         phoneNumber: r.phoneNumber,
         contactName: r.contactName,
         status: LEAD_SHEET_STATUS_MAP[r.status] ?? "FAILED",
@@ -219,7 +238,7 @@ export async function buildChatRows(
       status: true,
       createdAt: true,
       lastMessageAt: true,
-      account: { select: { id: true, name: true } },
+      account: { select: { id: true, name: true, origen: true } },
       assignedTo: { select: { name: true } },
       contact: { select: { realName: true } },
       chatTags: { select: { tag: { select: { name: true } } } },
@@ -261,7 +280,7 @@ export async function buildContactRows(accountIds: string[], filters: ContactsFi
       leadStatus: true,
       optedOutMarketing: true,
       createdAt: true,
-      account: { select: { id: true, name: true } },
+      account: { select: { id: true, name: true, origen: true } },
       tags: { select: { tag: { select: { name: true } } } },
     },
     orderBy: { createdAt: "desc" },

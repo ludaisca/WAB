@@ -78,16 +78,50 @@ async function runScheduledScorer(scorer: WALeadScorerBot, now: Date) {
     })
     .slice(0, BATCH_SIZE_PER_SCORER);
 
+  let anySuccess = false;
+  let anyFailure = false;
   for (const chat of dueChats) {
     try {
       await scoreChatWithScorer(chat.id, scorer);
+      anySuccess = true;
     } catch (err) {
+      anyFailure = true;
       console.error(`[lead-scoring] Error calificando chat ${chat.id} con el calificador ${scorer.id}:`, err);
     }
   }
 
   if (dueChats.length > 0) {
     await checkBudgetAlert(scorer.userId, now);
+  }
+
+  // A diferencia de bot-worker.ts, WALeadScorerBot no tiene un campo `status`
+  // que marcar — sin esto, una API key revocada o un modelo retirado hace que
+  // el calificador falle en silencio para siempre (ver console.error arriba,
+  // que nadie del equipo llega a ver). Solo se notifica cuando NINGÚN chat del
+  // lote tuvo éxito (todo el ciclo falló, no un error puntual de un chat), y
+  // se evita re-notificar dentro de las mismas 6 horas para no saturar al
+  // usuario cada 5 minutos mientras el problema sigue sin resolverse.
+  if (anyFailure && !anySuccess) {
+    const title = `Calificador "${scorer.name}" con errores`;
+    const recent = await prisma.notification.findFirst({
+      where: {
+        userId: scorer.userId,
+        type: "SCORER_ERROR",
+        title,
+        createdAt: { gte: new Date(now.getTime() - 6 * 60 * 60 * 1000) },
+      },
+    });
+    if (!recent) {
+      await prisma.notification.create({
+        data: {
+          userId: scorer.userId,
+          type: "SCORER_ERROR",
+          title,
+          body: "No pudo evaluar ningún chat en su última corrida — revisa la clave de API y el modelo configurados en Calificadores.",
+          link: "/whatsapp/calificadores",
+        },
+      });
+    }
   }
 
   await prisma.wALeadScorerBot.update({

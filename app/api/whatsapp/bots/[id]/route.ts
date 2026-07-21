@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { botUpdateSchema } from "@/lib/validations";
+import { getUserAccountIds } from "@/lib/shared-accounts";
 
 export async function GET(
   _req: Request,
@@ -95,11 +96,24 @@ export async function PATCH(
     if (fields.name) data.name = fields.name;
     if (fields.waAccountId !== undefined) {
       if (fields.waAccountId) {
-        const account = await prisma.wAAccount.findFirst({
-          where: { id: fields.waAccountId, userId: session.user.id },
-        });
-        if (!account) {
+        const accountIds = await getUserAccountIds(session.user.id);
+        if (!accountIds.includes(fields.waAccountId)) {
           return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
+        }
+        // Reasignar un bot YA activo a otra cuenta que también tiene un bot
+        // activo produciría el mismo doble-respuesta que /toggle ya evita —
+        // este es el otro único punto donde waAccountId cambia.
+        if (existing.isActive && existing.status === "ACTIVE" && fields.waAccountId !== existing.waAccountId) {
+          const conflict = await prisma.wABot.findFirst({
+            where: { waAccountId: fields.waAccountId, isActive: true, status: "ACTIVE", id: { not: id } },
+            select: { name: true },
+          });
+          if (conflict) {
+            return NextResponse.json(
+              { error: `Ya hay un bot activo en esa cuenta ("${conflict.name}") — desactívalo primero` },
+              { status: 400 }
+            );
+          }
         }
       }
       data.waAccountId = fields.waAccountId || null;

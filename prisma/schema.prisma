@@ -150,6 +150,11 @@ model WAAccount {
   userId          String
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   name            String
+  // Etiqueta libre para identificar internamente de dónde viene/qué es esta
+  // cuenta (ej. "Meta Ads", "Sucursal Norte") — no la usa Meta, solo la UI y
+  // el export a Sheets. Nada que ver con WACampaignRecipient/LeadSheetImportedRow
+  // "origin" (manual vs automatización), que es un concepto distinto.
+  origen          String?
   channel         WAChannel        @default(META_CLOUD)
   phoneNumber     String?
   phoneNumberId   String?
@@ -762,6 +767,10 @@ enum NotificationType {
   // Meta reportó un cambio relevante en la cuenta vía webhook: restricción/baneo
   // (account_update) o baja de calidad/límite de envío (phone_number_quality_update).
   ACCOUNT_STATUS
+  // Un WALeadScorerBot con scheduleEnabled falló en TODOS los chats de su
+  // última corrida programada (lead-scoring-worker.ts) — espejo de BOT_ERROR
+  // pero para calificadores, que no tienen un campo status propio.
+  SCORER_ERROR
 }
 
 model Notification {

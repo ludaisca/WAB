@@ -48,7 +48,7 @@ function hasVariable(text?: string): boolean {
  * placeholders distintos: una plantilla con `{{1}}` y `{{3}}` necesita 3
  * posiciones aunque solo aparezcan 2 marcadores.
  */
-function parseBodyParams(text?: string): { count: number; names: string[] | null } {
+export function parseBodyParams(text?: string): { count: number; names: string[] | null } {
   if (!text) return { count: 0, names: null };
   const tokens = [...text.matchAll(new RegExp(PLACEHOLDER_RE.source, "g"))].map((m) => m[1]);
   if (tokens.length === 0) return { count: 0, names: null };

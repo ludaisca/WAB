@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
 import { importNewLeadsForSource, LEAD_SHEET_MAX_BACKFILL } from "@/lib/google/lead-sheet-import";
+import { rateLimit } from "@/lib/rate-limit";
 
 // Acción manual explícita — reprocesa filas marcadas "seeded" (vistas al conectar
 // la fuente, sin enviarles nada) para el caso en que sí se quiera avisar al
@@ -15,6 +16,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    if (session.user.role === "ejecutivo") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
+
+    const rl = await rateLimit(`lead-sheet-import-existing:${session.user.id}`, 3, 60);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Demasiadas importaciones en poco tiempo — intenta de nuevo en un minuto" },
+        { status: 429 }
+      );
+    }
+
     const { id } = await params;
 
     // El botón original llama sin body — se tolera que el parseo falle.

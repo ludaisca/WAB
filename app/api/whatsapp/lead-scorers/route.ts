@@ -10,6 +10,9 @@ export async function POST(req: Request) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    if (session.user.role === "user") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
 
     const body = await req.json();
     const parsed = leadScorerBotSchema.safeParse(body);
@@ -69,6 +72,9 @@ export async function GET() {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+    if (session.user.role === "user") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
     const scorers = await prisma.wALeadScorerBot.findMany({

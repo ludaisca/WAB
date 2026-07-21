@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/crypto";
 import { getUserAccountIds } from "@/lib/shared-accounts";
 import { getTemplateAnalytics } from "@/lib/whatsapp/template-analytics";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function GET(
   req: Request,
@@ -13,6 +14,14 @@ export async function GET(
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+    if (session.user.role === "ejecutivo") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
+
+    const rl = await rateLimit(`template-analytics:${session.user.id}`, 10, 60);
+    if (!rl.allowed) {
+      return NextResponse.json({ error: "Demasiadas solicitudes, intenta más tarde" }, { status: 429 });
     }
 
     const { id } = await params;

@@ -104,6 +104,7 @@ export async function GET(req: Request) {
       select: {
         id: true,
         name: true,
+        origen: true,
         channel: true,
         phoneNumber: true,
         phoneNumberId: true,

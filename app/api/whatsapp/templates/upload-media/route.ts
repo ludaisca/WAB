@@ -12,6 +12,9 @@ export async function POST(req: Request) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    if (session.user.role === "ejecutivo") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
 
     const rl = await rateLimit(`template-media-upload:${session.user.id}`, 20, 60);
     if (!rl.allowed) {

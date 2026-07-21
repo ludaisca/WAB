@@ -12,6 +12,9 @@ export async function GET(
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    if (session.user.role === "ejecutivo") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
 
     const { id } = await params;
 
@@ -84,6 +87,9 @@ export async function DELETE(
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+    if (session.user.role === "ejecutivo") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
     const { id } = await params;

@@ -189,7 +189,16 @@ export function SheetExportFormModal({ open, onClose, editId, initialData, onSav
       .catch(() => setAvailableDatasets([]));
     fetch("/api/whatsapp/accounts")
       .then((r) => r.json())
-      .then((d) => setAccountOptions(Array.isArray(d) ? d.map((a: { id: string; name: string }) => ({ value: a.id, label: a.name })) : []))
+      .then((d) =>
+        setAccountOptions(
+          Array.isArray(d)
+            ? d.map((a: { id: string; name: string; origen?: string | null }) => ({
+                value: a.id,
+                label: a.origen ? `${a.name} — ${a.origen}` : a.name,
+              }))
+            : []
+        )
+      )
       .catch(() => setAccountOptions([]));
     fetch("/api/whatsapp/tags")
       .then((r) => r.json())

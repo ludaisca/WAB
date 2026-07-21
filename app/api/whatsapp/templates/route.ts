@@ -1,39 +1,18 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { decrypt } from "@/lib/crypto";
 import { getUserAccountIds } from "@/lib/shared-accounts";
-
-async function syncTemplatesFromMeta(wabaId: string, accessToken: string) {
-  const url = `https://graph.facebook.com/v21.0/${wabaId}/message_templates`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body?.error?.message ?? "Error al sincronizar plantillas");
-  }
-
-  const data = (await res.json()) as {
-    data?: Array<{
-      id: string;
-      name: string;
-      language: string;
-      category: string;
-      status: string;
-      components: unknown[];
-    }>;
-  };
-
-  return data.data ?? [];
-}
+import { rateLimit } from "@/lib/rate-limit";
+import { syncAccountTemplates } from "@/lib/whatsapp/template-sync";
 
 export async function GET(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+    if (session.user.role === "ejecutivo") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
     const { searchParams } = new URL(req.url);
@@ -71,6 +50,14 @@ export async function POST(req: Request) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    if (session.user.role === "ejecutivo") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
+
+    const rl = await rateLimit(`template-sync:${session.user.id}`, 10, 60);
+    if (!rl.allowed) {
+      return NextResponse.json({ error: "Demasiadas solicitudes, intenta más tarde" }, { status: 429 });
+    }
 
     const { waAccountId } = (await req.json()) as { waAccountId: string };
 
@@ -95,47 +82,10 @@ export async function POST(req: Request) {
       );
     }
 
-    const accessToken = decrypt(account.accessToken);
-    const metaTemplates = await syncTemplatesFromMeta(
-      account.wabaId,
-      accessToken
-    );
-
-    for (const t of metaTemplates) {
-      await prisma.wATemplate.upsert({
-        where: {
-          waAccountId_templateId: {
-            waAccountId: account.id,
-            templateId: t.id,
-          },
-        },
-        create: {
-          waAccountId: account.id,
-          templateId: t.id,
-          name: t.name,
-          language: t.language,
-          category: t.category,
-          status: t.status,
-          components: t.components as object,
-          syncedAt: new Date(),
-        },
-        update: {
-          name: t.name,
-          language: t.language,
-          category: t.category,
-          status: t.status,
-          components: t.components as object,
-          syncedAt: new Date(),
-        },
-      });
-    }
-
-    const syncedIds = metaTemplates.map((t) => t.id);
-    await prisma.wATemplate.deleteMany({
-      where: {
-        waAccountId: account.id,
-        templateId: { notIn: syncedIds },
-      },
+    await syncAccountTemplates({
+      id: account.id,
+      wabaId: account.wabaId,
+      accessToken: account.accessToken,
     });
 
     const templates = await prisma.wATemplate.findMany({

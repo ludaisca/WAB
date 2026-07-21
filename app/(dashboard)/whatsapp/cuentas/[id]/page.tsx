@@ -22,6 +22,7 @@ interface AccountDetail {
   id: string;
   userId: string;
   name: string;
+  origen: string | null;
   phoneNumber: string | null;
   phoneNumberId: string;
   wabaId: string | null;
@@ -88,6 +89,10 @@ export default function CuentaDetailPage() {
   const [editingAppId, setEditingAppId] = useState(false);
   const [appIdDraft, setAppIdDraft] = useState("");
   const [savingAppId, setSavingAppId] = useState(false);
+
+  const [editingOrigen, setEditingOrigen] = useState(false);
+  const [origenDraft, setOrigenDraft] = useState("");
+  const [savingOrigen, setSavingOrigen] = useState(false);
 
   const [sharedUsers, setSharedUsers] = useState<UserOption[]>([]);
   const [allUsers, setAllUsers] = useState<UserOption[]>([]);
@@ -222,6 +227,31 @@ export default function CuentaDetailPage() {
     }
   }
 
+  function startEditOrigen() {
+    setOrigenDraft(account?.origen ?? "");
+    setEditingOrigen(true);
+  }
+
+  async function handleSaveOrigen() {
+    setSavingOrigen(true);
+    try {
+      const res = await fetch(`/api/whatsapp/accounts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ origen: origenDraft.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Error al guardar");
+      setAccount((prev) => prev && { ...prev, origen: data.origen });
+      setEditingOrigen(false);
+      success("Origen actualizado");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al guardar el origen");
+    } finally {
+      setSavingOrigen(false);
+    }
+  }
+
   async function handleToggleAutoAssign(enabled: boolean) {
     if (!account) return;
     setAccount({ ...account, autoAssignEnabled: enabled });
@@ -319,6 +349,35 @@ export default function CuentaDetailPage() {
           />
 
           <InfoGroup title="Identificadores">
+            <div className="flex items-center justify-between gap-3 py-2.5">
+              <span className="shrink-0 text-xs text-muted-darker">Origen</span>
+              {editingOrigen ? (
+                <div className="flex flex-1 items-center justify-end gap-2">
+                  <Input
+                    value={origenDraft}
+                    onChange={(e) => setOrigenDraft(e.target.value)}
+                    placeholder="Ej. Meta Ads, Sucursal Norte..."
+                    className="text-sm max-w-[220px]"
+                    autoComplete="off"
+                  />
+                  <Button size="sm" onClick={handleSaveOrigen} disabled={savingOrigen}>
+                    {savingOrigen ? <Spinner /> : "Guardar"}
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => setEditingOrigen(false)}>
+                    Cancelar
+                  </Button>
+                </div>
+              ) : (
+                <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  {account.origen ?? "—"}
+                  {isAdmin && (
+                  <button onClick={startEditOrigen} className="text-muted-darker hover:text-foreground transition-colors" aria-label="Editar origen">
+                    <Pencil size={13} />
+                  </button>
+                  )}
+                </span>
+              )}
+            </div>
             <InfoRow label="Número" value={account.phoneNumber ?? "—"} mono />
             <InfoRow label="Phone Number ID" value={account.phoneNumberId} mono />
             <InfoRow label="WABA ID" value={account.wabaId ?? "—"} mono />

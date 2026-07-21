@@ -9,6 +9,9 @@ export async function POST(req: Request) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    if (session.user.role === "ejecutivo") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
 
     const { spreadsheetId, sheetName } = await req.json();
     if (!spreadsheetId || !sheetName) {

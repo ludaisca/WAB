@@ -19,35 +19,45 @@ export async function autoAssignChat(accountId: string, chatId: string): Promise
 
   const candidateIds = candidates.map((c) => c.id);
 
-  const [users, openCounts] = await Promise.all([
-    prisma.user.findMany({
-      where: { id: { in: candidateIds } },
-      select: { id: true, maxOpenChats: true },
-    }),
-    prisma.wAChat.groupBy({
-      by: ["assignedToId"],
-      where: { accountId, assignedToId: { in: candidateIds }, status: { in: ["OPEN", "PENDING"] } },
-      _count: { _all: true },
-    }),
-  ]);
+  // El webhook procesa mensajes de remitentes distintos de la misma cuenta en
+  // paralelo (Promise.all) — sin este lock, dos autoAssignChat concurrentes
+  // pueden leer la misma carga "antes de escribir" y elegir ambos al mismo
+  // agente, saltándose maxOpenChats. pg_advisory_xact_lock serializa las
+  // llamadas por cuenta (se libera solo al terminar la transacción) sin
+  // necesitar un SELECT ... FOR UPDATE sobre una fila que no existe todavía.
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${accountId}))`;
 
-  const maxByUser = new Map(users.map((u) => [u.id, u.maxOpenChats]));
-  const loadByUser = new Map(openCounts.map((c) => [c.assignedToId as string, c._count._all]));
+    const [users, openCounts] = await Promise.all([
+      tx.user.findMany({
+        where: { id: { in: candidateIds } },
+        select: { id: true, maxOpenChats: true },
+      }),
+      tx.wAChat.groupBy({
+        by: ["assignedToId"],
+        where: { accountId, assignedToId: { in: candidateIds }, status: { in: ["OPEN", "PENDING"] } },
+        _count: { _all: true },
+      }),
+    ]);
 
-  let best: { id: string; load: number } | null = null;
-  for (const candidateId of candidateIds) {
-    const max = maxByUser.get(candidateId) ?? null;
-    const load = loadByUser.get(candidateId) ?? 0;
-    if (max !== null && load >= max) continue;
-    if (!best || load < best.load) best = { id: candidateId, load };
-  }
+    const maxByUser = new Map(users.map((u) => [u.id, u.maxOpenChats]));
+    const loadByUser = new Map(openCounts.map((c) => [c.assignedToId as string, c._count._all]));
 
-  if (!best) return null;
+    let best: { id: string; load: number } | null = null;
+    for (const candidateId of candidateIds) {
+      const max = maxByUser.get(candidateId) ?? null;
+      const load = loadByUser.get(candidateId) ?? 0;
+      if (max !== null && load >= max) continue;
+      if (!best || load < best.load) best = { id: candidateId, load };
+    }
 
-  await prisma.wAChat.update({
-    where: { id: chatId },
-    data: { assignedToId: best.id },
+    if (!best) return null;
+
+    await tx.wAChat.update({
+      where: { id: chatId },
+      data: { assignedToId: best.id },
+    });
+
+    return best.id;
   });
-
-  return best.id;
 }

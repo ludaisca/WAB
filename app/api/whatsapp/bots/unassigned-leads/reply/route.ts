@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { unassignedLeadReplySchema } from "@/lib/validations";
 import { findUnassignedLeadChats, sendManualBotReply } from "@/lib/whatsapp/unassigned-lead-reply";
 import { isMonthlyBudgetExceeded, checkBudgetAlert } from "@/lib/ai/budget";
+import { rateLimit } from "@/lib/rate-limit";
 
 interface ReplyResult {
   chatId: string;
@@ -19,6 +20,11 @@ export async function POST(req: Request) {
     }
     if (session.user.role !== "admin") {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
+
+    const rl = await rateLimit(`unassigned-leads-reply:${session.user.id}`, 10, 60);
+    if (!rl.allowed) {
+      return NextResponse.json({ error: "Demasiadas solicitudes, intenta más tarde" }, { status: 429 });
     }
 
     const body = await req.json();
@@ -43,6 +49,10 @@ export async function POST(req: Request) {
       );
     }
 
+    // Dedupe — un chatId repetido en el body (bug de cliente o request armada
+    // a mano) no debe traducirse en dos respuestas de IA reales al mismo lead.
+    const uniqueChatIds = [...new Set(chatIds)];
+
     // Re-deriva del lado servidor el set válido actual (misma cuenta sin bot
     // activo + último mensaje inbound + ventana de 24h) — un chatId del
     // cliente que ya no califica (alguien más ya respondió, la ventana se
@@ -57,7 +67,15 @@ export async function POST(req: Request) {
 
     // Secuencial, no Promise.all — evita saturar el proveedor de IA y la
     // Graph API de Meta (mismo criterio que sheet-export-runner.ts/campaign-worker.ts).
-    for (const chatId of chatIds) {
+    for (const chatId of uniqueChatIds) {
+      // Re-chequeo por iteración: el check de arriba corre una sola vez, y un
+      // lote de hasta 50 envíos puede rebasar el presupuesto varias veces
+      // sobre antes de que el siguiente request lo note.
+      if (await isMonthlyBudgetExceeded(session.user.id, new Date())) {
+        results.push({ chatId, status: "skipped", error: "Presupuesto mensual de IA superado a mitad del lote" });
+        continue;
+      }
+
       const candidate = validById.get(chatId);
       if (!candidate) {
         results.push({ chatId, status: "skipped", error: "Ya no calificaba (respondido o fuera de alcance)" });

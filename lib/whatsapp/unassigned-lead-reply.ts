@@ -8,11 +8,13 @@ import { getUserApiKey } from "@/lib/ai/settings";
 import { estimateCost } from "@/lib/ai/pricing";
 import { searchKnowledge } from "@/lib/ai/rag";
 import { wrapUserPrompt, SCOPE_GUARDRAIL } from "@/lib/ai/prompt-sanitizer";
+import { summarizeText } from "@/lib/ai/summarize";
+import { splitReply, computeTypingDelay } from "@/lib/whatsapp/humanize";
+import { botSendQueue } from "@/lib/queue";
 import type { AIProvider, AIMessage } from "@/lib/ai/types";
 import type { WABot, WAAccount } from "@prisma/client";
 
 const CANDIDATE_POOL = 100;
-const HISTORY_LIMIT = 20;
 
 export interface UnassignedLeadChat {
   id: string;
@@ -128,7 +130,7 @@ export async function sendManualBotReply(chat: ManualReplyChat, bot: WABot, now:
   const lastInbound = await prisma.wAMessage.findFirst({
     where: { chatId: chat.id, direction: "INBOUND" },
     orderBy: { timestamp: "desc" },
-    select: { timestamp: true, body: true, caption: true },
+    select: { id: true, timestamp: true, body: true, caption: true },
   });
   if (!lastInbound) {
     throw new Error("Este chat no tiene ningún mensaje entrante");
@@ -142,6 +144,15 @@ export async function sendManualBotReply(chat: ManualReplyChat, bot: WABot, now:
   if (!apiKey) {
     throw new Error(`Bot "${bot.name}" sin API key configurada — no se puede generar la respuesta`);
   }
+
+  // Igual que bot-worker.ts: mantiene un hilo de WABotConversation por chat+bot
+  // para que memoryType:"SUMMARY" se acumule igual sin importar si la
+  // respuesta vino del pipeline automático o de este flujo manual.
+  const conversation = await prisma.wABotConversation.upsert({
+    where: { botId_waChatId: { botId: bot.id, waChatId: chat.id } },
+    create: { botId: bot.id, waChatId: chat.id },
+    update: {},
+  });
 
   const messages: AIMessage[] = [
     { role: "system", content: wrapUserPrompt(bot.systemPrompt) },
@@ -179,18 +190,35 @@ export async function sendManualBotReply(chat: ManualReplyChat, bot: WABot, now:
     });
   }
 
-  const history = await prisma.wAMessage.findMany({
-    where: { chatId: chat.id },
-    orderBy: { timestamp: "desc" },
-    take: HISTORY_LIMIT,
-    select: { direction: true, body: true, caption: true },
-  });
-
-  for (const msg of history.reverse()) {
-    const text = msg.caption ?? msg.body;
-    if (!text) continue;
-    messages.push({ role: msg.direction === "INBOUND" ? "user" : "assistant", content: text });
+  // Respeta bot.memoryType igual que bot-worker.ts — antes esto siempre
+  // mandaba hasta 20 mensajes crudos sin importar la configuración real del
+  // bot elegido (NONE no debía llevar historial en absoluto, SUMMARY debía
+  // usar el resumen acumulado en vez de mensajes crudos). El último inbound
+  // se excluye del historial y se agrega siempre al final como turno actual,
+  // igual que buildUserContent() en bot-worker.ts.
+  if (bot.memoryType === "RECENT" && bot.memoryLimit > 0) {
+    const history = await prisma.wAMessage.findMany({
+      where: { chatId: chat.id, id: { not: lastInbound.id } },
+      orderBy: { timestamp: "desc" },
+      take: bot.memoryLimit * 2,
+      select: { direction: true, body: true, caption: true },
+    });
+    for (const msg of history.reverse()) {
+      const text = msg.caption ?? msg.body;
+      if (!text) continue;
+      messages.push({ role: msg.direction === "INBOUND" ? "user" : "assistant", content: text });
+    }
   }
+
+  if (bot.memoryType === "SUMMARY" && conversation.summary) {
+    messages.push({
+      role: "system",
+      content: `Resumen de la conversación anterior:\n${conversation.summary}`,
+    });
+  }
+
+  const userText = lastInbound.caption ?? lastInbound.body ?? "";
+  messages.push({ role: "user", content: userText || "[mensaje sin texto]" });
 
   const client = getAIProvider(provider, apiKey);
   const result = await client.complete({
@@ -200,28 +228,68 @@ export async function sendManualBotReply(chat: ManualReplyChat, bot: WABot, now:
     maxTokens: bot.maxTokens,
   });
 
-  const sendResult = await sendWhatsAppMessage(chat.account, {
-    to: chat.remoteJid,
-    type: "text",
-    body: result.content,
+  // La llamada a la IA toma varios segundos — revalida justo antes de enviar
+  // que nada haya cambiado en el chat desde que se leyó lastInbound (ni un
+  // mensaje nuevo del lead, ni una respuesta que ya haya mandado otro admin o
+  // esta misma request con un chatId duplicado). Cierra la ventana de doble
+  // envío sin necesitar un lock distribuido.
+  const newerMessage = await prisma.wAMessage.count({
+    where: { chatId: chat.id, timestamp: { gt: lastInbound.timestamp } },
   });
+  if (newerMessage > 0) {
+    throw new Error("El chat cambió mientras se generaba la respuesta — no se envió nada");
+  }
 
-  await prisma.wAMessage.create({
-    data: {
-      wamid: sendResult.wamid ?? undefined,
-      chatId: chat.id,
-      direction: "OUTBOUND",
-      messageType: "text",
+  // Respeta bot.humanizeEnabled igual que bot-worker.ts — antes esto siempre
+  // enviaba en un solo mensaje síncrono aunque el bot elegido tuviera
+  // humanización activada.
+  if (bot.humanizeEnabled) {
+    const chunks = splitReply(result.content);
+    if (chunks.length === 0) {
+      throw new Error("La IA devolvió una respuesta vacía");
+    }
+    let cumulativeDelay = 0;
+    for (const chunk of chunks) {
+      cumulativeDelay += computeTypingDelay(chunk);
+      await botSendQueue.add(
+        "send-chunk",
+        { accountId: chat.account.id, waChatId: chat.id, remoteJid: chat.remoteJid, chunk },
+        { delay: cumulativeDelay }
+      );
+    }
+  } else {
+    const sendResult = await sendWhatsAppMessage(chat.account, {
+      to: chat.remoteJid,
+      type: "text",
       body: result.content,
-      status: "sent",
-      timestamp: now,
-    },
-  });
+    });
 
-  await prisma.wAChat.update({
-    where: { id: chat.id },
-    data: { lastMessage: result.content.slice(0, 500), lastMessageAt: now },
-  });
+    await prisma.wAMessage.create({
+      data: {
+        wamid: sendResult.wamid ?? undefined,
+        chatId: chat.id,
+        direction: "OUTBOUND",
+        messageType: "text",
+        body: result.content,
+        status: "sent",
+        timestamp: now,
+      },
+    });
+
+    await prisma.wAChat.update({
+      where: { id: chat.id },
+      data: { lastMessage: result.content.slice(0, 500), lastMessageAt: now },
+    });
+  }
+
+  if (bot.memoryType === "SUMMARY") {
+    await prisma.wABotConversation.update({
+      where: { id: conversation.id },
+      data: {
+        summary: summarizeText(`Cliente: ${userText}\nAsistente: ${result.content}`, conversation.summary),
+      },
+    });
+  }
 
   const promptTokens = result.usage?.promptTokens ?? 0;
   const completionTokens = result.usage?.completionTokens ?? 0;

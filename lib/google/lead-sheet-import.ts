@@ -5,6 +5,7 @@ import { getTemplateVariables, renderTemplateText } from "@/lib/whatsapp/templat
 import { sendTemplateMessage } from "@/lib/whatsapp/send-template";
 import { saveMediaFromMeta, isImageMime, isVideoMime } from "@/lib/whatsapp/media-store";
 import { shouldUpdateName } from "@/lib/whatsapp/contact-name";
+import { autoAssignChat } from "@/lib/whatsapp/auto-assign";
 import { parseLeadDate } from "@/lib/google/parse-lead-date";
 import type { LeadSheetSource, WAAccount, WATemplate } from "@prisma/client";
 
@@ -60,6 +61,20 @@ export async function importNewLeadsForSource(
   source: SourceWithRelations,
   opts: ImportOptions = {}
 ): Promise<ImportResult> {
+  // Revalida el status de la plantilla en cada corrida — pudo estar APPROVED al
+  // conectar la fuente y ser rechazada/pausada por Meta después. Sin este check
+  // el tick de cada 5 min (lead-sheet-worker.ts) reintentaría indefinidamente,
+  // fallando envío por envío, sin que el usuario supiera el motivo real hasta
+  // leer el error de Meta en cada fila.
+  if (source.waTemplate.status !== "APPROVED") {
+    const message = "La plantilla ya no está aprobada — sincroniza plantillas y actualiza la fuente antes de continuar";
+    await prisma.leadSheetSource.update({
+      where: { id: source.id },
+      data: { lastRunAt: new Date(), lastError: message },
+    });
+    return { imported: 0, failed: 0, skipped: 0 };
+  }
+
   const sheets = await getGoogleSheetsClientForUser(source.userId);
   if (!sheets) {
     throw new Error("La cuenta de Google no está conectada o fue deshabilitada");
@@ -247,7 +262,7 @@ export async function importNewLeadsForSource(
 
       const existingChat = await prisma.wAChat.findUnique({
         where: { accountId_remoteJid: { accountId: source.waAccountId, remoteJid: phone } },
-        select: { name: true },
+        select: { name: true, assignedToId: true },
       });
       const chatNameShouldUpdate = shouldUpdateName(contactName, existingChat?.name, phone);
 
@@ -284,6 +299,15 @@ export async function importNewLeadsForSource(
           leadSheetSourceId: source.id,
         },
       });
+
+      // El "ejecutivo rotado" del renglón de la hoja es solo texto insertado
+      // en el mensaje (personalización) — no toca la asignación real del
+      // chat. Sin esto, un lead importado por Sheets nunca pasaba por
+      // autoAssignChat() (a diferencia de uno que llega por webhook), así
+      // que quedaba sin asignar aunque la cuenta tuviera autoAssignEnabled.
+      if (!existingChat?.assignedToId) {
+        await autoAssignChat(source.waAccountId, chat.id);
+      }
 
       await prisma.contactTag.upsert({
         where: { contactId_tagId: { contactId: upsertedContact.id, tagId: leadAdsTag.id } },

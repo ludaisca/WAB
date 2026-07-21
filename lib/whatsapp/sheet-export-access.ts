@@ -3,9 +3,11 @@ import type { SheetExportDataset } from "./export-columns";
 // Qué roles pueden crear/usar cada dataset de exportación — espejo deliberado
 // de restricciones que YA existen en la app, para no abrir un atajo nuevo:
 // - CAMPAIGN_RESULTS: EXECUTIVE_BLOCKED en proxy.ts bloquea /whatsapp/campanas
-//   para "ejecutivo". OJO: GET /api/whatsapp/campaigns hoy NO tiene ningún
-//   check de rol (solo getUserAccountIds) — hueco preexistente, no introducido
-//   ni agravado por este gate, pero tampoco lo cierra.
+//   para "ejecutivo", y desde 2026-07 todos los handlers bajo
+//   app/api/whatsapp/campaigns/** y lead-sheet-sources/** también devuelven
+//   403 para "ejecutivo" directamente en la API (ya no dependen solo de
+//   getUserAccountIds) — este gate de dataset es un segundo espejo, no el
+//   único lugar que cierra el hueco.
 // - CONTACTS: espejo del 403 ya existente en GET /api/whatsapp/contacts para
 //   "user" (USER_BLOCKED bloquea /whatsapp/contactos).
 // null = todos los roles.

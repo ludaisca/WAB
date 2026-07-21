@@ -9,6 +9,15 @@ export interface ExportColumnDef<T> {
   get: (row: T) => string;
 }
 
+// Convención de nombre de campaña/automatización: segmentos separados por "_"
+// (ej. "clientes_general_sonoport_210726") — el primer segmento identifica el
+// tipo de campaña. También tolera "-" o espacio por si algún nombre no sigue
+// el guion bajo al pie de la letra. Sin delimitador, regresa el nombre completo.
+export function campaignFirstWord(name: string): string {
+  const match = name.match(/^([^_\-\s]+)/);
+  return match ? match[1] : name;
+}
+
 export interface ScoreDetails {
   tipo_lead: string | null;
   necesidad_principal: string | null;
@@ -45,7 +54,7 @@ export interface LeadScoreRow {
     remoteJid: string;
     status: string;
     accountId: string;
-    account: { id: string; name: string };
+    account: { id: string; name: string; origen: string | null };
     // Nombre aprendido por el calificador durante la conversación — distinto
     // del nombre de envío (chat.name), que viene del CSV/hoja de origen.
     contact: { realName: string | null } | null;
@@ -83,7 +92,9 @@ export const EXPORT_COLUMNS: ExportColumnDef<LeadScoreRow>[] = [
   { key: "realName", label: "Nombre real", get: (r) => r.chat.contact?.realName ?? "" },
   { key: "phone", label: "Teléfono", get: (r) => r.chat.remoteJid.split("@")[0] },
   { key: "account", label: "Cuenta", get: (r) => r.chat.account.name },
+  { key: "accountOrigen", label: "Origen de cuenta", get: (r) => r.chat.account.origen ?? "" },
   { key: "campaign", label: "Campaña", get: (r) => r.campaign?.name ?? "" },
+  { key: "campaignType", label: "Tipo", get: (r) => (r.campaign ? campaignFirstWord(r.campaign.name) : "") },
   { key: "origin", label: "Origen", get: (r) => (r.campaign ? CAMPAIGN_ORIGIN_LABEL[r.campaign.origin] : "") },
   { key: "label", label: "Calificación", get: (r) => labelText(r.label) },
   { key: "score", label: "Score", get: (r) => String(r.score) },
@@ -116,6 +127,7 @@ export interface CampaignResultRow {
   origin: CampaignResultOrigin;
   campaignName: string;
   templateName: string;
+  accountOrigen: string | null;
   phoneNumber: string;
   contactName: string | null;
   status: CampaignResultStatus;
@@ -145,7 +157,9 @@ function formatDateOrEmpty(value: string | null): string {
 
 export const CAMPAIGN_EXPORT_COLUMNS: ExportColumnDef<CampaignResultRow>[] = [
   { key: "origin", label: "Origen", get: (r) => CAMPAIGN_ORIGIN_LABEL[r.origin] },
+  { key: "accountOrigen", label: "Origen de cuenta", get: (r) => r.accountOrigen ?? "" },
   { key: "campaign", label: "Campaña", get: (r) => r.campaignName },
+  { key: "campaignType", label: "Tipo", get: (r) => campaignFirstWord(r.campaignName) },
   { key: "template", label: "Plantilla", get: (r) => r.templateName },
   { key: "phone", label: "Teléfono", get: (r) => r.phoneNumber },
   { key: "contact", label: "Contacto", get: (r) => r.contactName ?? "" },
@@ -180,7 +194,7 @@ export interface ChatExportRow {
   status: string;
   createdAt: string;
   lastMessageAt: string | null;
-  account: { id: string; name: string };
+  account: { id: string; name: string; origen: string | null };
   assignedTo: { name: string | null } | null;
   contact: { realName: string | null } | null;
   tags: string[];
@@ -192,10 +206,12 @@ export const CHATS_EXPORT_COLUMNS: ExportColumnDef<ChatExportRow>[] = [
   { key: "realName", label: "Nombre real", get: (r) => r.contact?.realName ?? "" },
   { key: "phone", label: "Teléfono", get: (r) => r.remoteJid.split("@")[0] },
   { key: "account", label: "Cuenta", get: (r) => r.account.name },
+  { key: "accountOrigen", label: "Origen de cuenta", get: (r) => r.account.origen ?? "" },
   { key: "status", label: "Estado", get: (r) => CHAT_STATUS_LABEL[r.status] ?? r.status },
   { key: "assignedTo", label: "Asignado a", get: (r) => r.assignedTo?.name ?? "" },
   { key: "tags", label: "Etiquetas", get: (r) => r.tags.join(" | ") },
   { key: "campaign", label: "Campaña", get: (r) => r.campaign?.name ?? "" },
+  { key: "campaignType", label: "Tipo", get: (r) => (r.campaign ? campaignFirstWord(r.campaign.name) : "") },
   { key: "origin", label: "Origen", get: (r) => (r.campaign ? CAMPAIGN_ORIGIN_LABEL[r.campaign.origin] : "") },
   { key: "createdAt", label: "Creado", get: (r) => formatDate(r.createdAt) },
   { key: "lastMessageAt", label: "Último mensaje", get: (r) => formatDateOrEmpty(r.lastMessageAt) },
@@ -209,7 +225,7 @@ export interface ContactExportRow {
   leadStatus: string;
   optedOutMarketing: boolean;
   createdAt: string;
-  account: { id: string; name: string };
+  account: { id: string; name: string; origen: string | null };
   tags: string[];
 }
 
@@ -218,6 +234,7 @@ export const CONTACTS_EXPORT_COLUMNS: ExportColumnDef<ContactExportRow>[] = [
   { key: "realName", label: "Nombre real", get: (r) => r.realName ?? "" },
   { key: "phone", label: "Teléfono", get: (r) => r.remoteJid.split("@")[0] },
   { key: "account", label: "Cuenta", get: (r) => r.account.name },
+  { key: "accountOrigen", label: "Origen de cuenta", get: (r) => r.account.origen ?? "" },
   { key: "leadStatus", label: "Estado de lead", get: (r) => LEAD_STATUS_LABEL[r.leadStatus] ?? r.leadStatus },
   { key: "tags", label: "Etiquetas", get: (r) => r.tags.join(" | ") },
   { key: "optedOut", label: "Baja de marketing", get: (r) => (r.optedOutMarketing ? "Sí" : "No") },

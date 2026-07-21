@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getUserAccountIds } from "@/lib/shared-accounts";
+import { chatAccessWhere } from "@/lib/whatsapp/chat-visibility";
 import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
 
 export async function GET() {
@@ -11,10 +11,12 @@ export async function GET() {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
-    const accountIds = await getUserAccountIds(session.user.id);
-
+    // chatAccessWhere() ya trae accountId + la restricción de
+    // hideUnattributedChats — sin esto, "Leads calificados" (abierta a todos
+    // los roles) le mostraba a un user/ejecutivo el detalle de chats que su
+    // propio inbox les esconde a propósito.
     const scores = await prisma.wALeadScore.findMany({
-      where: { chat: { accountId: { in: accountIds } } },
+      where: { chat: await chatAccessWhere(session.user.id, session.user.role) },
       include: {
         scorer: { select: { id: true, name: true } },
         chat: {
@@ -24,7 +26,7 @@ export async function GET() {
             remoteJid: true,
             status: true,
             accountId: true,
-            account: { select: { id: true, name: true } },
+            account: { select: { id: true, name: true, origen: true } },
             contact: { select: { realName: true } },
             messages: CHAT_ATTRIBUTION_MESSAGE_QUERY,
           },

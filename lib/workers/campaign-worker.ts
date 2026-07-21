@@ -51,6 +51,26 @@ export async function processCampaignJob(job: CampaignJob) {
 
   if (!campaign || campaign.status !== "SENDING") return;
 
+  // Revalida el status de la plantilla justo antes de enviar de verdad — pudo
+  // estar APPROVED al crear/lanzar la campaña y ser rechazada/pausada por Meta
+  // mientras esperaba en cola (SCHEDULED) o entre reintentos de BullMQ.
+  if (campaign.waTemplate.status !== "APPROVED") {
+    await prisma.wACampaign.update({
+      where: { id: campaignId },
+      data: { status: "FAILED", completedAt: new Date() },
+    });
+    await prisma.notification.create({
+      data: {
+        userId: campaign.userId,
+        type: "CAMPAIGN_FAILED",
+        title: `Campaña "${campaign.name}"`,
+        body: "La plantilla ya no está aprobada — no se envió ningún mensaje. Sincroniza plantillas y vuelve a intentar.",
+        link: `/whatsapp/campanas/${campaignId}`,
+      },
+    });
+    return;
+  }
+
   if (
     campaign.waAccount.channel !== "META_CLOUD" ||
     !campaign.waAccount.accessToken ||
@@ -121,6 +141,7 @@ export async function processCampaignJob(job: CampaignJob) {
         templateName,
         language,
         bodyParams,
+        bodyParamNames: templateVars.bodyParamNames,
         headerFormat: templateVars.header.format,
         headerParam: campaign.headerParam,
         buttonIndex: templateVars.buttonUrl?.index ?? null,

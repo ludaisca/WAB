@@ -161,7 +161,7 @@ async function runExport(
   let rows: unknown[] = [];
   switch (dataset) {
     case "LEAD_SCORES":
-      rows = await buildLeadScoreRows(accountIds, rawFilters as LeadScoresFilters);
+      rows = await buildLeadScoreRows(userId, role, accountIds, rawFilters as LeadScoresFilters);
       break;
     case "CAMPAIGN_RESULTS":
       rows = await buildCampaignResultRows(accountIds, rawFilters as CampaignResultsFilters);

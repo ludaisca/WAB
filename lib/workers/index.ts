@@ -9,7 +9,8 @@ import { processLeadScoringTick } from "./lead-scoring-worker";
 import { processLeadRecoveryTick } from "./lead-recovery-worker";
 import { processSheetsSyncTick } from "./sheets-sync-worker";
 import { processLeadSheetImportTick } from "./lead-sheet-worker";
-import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue, campaignQueue, sheetsSyncQueue, leadSheetImportQueue } from "@/lib/queue";
+import { processTemplateSyncTick } from "./template-sync-worker";
+import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue, campaignQueue, sheetsSyncQueue, leadSheetImportQueue, templateSyncQueue } from "@/lib/queue";
 
 const connection = {
   url: process.env.REDIS_URL || "redis://redis:6379",
@@ -53,7 +54,10 @@ export function startWorkers() {
   }, { connection, concurrency: 1 });
 
   const botSendWorker = new Worker("bot-message-send", async (job) => {
-    await processBotSendJob(job.data);
+    await processBotSendJob(job.data, {
+      attemptsMade: job.attemptsMade,
+      maxAttempts: job.opts.attempts ?? 1,
+    });
   }, { connection, concurrency: 5 });
 
   const leadScoringWorker = new Worker("lead-scoring", async () => {
@@ -72,7 +76,11 @@ export function startWorkers() {
     await processLeadSheetImportTick();
   }, { connection, concurrency: 1 });
 
-  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker, sheetsSyncWorker, leadSheetImportWorker);
+  const templateSyncWorker = new Worker("template-sync", async () => {
+    await processTemplateSyncTick();
+  }, { connection, concurrency: 1 });
+
+  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker, sheetsSyncWorker, leadSheetImportWorker, templateSyncWorker);
 
   mediaCleanupQueue
     .add(
@@ -133,6 +141,17 @@ export function startWorkers() {
       { jobId: "lead-sheet-import-tick", repeat: { pattern: "*/5 * * * *" } }
     )
     .catch((err) => console.error("[workers] No se pudo programar lead-sheet-import:", err));
+
+  // El status de una plantilla (PENDING → APPROVED/REJECTED) antes solo se
+  // refrescaba si alguien pulsaba "Sincronizar" — un tick cada 15 minutos evita
+  // que quede desactualizado por horas/días si nadie entra a la pantalla.
+  templateSyncQueue
+    .add(
+      "tick",
+      {},
+      { jobId: "template-sync-tick", repeat: { pattern: "*/15 * * * *" } }
+    )
+    .catch((err) => console.error("[workers] No se pudo programar template-sync:", err));
 
   console.log("[workers] BullMQ workers started");
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { chatAccessWhere } from "@/lib/whatsapp/chat-visibility";
+import { getAccountUserIds } from "@/lib/shared-accounts";
 
 async function getOwnedChat(userId: string, role: string | undefined, chatId: string) {
   return prisma.wAChat.findFirst({
@@ -26,8 +27,11 @@ export async function GET(
       return NextResponse.json({ error: "Chat no encontrado" }, { status: 404 });
     }
 
+    // Ver score/route.ts — mismo criterio que el tick programado: cualquier
+    // calificador cuyo dueño tenga acceso a esta cuenta, no solo el dueño literal.
+    const eligibleUserIds = await getAccountUserIds(chat.accountId);
     const scorers = await prisma.wALeadScorerBot.findMany({
-      where: { userId: chat.account.userId, isActive: true },
+      where: { userId: { in: eligibleUserIds }, isActive: true },
       select: { id: true, name: true, provider: true, model: true },
       orderBy: { name: "asc" },
     });

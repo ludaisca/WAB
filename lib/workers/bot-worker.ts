@@ -10,6 +10,7 @@ import { checkBudgetAlert, isMonthlyBudgetExceeded } from "@/lib/ai/budget";
 import { resolveAbsolutePath } from "@/lib/whatsapp/media-store";
 import { extractDocumentText } from "@/lib/whatsapp/extract-document-text";
 import { splitReply, computeTypingDelay } from "@/lib/whatsapp/humanize";
+import { summarizeText } from "@/lib/ai/summarize";
 import { botSendQueue } from "@/lib/queue";
 import type { AIProvider, AIMessage, ContentPart } from "@/lib/ai/types";
 
@@ -144,15 +145,16 @@ async function handleBotMessage(job: BotMessageJob) {
     return;
   }
 
-  let conversation = await prisma.wABotConversation.findUnique({
+  // upsert en vez de findUnique+create: dos mensajes seguidos del mismo lead
+  // (doble-texteo) pueden disparar dos jobs bot-messages en paralelo
+  // (concurrencia 3) que compitan por crear la misma fila — con create()
+  // suelto, el perdedor lanzaba una violación de @@unique([botId, waChatId])
+  // antes de siquiera llamar a la IA.
+  const conversation = await prisma.wABotConversation.upsert({
     where: { botId_waChatId: { botId, waChatId } },
+    create: { botId, waChatId },
+    update: {},
   });
-
-  if (!conversation) {
-    conversation = await prisma.wABotConversation.create({
-      data: { botId, waChatId },
-    });
-  }
 
   const messages: AIMessage[] = [];
   messages.push({ role: "system", content: wrapUserPrompt(bot.systemPrompt) });
@@ -264,14 +266,37 @@ async function handleBotMessage(job: BotMessageJob) {
     // each, queued as separate delayed jobs so this job returns immediately instead
     // of holding a bot-messages concurrency slot for the whole send sequence.
     const chunks = splitReply(result.content);
+    if (chunks.length === 0) {
+      // Mirrors the non-humanized path, where an empty body gets rejected by
+      // Meta and throws — without this the lead silently never gets a reply.
+      // Throwing here reuses processBotMessageJob's existing retry + fallback
+      // + BOT_ERROR notification path instead of duplicating it.
+      throw new Error("La IA devolvió una respuesta vacía");
+    }
     let cumulativeDelay = 0;
-    for (const chunk of chunks) {
-      cumulativeDelay += computeTypingDelay(chunk);
-      await botSendQueue.add(
-        "send-chunk",
-        { accountId: bot.waAccount.id, waChatId, remoteJid: chat.remoteJid, chunk },
-        { delay: cumulativeDelay }
-      );
+    try {
+      for (const chunk of chunks) {
+        cumulativeDelay += computeTypingDelay(chunk);
+        await botSendQueue.add(
+          "send-chunk",
+          { accountId: bot.waAccount.id, waChatId, remoteJid: chat.remoteJid, chunk },
+          { delay: cumulativeDelay }
+        );
+      }
+    } catch (err) {
+      // No relanzar: processBotMessageJob reintentaría todo el job, lo que
+      // volvería a llamar a la IA y re-encolaría los chunks desde cero,
+      // duplicando los que ya alcanzaron a agendarse antes de este fallo.
+      console.error("[bot-worker] No se pudieron encolar todos los chunks humanizados:", err);
+      await prisma.notification.create({
+        data: {
+          userId: bot.userId,
+          type: "BOT_ERROR",
+          title: `Bot "${bot.name}" — envío incompleto`,
+          body: "Una respuesta dividida en varios mensajes no se terminó de encolar — revisa la conexión con Redis.",
+          link: `/whatsapp/chat/${bot.waAccount.id}/${waChatId}`,
+        },
+      });
     }
   } else {
     const sendResult = await sendWhatsAppMessage(bot.waAccount, {
@@ -405,17 +430,4 @@ async function buildUserContent(job: BotMessageJob, provider: AIProvider): Promi
     console.error(`[bot-worker] No se pudo leer el ${isImage ? "imagen" : "audio"} local:`, err);
     return bodyText || fallbackLabel;
   }
-}
-
-
-function summarizeText(newMessage: string, existingSummary: string | null): string {
-  const combined = existingSummary
-    ? `${existingSummary}\n\n---\n\n${newMessage}`
-    : newMessage;
-
-  if (combined.length > 2000) {
-    return combined.slice(combined.length - 2000);
-  }
-
-  return combined;
 }

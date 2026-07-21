@@ -48,10 +48,15 @@ export async function checkBudgetAlert(userId: string, now: Date) {
 
   if (monthlyCost < settings.monthlyBudgetUsd) return;
 
-  await prisma.appSettings.update({
-    where: { userId },
+  // updateMany condicionado (no un update simple) — bot-worker, lead-recovery
+  // y unassigned-leads pueden cruzar el umbral casi al mismo tiempo; solo la
+  // llamada que efectivamente cambia budgetAlertMonth crea la notificación,
+  // evitando un BUDGET_EXCEEDED duplicado por carrera.
+  const { count } = await prisma.appSettings.updateMany({
+    where: { userId, OR: [{ budgetAlertMonth: null }, { budgetAlertMonth: { not: monthKey } }] },
     data: { budgetAlertMonth: monthKey },
   });
+  if (count === 0) return;
 
   await prisma.notification.create({
     data: {

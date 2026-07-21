@@ -27,6 +27,24 @@ export async function POST(
 
     const nextActive = !bot.isActive;
 
+    // Nada más impide que dos bots activos compartan la misma cuenta —
+    // `ingestInboundMessage()` encola un job por CADA bot activo que encuentra,
+    // así que dos activos en la misma cuenta responden dos veces (y gastan
+    // doble) al mismo mensaje. Se bloquea aquí, en el único punto de entrada
+    // que puede activar un bot.
+    if (nextActive && bot.waAccountId) {
+      const conflict = await prisma.wABot.findFirst({
+        where: { waAccountId: bot.waAccountId, isActive: true, status: "ACTIVE", id: { not: id } },
+        select: { name: true },
+      });
+      if (conflict) {
+        return NextResponse.json(
+          { error: `Ya hay un bot activo en esta cuenta ("${conflict.name}") — desactívalo primero` },
+          { status: 400 }
+        );
+      }
+    }
+
     const updated = await prisma.wABot.update({
       where: { id },
       // Re-activating clears a stuck ERROR status (e.g. from a past API key or

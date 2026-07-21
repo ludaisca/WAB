@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getAIProvider } from "@/lib/ai/factory";
 import { getUserApiKey } from "@/lib/ai/settings";
 import { wrapUserPrompt, SCOPE_GUARDRAIL } from "@/lib/ai/prompt-sanitizer";
+import { isMonthlyBudgetExceeded, checkBudgetAlert } from "@/lib/ai/budget";
+import { estimateCost } from "@/lib/ai/pricing";
 import type { AIProvider } from "@/lib/ai/types";
 
 export async function POST(
@@ -35,6 +37,14 @@ export async function POST(
       return NextResponse.json({ error: "El mensaje es requerido" }, { status: 400 });
     }
 
+    const now = new Date();
+    if (await isMonthlyBudgetExceeded(bot.userId, now)) {
+      return NextResponse.json(
+        { error: "Presupuesto mensual de IA ya superado — no se pudo probar el bot" },
+        { status: 400 }
+      );
+    }
+
     const provider = bot.provider as AIProvider;
     const apiKey = await getUserApiKey(bot.userId, provider);
 
@@ -59,6 +69,26 @@ export async function POST(
       temperature: bot.temperature,
       maxTokens: bot.maxTokens,
     });
+
+    // Sin esto, probar un bot vía "/test" gastaba dinero real del proveedor sin
+    // quedar registrado en WABotUsage — el gasto no contaba para el presupuesto
+    // mensual ni para ningún reporte de costo.
+    if (result.usage) {
+      const promptTokens = result.usage.promptTokens;
+      const completionTokens = result.usage.completionTokens;
+      const cost = await estimateCost(bot.model, promptTokens, completionTokens, provider);
+      await prisma.wABotUsage.create({
+        data: {
+          botId: bot.id,
+          model: bot.model,
+          promptTokens,
+          completionTokens,
+          totalTokens: promptTokens + completionTokens,
+          estimatedCost: cost,
+        },
+      });
+      await checkBudgetAlert(bot.userId, now);
+    }
 
     return NextResponse.json({
       response: result.content,

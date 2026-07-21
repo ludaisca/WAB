@@ -1,4 +1,5 @@
 import type { TemplateCreateInput } from "@/lib/validations";
+import { parseBodyParams } from "@/lib/whatsapp/template-variables";
 
 const GRAPH_API = "https://graph.facebook.com/v21.0";
 
@@ -43,7 +44,10 @@ function buildPayload(input: TemplateCreateInput): MetaTemplatePayload {
     }
   }
 
-  const bodyVariableCount = new Set(input.components.body.match(/\{\{(\d+)\}\}/g)).size;
+  // Índice máximo, no cantidad de placeholders distintos — misma lógica que
+  // template-variables.ts:parseBodyParams (un body con {{1}} y {{3}} necesita
+  // 3 posiciones aunque solo aparezcan 2 marcadores).
+  const bodyVariableCount = parseBodyParams(input.components.body).count;
   if (bodyVariableCount > 0) {
     components.push({
       type: "BODY",
@@ -80,7 +84,10 @@ export async function createTemplate(
   wabaId: string,
   accessToken: string,
   input: TemplateCreateInput
-): Promise<{ success: true; templateId: string; components: object } | { success: false; error: string }> {
+): Promise<
+  | { success: true; templateId: string; components: MetaTemplateComponent[] }
+  | { success: false; error: string }
+> {
   const payload = buildPayload(input);
 
   const url = `${GRAPH_API}/${wabaId}/message_templates`;
@@ -112,4 +119,31 @@ export async function createTemplate(
     templateId: json.id,
     components: payload.components,
   };
+}
+
+// Meta identifica la plantilla a borrar por `name` (no por el id numérico),
+// y borra TODOS los idiomas de ese nombre a la vez — no hay forma de acotar
+// por idioma en este endpoint.
+export async function deleteTemplate(
+  wabaId: string,
+  accessToken: string,
+  name: string
+): Promise<{ success: true } | { success: false; error: string; alreadyGone: boolean }> {
+  const url = `${GRAPH_API}/${wabaId}/message_templates?name=${encodeURIComponent(name)}`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  const json = (await res.json().catch(() => ({}))) as { success?: boolean } & MetaError;
+
+  if (!res.ok) {
+    const msg = json.error?.error_user_msg ?? json.error?.message ?? "Error al eliminar la plantilla en Meta";
+    // Si Meta ya no la tiene (borrada allá por fuera de WAB, o el sync la vació),
+    // no es un error fatal — seguimos y borramos el registro local igual.
+    const alreadyGone = /does not exist|no longer exists|no existe|not found/i.test(msg);
+    return { success: false, error: msg, alreadyGone };
+  }
+
+  return { success: true };
 }

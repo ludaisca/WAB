@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { campaignQueue } from "@/lib/queue";
 import { getUserAccountIds } from "@/lib/shared-accounts";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function POST(
   _req: Request,
@@ -13,12 +14,24 @@ export async function POST(
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    if (session.user.role === "ejecutivo") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
+
+    const rl = await rateLimit(`campaign-send:${session.user.id}`, 5, 60);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Demasiados envíos en poco tiempo — intenta de nuevo en un minuto" },
+        { status: 429 }
+      );
+    }
 
     const { id } = await params;
 
     const accountIds = await getUserAccountIds(session.user.id);
     const campaign = await prisma.wACampaign.findFirst({
       where: { id, waAccountId: { in: accountIds } },
+      include: { waTemplate: { select: { status: true } } },
     });
 
     if (!campaign) {
@@ -31,6 +44,15 @@ export async function POST(
     if (campaign.status === "SENDING" || campaign.status === "COMPLETED") {
       return NextResponse.json(
         { error: "La campaña ya está en envío o completada" },
+        { status: 400 }
+      );
+    }
+
+    // Revalida el status actual de la plantilla — pudo aprobarse al crear la
+    // campaña y ser rechazada/pausada por Meta después, antes de este envío.
+    if (campaign.waTemplate.status !== "APPROVED") {
+      return NextResponse.json(
+        { error: "La plantilla ya no está aprobada — sincroniza plantillas y vuelve a intentar" },
         { status: 400 }
       );
     }

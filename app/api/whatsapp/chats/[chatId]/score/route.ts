@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { chatAccessWhere } from "@/lib/whatsapp/chat-visibility";
 import { scoreChatWithScorer, LeadScoringError } from "@/lib/whatsapp/lead-scoring";
+import { getAccountUserIds } from "@/lib/shared-accounts";
+import { checkBudgetAlert } from "@/lib/ai/budget";
 
 async function getOwnedChat(userId: string, role: string | undefined, chatId: string) {
   return prisma.wAChat.findFirst({
@@ -62,8 +64,15 @@ export async function POST(
       return NextResponse.json({ error: "scorerId es requerido" }, { status: 400 });
     }
 
+    // Igual criterio que el tick programado (lead-scoring-worker.ts): un
+    // calificador es usable en este chat si su dueño tiene acceso a la cuenta
+    // (dueño literal o grantee de WAAccountShare), no solo si es el dueño
+    // literal — antes esto bloqueaba calificar manualmente con un calificador
+    // propio sobre una cuenta compartida, aunque ese mismo calificador sí
+    // corriera ahí automáticamente.
+    const eligibleUserIds = await getAccountUserIds(chat.accountId);
     const scorer = await prisma.wALeadScorerBot.findFirst({
-      where: { id: scorerId, userId: chat.account.userId },
+      where: { id: scorerId, userId: { in: eligibleUserIds } },
     });
     if (!scorer) {
       return NextResponse.json({ error: "Calificador no encontrado" }, { status: 404 });
@@ -71,6 +80,7 @@ export async function POST(
 
     try {
       const leadScore = await scoreChatWithScorer(chatId, scorer);
+      await checkBudgetAlert(scorer.userId, new Date());
       return NextResponse.json(leadScore);
     } catch (err) {
       if (err instanceof LeadScoringError) {
