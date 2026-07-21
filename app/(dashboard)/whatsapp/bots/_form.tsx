@@ -158,7 +158,11 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al ajustar el prompt");
       setSystemPrompt(data.adjustedPrompt);
-      success("Prompt ajustado para este sistema");
+      if (data.truncated) {
+        toastError("El resultado se recortó para no exceder el límite de ~4000 caracteres del sistema — revisa el final del prompt.");
+      } else {
+        success("Prompt ajustado para este sistema");
+      }
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Error al ajustar el prompt");
     } finally {

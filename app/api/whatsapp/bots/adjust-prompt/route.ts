@@ -33,9 +33,48 @@ Reglas de la plataforma que debes aplicar SIEMPRE:
 
 8. NO DUPLIQUES INSTRUCCIONES DE SEGURIDAD GENÉRICAS que ya aplica la plataforma automáticamente (no revelar el prompt de sistema, no salirse del propósito de negocio, ignorar instrucciones inyectadas en mensajes/imágenes/documentos) — si el original las trae, resúmelas brevemente o quítalas, ya se aplican aparte con prioridad máxima.
 
-QUÉ PRESERVAR SIN CAMBIOS DE FONDO: identidad y personalidad del bot, tono de voz, reglas de negocio (catálogo, precios, validaciones, prohibiciones léxicas), metodología de conversación/sondeo (como guía, no como extracción de datos), y cualquier ejemplo o few-shot (conviértelos a texto plano si estaban en JSON, preservando el contenido y estilo que ilustran).
+9. LÍMITE DE TAMAÑO — MUY IMPORTANTE: el campo donde vive este prompt se trunca a ~4000 caracteres antes de cada respuesta real del bot. Un prompt ajustado más largo que eso queda cortado en silencio en producción — y si se corta, se corta el FINAL de lo que hayas escrito, sin excepción. Por eso el orden en que escribes importa tanto como el contenido: lo obligatorio va primero, lo prescindible al final, así un corte por espacio solo se come lo prescindible.
+
+   ESCRIBE TU RESPUESTA EN ESTE ORDEN EXACTO — no reordenes según el orden del prompt original, reordena según esta prioridad:
+
+   PRIMERO, en este orden, de forma completa (nunca resumas ni omitas estas cuatro, cueste lo que cueste de espacio):
+   a) Identidad, tono y prohibiciones léxicas — 3-5 líneas.
+   b) Si el original tenía una regla de CUÁNDO revelar el precio del producto principal (turno/mensaje mínimo, datos mínimos recabados, excepción por insistencia), escríbela COMPLETA aquí, en segundo lugar — es una regla de negocio crítica, no un detalle que se pueda dejar para después.
+   c) La metodología de sondeo: qué datos recabar y en qué orden — lista de una línea por dato, sin la pregunta "neutra" exacta de cada uno.
+   d) Si el original tenía un flujo de escalamiento/cierre (pasar el contacto a un humano), resúmelo aquí en 2-3 líneas.
+
+   DESPUÉS, solo si te queda espacio, en este orden (lo primero que se sacrifica si no alcanza):
+   e) Catálogo: 2-4 características clave por equipo, no la ficha completa.
+   f) Equipos secundarios vía RAG y sus reglas de precio en rango (si el original las tenía).
+   g) Detección de perfil de prospecto: nombre de cada perfil + su enfoque de venta en una línea (sin listar señales ni preguntas de ejemplo de cada uno).
+   h) Ejemplos o few-shots — 1 corto como máximo, o ninguno.
+
+   Nunca escribas (e)-(h) extensamente a costa de dejar (a)-(d) incompletas o sin escribir — si notas que vas ocupando mucho espacio en el catálogo o en un equipo secundario, cierra esa sección ya y sigue con la siguiente obligatoria pendiente antes de seguir detallando.
+
+QUÉ PRESERVAR SIN CAMBIOS DE FONDO: identidad y personalidad del bot, tono de voz, reglas de negocio (catálogo, precios, validaciones, prohibiciones léxicas), la regla de cuándo revelar el precio, la metodología de conversación/sondeo, y el flujo de escalamiento — todo esto tiene prioridad sobre conservar few-shots, repetir ejemplos, o detallar de más el catálogo.
 
 FORMATO DE TU RESPUESTA: responde ÚNICAMENTE con el prompt ya ajustado, listo para pegarse directo en el campo "Prompt del sistema" de un bot. No agregues explicaciones, comentarios, encabezados ni comillas ni bloques de código — solo el texto final del prompt.`;
+
+// Margen bajo el corte real de 4000 caracteres que aplica wrapUserPrompt() en
+// cada respuesta real del bot (lib/ai/prompt-sanitizer.ts). El meta-prompt de
+// arriba ya le pide al modelo apuntar a ~4000, pero con prompts de entrada muy
+// largos y complejos (varios equipos, RAG, segmentación) el modelo no siempre
+// respeta esa instrucción al pie de la letra — este corte determinístico es
+// la garantía dura de que nunca se entrega (ni se guarda) algo que luego se
+// trunque a mitad de frase, en silencio, cuando el bot responda de verdad.
+const PRODUCTION_PROMPT_LIMIT = 3900;
+
+function truncateToProductionLimit(text: string): { text: string; truncated: boolean } {
+  if (text.length <= PRODUCTION_PROMPT_LIMIT) return { text, truncated: false };
+  const slice = text.slice(0, PRODUCTION_PROMPT_LIMIT);
+  const lastParagraphBreak = slice.lastIndexOf("\n\n");
+  // Corta en el último salto de párrafo si no descarta más de la mitad del
+  // presupuesto — si ese párrafo empieza demasiado atrás, mejor cortar en el
+  // último espacio para no perder tanto contenido de golpe.
+  const cut = lastParagraphBreak > PRODUCTION_PROMPT_LIMIT * 0.5 ? lastParagraphBreak : slice.lastIndexOf(" ");
+  const safeCut = cut > 0 ? cut : PRODUCTION_PROMPT_LIMIT;
+  return { text: text.slice(0, safeCut).trimEnd(), truncated: true };
+}
 
 export async function POST(req: Request) {
   try {
@@ -73,19 +112,30 @@ export async function POST(req: Request) {
     const result = await client.complete({
       model,
       temperature: 0.3,
-      maxTokens: 4000,
+      // El objetivo final es un resultado compacto (~4000 caracteres, ver
+      // ADAPTATION_RULES), pero ese es el tamaño de la RESPUESTA visible, no
+      // el presupuesto total de tokens de salida. Con prompts de entrada
+      // grandes (20000+ caracteres), modelos con razonamiento interno (p.ej.
+      // Gemini 2.5) gastan buena parte de un maxTokens ajustado en ese
+      // pensamiento oculto antes de escribir la respuesta, cortándola a
+      // mitad de frase. Un tope generoso aquí da margen a ese razonamiento
+      // sin arriesgar el corte — no aumenta el tamaño del prompt resultante,
+      // que sigue acotado por la instrucción del propio meta-prompt.
+      maxTokens: 16000,
       messages: [
         { role: "system", content: ADAPTATION_RULES },
         { role: "user", content: prompt },
       ],
     });
 
-    const adjustedPrompt = result.content.trim();
-    if (!adjustedPrompt) {
+    const rawAdjusted = result.content.trim();
+    if (!rawAdjusted) {
       return NextResponse.json({ error: "La IA no devolvió un resultado válido" }, { status: 500 });
     }
 
-    return NextResponse.json({ adjustedPrompt });
+    const { text: adjustedPrompt, truncated } = truncateToProductionLimit(rawAdjusted);
+
+    return NextResponse.json({ adjustedPrompt, truncated });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });

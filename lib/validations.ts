@@ -362,7 +362,7 @@ export const unassignedLeadReplySchema = z.object({
 export type UnassignedLeadReplyInput = z.infer<typeof unassignedLeadReplySchema>;
 
 export const adjustBotPromptSchema = z.object({
-  prompt: z.string().min(1, "El prompt no puede estar vacío").max(12000, "Máximo 12000 caracteres"),
+  prompt: z.string().min(1, "El prompt no puede estar vacío").max(30000, "Máximo 30000 caracteres"),
   provider: z.enum(["openrouter", "google"]),
   model: z.string().min(1),
 });
