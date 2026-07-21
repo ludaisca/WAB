@@ -18,6 +18,7 @@ import {
   Image as ImageIcon,
   Download,
   Maximize2,
+  Copy,
 } from "lucide-react";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
@@ -369,7 +370,7 @@ export function ChatWorkspace({
 }: ChatWorkspaceProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const { error: toastError } = useToast();
+  const { success, error: toastError } = useToast();
 
   const [chats, setChats] = useState<ChatItem[]>([]);
   const [loadingChats, setLoadingChats] = useState(true);
@@ -684,6 +685,15 @@ export function ChatWorkspace({
     });
   }, []);
 
+  const copyLeadPhone = useCallback(async (phone: string) => {
+    try {
+      await navigator.clipboard.writeText(phone);
+      success("Número copiado");
+    } catch {
+      toastError("No se pudo copiar el número");
+    }
+  }, [success, toastError]);
+
   const handleCloseChat = useCallback(() => {
     setSelectedChatId(null);
     clearAttachment();
@@ -991,10 +1001,28 @@ export function ChatWorkspace({
                   <ArrowLeft size={18} />
                 </button>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-semibold truncate">
                       {selectedChat?.name ?? selectedChat?.remoteJid ?? "Chat"}
                     </p>
+                    {selectedChat && (
+                      <span className="flex items-center gap-1 shrink-0">
+                        <span
+                          className="font-mono text-xs text-muted-darker select-all cursor-text"
+                          title="Número del lead — selecciona para copiar"
+                        >
+                          {selectedChat.remoteJid.split("@")[0]}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => copyLeadPhone(selectedChat.remoteJid.split("@")[0])}
+                          className="text-muted-darker hover:text-foreground transition-colors"
+                          title="Copiar número"
+                        >
+                          <Copy size={12} />
+                        </button>
+                      </span>
+                    )}
                     {selectedChat && (
                       <Badge tone={accountTone(selectedChat.accountId)} size="sm" className="shrink-0">
                         {selectedChat.account.name}
