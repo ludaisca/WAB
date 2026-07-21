@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 import { cn } from "./cn";
+import { useHasMounted } from "@/app/hooks/use-has-mounted";
 
 interface DropdownProps {
   trigger: React.ReactNode;
@@ -21,9 +23,21 @@ export function Dropdown({
   open: controlledOpen,
   onOpenChange,
 }: DropdownProps) {
+  const mounted = useHasMounted();
   const [internalOpen, setInternalOpen] = useState(false);
   const [render, setRender] = useState(controlledOpen ?? false);
-  const ref = useRef<HTMLDivElement>(null);
+  // Coordenadas en viewport (position: fixed), no relativas al trigger — el
+  // menú se porta a document.body para escapar de cualquier ancestro con
+  // overflow-hidden/overflow-x-auto. Un menú position:absolute anidado ahí
+  // queda recortado porque, al ser absoluto, no aporta a la altura intrínseca
+  // del contenedor: EntityList (overflow-hidden para las esquinas redondeadas)
+  // y Table (overflow-x-auto para el scroll horizontal, que por la regla de
+  // acoplamiento de CSS también fuerza overflow-y a "auto") lo cortan a la
+  // mitad en listas cortas — confirmado en vivo en /configuracion/exportaciones
+  // y /whatsapp/cuentas.
+  const [position, setPosition] = useState<{ top: number; left?: number; right?: number } | null>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const isOpen = controlledOpen !== undefined ? controlledOpen : internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
@@ -36,12 +50,36 @@ export function Dropdown({
   const toggle = useCallback(() => setOpen(!isOpen), [isOpen, setOpen]);
   const close = useCallback(() => setOpen(false), [setOpen]);
 
+  // Recalcula la posición del menú antes del paint (evita el parpadeo en la
+  // posición vieja) y la mantiene al hacer scroll/resize mientras está abierto.
+  useLayoutEffect(() => {
+    if (!isOpen || !anchorRef.current) return;
+    function updatePosition() {
+      const rect = anchorRef.current!.getBoundingClientRect();
+      setPosition(
+        align === "right"
+          ? { top: rect.bottom + 6, right: window.innerWidth - rect.right }
+          : { top: rect.bottom + 6, left: rect.left }
+      );
+    }
+    updatePosition();
+    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [isOpen, align]);
+
   useEffect(() => {
     if (!isOpen) return;
     function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        close();
-      }
+      const target = e.target as Node;
+      // El trigger sigue en su lugar (no se porta); solo el menú vive en
+      // document.body — hay que revisar ambos para "click afuera".
+      if (anchorRef.current?.contains(target)) return;
+      if (menuRef.current?.contains(target)) return;
+      close();
     }
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -58,7 +96,7 @@ export function Dropdown({
 
   return (
     <div
-      ref={ref}
+      ref={anchorRef}
       data-state={isOpen ? "open" : "closed"}
       className={cn("group/dd relative inline-block", className)}
     >
@@ -71,12 +109,14 @@ export function Dropdown({
       >
         {trigger}
       </div>
-      {render && (
+      {render && position && mounted && createPortal(
         <div
+          ref={menuRef}
+          style={{ top: position.top, left: position.left, right: position.right }}
           className={cn(
-            "absolute z-50 mt-1.5 min-w-[180px] rounded-xl border border-border bg-surface shadow-lg py-1",
+            "fixed z-50 min-w-[180px] rounded-xl border border-border bg-surface shadow-lg py-1",
             // El origen ancla el scale al trigger para que el menú "emerja" desde él.
-            align === "right" ? "right-0 origin-top-right" : "left-0 origin-top-left",
+            align === "right" ? "origin-top-right" : "origin-top-left",
             isOpen ? "animate-scale-in-spring" : "animate-scale-out"
           )}
           onClick={close}
@@ -85,7 +125,8 @@ export function Dropdown({
           }}
         >
           {children}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

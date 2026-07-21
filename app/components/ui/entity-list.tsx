@@ -85,13 +85,6 @@ export function EntityList<T>({
           style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
           className={cn(
             "group relative flex items-center gap-3 px-4 py-3 transition-colors animate-fade-in-up",
-            // Sin esto, el menú z-50 de una fila queda pintado DEBAJO del
-            // contenido de las filas siguientes: ninguna fila tiene z-index
-            // propio, así que se apilan en orden de DOM y un descendiente
-            // z-50 no puede escapar del stacking context de sus hermanos.
-            // has-[[data-state=open]] (Dropdown expone ese atributo en su
-            // wrapper) eleva solo la fila cuyo dropdown está abierto.
-            "has-[[data-state=open]]:z-10",
             onRowClick && "cursor-pointer hover:bg-surface-light/60"
           )}
         >
