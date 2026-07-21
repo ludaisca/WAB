@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { MessageCircleOff } from "lucide-react";
 import { Modal } from "@/app/components/ui/modal";
 import { Button } from "@/app/components/ui/button";
@@ -57,6 +57,7 @@ export function UnassignedLeadsModal({ open, onClose, bots }: Props) {
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [botId, setBotId] = useState("");
+  const [accountFilter, setAccountFilter] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
   const [lastResults, setLastResults] = useState<ReplyResult[] | null>(null);
@@ -82,8 +83,9 @@ export function UnassignedLeadsModal({ open, onClose, bots }: Props) {
 
   useEffect(() => {
     if (open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset del resultado anterior al reabrir la modal
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset del resultado anterior y del filtro de cuenta al reabrir la modal
       setLastResults(null);
+      setAccountFilter("");
       fetchChats();
     }
   }, [open, fetchChats]);
@@ -106,15 +108,35 @@ export function UnassignedLeadsModal({ open, onClose, bots }: Props) {
     });
   }
 
+  // Derivado de los chats ya cargados — evita un round-trip extra solo para
+  // poblar un selector de cuentas que esta misma respuesta ya trae embebido.
+  const accountOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const c of chats) seen.set(c.accountId, c.accountName);
+    return Array.from(seen, ([id, name]) => ({ id, name }));
+  }, [chats]);
+
+  const visibleChats = accountFilter ? chats.filter((c) => c.accountId === accountFilter) : chats;
+
+  // El envío SIEMPRE se limita a lo que el filtro deja visible — sin esto, si
+  // el usuario seleccionó "Todos" y luego cambia el filtro a otra cuenta, el
+  // botón mandaría también a leads de la cuenta anterior que ya no ve en
+  // pantalla en ese momento.
+  const visibleSelectedIds = Array.from(selected).filter((id) => visibleChats.some((c) => c.id === id));
+
+  const withinWindowCount = visibleChats.filter((c) => c.withinServiceWindow).length;
+  const outsideWindowCount = visibleChats.length - withinWindowCount;
+  const overLimit = visibleSelectedIds.length > MAX_SELECTION;
+
   async function handleSend() {
-    if (!botId || selected.size === 0) return;
+    if (!botId || visibleSelectedIds.length === 0) return;
     setSending(true);
     setLastResults(null);
     try {
       const res = await fetch("/api/whatsapp/bots/unassigned-leads/reply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ botId, chatIds: Array.from(selected) }),
+        body: JSON.stringify({ botId, chatIds: visibleSelectedIds }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al enviar");
@@ -131,10 +153,6 @@ export function UnassignedLeadsModal({ open, onClose, bots }: Props) {
     }
   }
 
-  const withinWindowCount = chats.filter((c) => c.withinServiceWindow).length;
-  const outsideWindowCount = chats.length - withinWindowCount;
-  const overLimit = selected.size > MAX_SELECTION;
-
   return (
     <Modal
       open={open}
@@ -147,9 +165,9 @@ export function UnassignedLeadsModal({ open, onClose, bots }: Props) {
           <Button variant="secondary" onClick={onClose}>Cerrar</Button>
           <Button
             onClick={handleSend}
-            disabled={sending || !botId || selected.size === 0 || overLimit || activeBots.length === 0}
+            disabled={sending || !botId || visibleSelectedIds.length === 0 || overLimit || activeBots.length === 0}
           >
-            {sending ? <Spinner /> : `Enviar respuestas (${selected.size})`}
+            {sending ? <Spinner /> : `Enviar respuestas (${visibleSelectedIds.length})`}
           </Button>
         </>
       }
@@ -160,15 +178,33 @@ export function UnassignedLeadsModal({ open, onClose, bots }: Props) {
         {activeBots.length === 0 ? (
           <Banner tone="warning">No tienes ningún bot activo — activa uno en la lista de bots antes de usar esto.</Banner>
         ) : (
-          <FormField label="Responder con el bot">
-            {(id) => (
-              <Select id={id} value={botId} onChange={(e) => setBotId(e.target.value)}>
-                {activeBots.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </Select>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1">
+              <FormField label="Responder con el bot">
+                {(id) => (
+                  <Select id={id} value={botId} onChange={(e) => setBotId(e.target.value)}>
+                    {activeBots.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </Select>
+                )}
+              </FormField>
+            </div>
+            {accountOptions.length > 1 && (
+              <div className="flex-1">
+                <FormField label="Filtrar por cuenta">
+                  {(id) => (
+                    <Select id={id} value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)}>
+                      <option value="">Todas las cuentas</option>
+                      {accountOptions.map((a) => (
+                        <option key={a.id} value={a.id}>{a.name}</option>
+                      ))}
+                    </Select>
+                  )}
+                </FormField>
+              </div>
             )}
-          </FormField>
+          </div>
         )}
 
         {overLimit && (
@@ -185,6 +221,12 @@ export function UnassignedLeadsModal({ open, onClose, bots }: Props) {
             title="Sin leads pendientes"
             description="No hay leads sin responder en cuentas sin bot activo — todo al día."
           />
+        ) : visibleChats.length === 0 ? (
+          <EmptyState
+            icon={MessageCircleOff}
+            title="Sin leads en esta cuenta"
+            description="Esa cuenta no tiene leads pendientes — prueba con otra o quita el filtro."
+          />
         ) : (
           <>
             <div className="flex items-center justify-between text-xs text-muted-darker">
@@ -195,7 +237,7 @@ export function UnassignedLeadsModal({ open, onClose, bots }: Props) {
               <span className="flex gap-3">
                 <button
                   type="button"
-                  onClick={() => setSelected(new Set(chats.filter((c) => c.withinServiceWindow).map((c) => c.id)))}
+                  onClick={() => setSelected(new Set(visibleChats.filter((c) => c.withinServiceWindow).map((c) => c.id)))}
                   className="hover:text-foreground transition-colors"
                 >
                   Todos
@@ -211,7 +253,7 @@ export function UnassignedLeadsModal({ open, onClose, bots }: Props) {
             </div>
 
             <div className="max-h-80 overflow-y-auto divide-y divide-border rounded-xl border border-border">
-              {chats.map((chat) => {
+              {visibleChats.map((chat) => {
                 const result = lastResults?.find((r) => r.chatId === chat.id);
                 return (
                   <div key={chat.id} className="flex items-start gap-3 px-3 py-2.5">
