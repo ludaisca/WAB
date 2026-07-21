@@ -14,11 +14,11 @@ import { AnimatedNumber } from "@/app/components/ui/animated-number";
 import type { Estadisticas } from "@/lib/estadisticas/get-stats";
 import { CAMPAIGN_ORIGIN_LABEL, LABEL_TEXT } from "@/lib/whatsapp/export-columns";
 
-const BOT_STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" | "danger" | "neutral" }> = {
-  ACTIVE: { label: "Activo", tone: "success" },
-  PAUSED: { label: "Pausado", tone: "warning" },
-  ERROR: { label: "Error", tone: "danger" },
-};
+function botStatusBadge(b: { status: string; isActive: boolean }): { label: string; tone: "success" | "danger" | "neutral" } {
+  if (b.status === "ERROR") return { label: "Error", tone: "danger" };
+  if (!b.isActive) return { label: "Inactivo", tone: "neutral" };
+  return { label: "Activo", tone: "success" };
+}
 
 // Colores de la dona de calificaciones. Son tokens de ESTADO (no la paleta
 // categórica): cada etiqueta tiene un significado fijo, así que el color lo
@@ -64,7 +64,7 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
       key: "status",
       header: "Estado",
       render: (b) => {
-        const badge = BOT_STATUS_BADGE[b.status] ?? { label: b.status, tone: "neutral" as const };
+        const badge = botStatusBadge(b);
         return <Badge tone={badge.tone} size="sm">{badge.label}</Badge>;
       },
     },

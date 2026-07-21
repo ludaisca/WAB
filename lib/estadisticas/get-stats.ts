@@ -70,6 +70,7 @@ export interface Estadisticas {
     id: string;
     name: string;
     status: string;
+    isActive: boolean;
     interactions: number;
     totalTokens: number;
     totalCost: number;
@@ -200,7 +201,7 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     countCompletedCampaigns(userId),
     prisma.wABot.findMany({
       where: { userId },
-      select: { id: true, name: true, status: true },
+      select: { id: true, name: true, status: true, isActive: true },
     }),
     prisma.wABotUsage.groupBy({
       by: ["botId"],
@@ -282,6 +283,7 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
         id: b.id,
         name: b.name,
         status: b.status,
+        isActive: b.isActive,
         interactions: u?._count._all ?? 0,
         totalTokens: u?._sum.totalTokens ?? 0,
         totalCost: Math.round((u?._sum.estimatedCost ?? 0) * 10000) / 10000,
