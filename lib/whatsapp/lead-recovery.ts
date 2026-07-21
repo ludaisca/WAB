@@ -4,21 +4,11 @@ import { getAIProvider } from "@/lib/ai/factory";
 import { getUserApiKey } from "@/lib/ai/settings";
 import { estimateCost } from "@/lib/ai/pricing";
 import { wrapUserPrompt, SCOPE_GUARDRAIL } from "@/lib/ai/prompt-sanitizer";
+import { isWithinServiceWindow } from "@/lib/whatsapp/service-window";
 import type { AIProvider, AIMessage } from "@/lib/ai/types";
 import type { WABot, WAAccount } from "@prisma/client";
 
-const SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const HISTORY_LIMIT = 12;
-
-// Meta's 24h customer-service window closes based on the LEAD's last inbound
-// message, not our last outbound — this is checked live, right before every
-// send, as a safety net. With the current default thresholds (2h/12h) this
-// should never actually trip, but if the config is ever loosened past 24h,
-// this is what stops a free-text send from violating Meta's policy instead
-// of silently failing at Meta's end.
-function isWithinServiceWindow(lastInboundAt: Date, now: Date): boolean {
-  return now.getTime() - lastInboundAt.getTime() < SERVICE_WINDOW_MS;
-}
 
 function localHourInTz(date: Date, timeZone: string): number {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone, hour12: false, hour: "2-digit" }).formatToParts(date);

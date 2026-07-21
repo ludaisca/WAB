@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Bot, Power, PowerOff, Trash2 } from "lucide-react";
+import { Plus, Bot, Power, PowerOff, Trash2, MessageCircleReply } from "lucide-react";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Spinner } from "@/app/components/ui/spinner";
@@ -13,6 +13,7 @@ import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { PageHeader } from "@/app/components/ui/page-header";
 import { useToast } from "@/app/components/ui/toast";
 import { BotFormModal } from "./_form";
+import { UnassignedLeadsModal } from "./_responder-pendientes";
 
 interface WaBot {
   id: string;
@@ -43,6 +44,7 @@ export default function BotsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [responderOpen, setResponderOpen] = useState(false);
 
   const fetchBots = useCallback(async () => {
     setLoading(true);
@@ -96,9 +98,19 @@ export default function BotsPage() {
         title="Bots IA"
         description="Configura bots con IA para responder automáticamente mensajes de WhatsApp."
         actions={
-          <Button icon={Plus} size="sm" onClick={() => setFormOpen(true)}>
-            Crear bot
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              icon={MessageCircleReply}
+              size="sm"
+              onClick={() => setResponderOpen(true)}
+            >
+              Responder leads sin bot
+            </Button>
+            <Button icon={Plus} size="sm" onClick={() => setFormOpen(true)}>
+              Crear bot
+            </Button>
+          </div>
         }
       />
 
@@ -197,6 +209,12 @@ export default function BotsPage() {
         open={formOpen}
         onClose={() => setFormOpen(false)}
         onSaved={fetchBots}
+      />
+
+      <UnassignedLeadsModal
+        open={responderOpen}
+        onClose={() => setResponderOpen(false)}
+        bots={bots}
       />
     </div>
   );

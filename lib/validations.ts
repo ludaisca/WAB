@@ -350,3 +350,13 @@ export const sheetExportUpdateSchema = z.object({
 
 export type SheetExportCreateInput = z.infer<typeof sheetExportCreateSchema>;
 export type SheetExportUpdateInput = z.infer<typeof sheetExportUpdateSchema>;
+
+// Tope explícito (no silencioso) — el modal avisa en la UI si se seleccionan
+// más de 50 chats en vez de dejar que el usuario mande un lote gigante de un
+// jalón contra el proveedor de IA y la Graph API de Meta.
+export const unassignedLeadReplySchema = z.object({
+  botId: z.string().min(1),
+  chatIds: z.array(z.string().min(1)).min(1, "Selecciona al menos un chat").max(50, "Máximo 50 chats por envío"),
+});
+
+export type UnassignedLeadReplyInput = z.infer<typeof unassignedLeadReplySchema>;
