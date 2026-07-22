@@ -13,6 +13,7 @@ import {
   Contact,
   Phone,
   Target,
+  Sparkles,
 } from "lucide-react";
 import { AppShell, type NavItem, type NavGroup } from "@/app/components/ui/app-shell";
 import { NotificationBell } from "@/app/components/ui/notification-bell";
@@ -67,6 +68,12 @@ export function DashboardShell({
             { href: "/whatsapp/calificadores",  label: "Calificadores de Leads", icon: Target },
           ],
         },
+        ...(isAdmin
+          ? [{
+              title: "Asistente",
+              items: [{ href: "/asistente-ia" as const, label: "Asistente IA", icon: Sparkles as React.ElementType }],
+            }]
+          : []),
         {
           title: "Canales",
           items: [

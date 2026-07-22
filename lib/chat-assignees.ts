@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { ValidationError } from "@/lib/errors";
 
 export interface Assignee {
   id: string;
@@ -25,4 +26,26 @@ export async function getEligibleAssignees(accountId: string): Promise<Assignee[
     }
   }
   return assignees;
+}
+
+// Asume que el llamador ya validó que chatId/accountId son visibles/accesibles
+// para el usuario que hace la petición (chatAccessWhere) — esta función solo
+// valida que el nuevo asignado sea elegible para esa cuenta y aplica el cambio.
+export async function assignChat(chatId: string, assignedToId: string | null, accountId: string) {
+  if (assignedToId !== null) {
+    const eligible = await getEligibleAssignees(accountId);
+    if (!eligible.some((a) => a.id === assignedToId)) {
+      throw new ValidationError("Usuario no válido para esta cuenta");
+    }
+  }
+
+  return prisma.wAChat.update({
+    where: { id: chatId },
+    data: { assignedToId },
+    select: {
+      id: true,
+      assignedToId: true,
+      assignedTo: { select: { id: true, name: true } },
+    },
+  });
 }

@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { leadSheetSourceUpdateSchema } from "@/lib/validations";
 import { getUserAccountIds } from "@/lib/shared-accounts";
+import { deleteSource } from "@/lib/whatsapp/lead-sheet-sources";
+import { NotFoundError } from "@/lib/errors";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -104,15 +106,13 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     const { id } = await params;
 
     const accountIds = await getUserAccountIds(session.user.id);
-    const existing = await prisma.leadSheetSource.findFirst({ where: { id, waAccountId: { in: accountIds } } });
-    if (!existing) {
-      return NextResponse.json({ error: "Fuente no encontrada" }, { status: 404 });
-    }
-
-    await prisma.leadSheetSource.delete({ where: { id } });
+    await deleteSource(id, accountIds);
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof NotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
+    }
     const message = error instanceof Error ? error.message : "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });
   }

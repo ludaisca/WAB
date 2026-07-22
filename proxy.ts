@@ -1,8 +1,8 @@
 import { auth } from "@/lib/auth";
 import { type NextRequest, NextResponse } from "next/server";
 
-const PROTECTED = ["/dashboard", "/configuracion", "/whatsapp", "/usuarios", "/estadisticas"];
-const EXECUTIVE_BLOCKED = ["/dashboard", "/estadisticas", "/whatsapp/bots", "/whatsapp/campanas", "/whatsapp/plantillas", "/usuarios", "/whatsapp/cuentas", "/configuracion/ia"];
+const PROTECTED = ["/dashboard", "/configuracion", "/whatsapp", "/usuarios", "/estadisticas", "/asistente-ia"];
+const EXECUTIVE_BLOCKED = ["/dashboard", "/estadisticas", "/whatsapp/bots", "/whatsapp/campanas", "/whatsapp/plantillas", "/usuarios", "/whatsapp/cuentas", "/configuracion/ia", "/asistente-ia"];
 // Regular "user" role keeps Panel/Estadísticas/Chats/Cuentas/Plantillas/Campañas/Config,
 // but loses Contactos and Bots IA entirely (la antigua página /whatsapp/conocimiento se
 // eliminó — el flujo de conocimiento vive en la pestaña del bot, ya bloqueada vía
@@ -11,7 +11,7 @@ const EXECUTIVE_BLOCKED = ["/dashboard", "/estadisticas", "/whatsapp/bots", "/wh
 // CRUD tab isn't a separate route to block.
 // /configuracion/ia (API keys, default provider/model, budget, lead recovery) is admin-only —
 // only the account owner administers AI provider config, not shared/delegated roles.
-const USER_BLOCKED = ["/whatsapp/contactos", "/whatsapp/bots", "/configuracion/ia"];
+const USER_BLOCKED = ["/whatsapp/contactos", "/whatsapp/bots", "/configuracion/ia", "/asistente-ia"];
 const AUTH = ["/login", "/register"];
 const EXCLUDE = ["/_next", "/api", "/favicon.ico"];
 

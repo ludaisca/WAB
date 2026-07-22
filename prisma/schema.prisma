@@ -30,6 +30,9 @@ model User {
   sentMessages   WAMessage[]
   leadSheetSources LeadSheetSource[]
   sheetExports     SheetExport[]
+  agentConversations     AgentConversation[]
+  agentActionsRequested  AgentAction[]        @relation("AgentActionRequester")
+  agentActionsResolved   AgentAction[]        @relation("AgentActionResolver")
 
   @@map("users")
 }
@@ -771,6 +774,12 @@ enum NotificationType {
   // última corrida programada (lead-scoring-worker.ts) — espejo de BOT_ERROR
   // pero para calificadores, que no tienen un campo status propio.
   SCORER_ERROR
+  // Hallazgo de severidad "alta" del barrido system-diagnostics-worker.ts
+  // (mismo scan que la tool system.diagnostics del agente IA): plantilla
+  // rechazada por Meta, campaña atascada/con fallos altos, cuenta en error,
+  // o fallo de envío de recuperación de leads. Deduplicado por (userId, title)
+  // en una ventana de 6h para no repetir alerta en cada tick si sigue roto.
+  SYSTEM_ISSUE
 }
 
 model Notification {
@@ -786,4 +795,103 @@ model Notification {
 
   @@index([userId, read, createdAt])
   @@map("notifications")
+}
+
+// Agente de IA admin-only — ver plan en ~/.claude/plans/glowing-conjuring-engelbart.md.
+// AgentAction ES el log de auditoría (no hay tabla separada): MINOR se inserta
+// directo como EXECUTED; CONFIRM nace PENDING y solo transiciona vía los
+// endpoints de confirm/reject, nunca desde el orchestrator.
+enum AgentRole {
+  USER
+  ASSISTANT
+  TOOL
+}
+
+enum AgentActionStatus {
+  PENDING
+  EXECUTED
+  REJECTED
+  EXPIRED
+  FAILED
+}
+
+model AgentConversation {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages AgentMessage[]
+  actions  AgentAction[]
+  usage    AgentUsage[]
+
+  @@index([userId, updatedAt])
+  @@map("agent_conversations")
+}
+
+model AgentMessage {
+  id             String            @id @default(cuid())
+  conversationId String
+  conversation   AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           AgentRole
+  content        String            @db.Text
+  // role=ASSISTANT: tool calls pedidos en este turno — [{id, name, arguments}] — necesario para el replay hacia el provider.
+  toolCalls      Json?
+  toolCallId     String?
+  toolName       String?
+  // Conecta el mensaje TOOL con su AgentAction cuando el tool es CONFIRM, para que la UI
+  // renderice la tarjeta de confirmación inline en el hilo.
+  actionId       String?
+  action         AgentAction?      @relation(fields: [actionId], references: [id], onDelete: SetNull)
+  createdAt      DateTime          @default(now())
+
+  @@index([conversationId, createdAt])
+  @@map("agent_messages")
+}
+
+model AgentAction {
+  id             String             @id @default(cuid())
+  conversationId String
+  conversation   AgentConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User               @relation("AgentActionRequester", fields: [userId], references: [id], onDelete: Cascade)
+  toolName       String
+  // String, no enum: denormalizado al crear la acción — si el tool cambia de tier
+  // después, el registro histórico no se reinterpreta solo. Se valida en TS contra ToolRiskTier.
+  riskTier       String
+  description    String             @db.Text
+  params         Json
+  status         AgentActionStatus  @default(PENDING)
+  result         Json?
+  errorMessage   String?
+  expiresAt      DateTime?
+  resolvedAt     DateTime?
+  resolvedById   String?
+  resolvedBy     User?              @relation("AgentActionResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime           @default(now())
+
+  messages AgentMessage[]
+
+  @@index([conversationId, createdAt])
+  @@index([userId, status])
+  @@index([status, expiresAt])
+  @@map("agent_actions")
+}
+
+model AgentUsage {
+  id               String            @id @default(cuid())
+  conversationId   String
+  conversation     AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  model            String
+  promptTokens     Int
+  completionTokens Int
+  totalTokens      Int
+  estimatedCost    Float
+  toolCallCount    Int               @default(0)
+  createdAt        DateTime          @default(now())
+
+  @@index([conversationId, createdAt])
+  @@map("agent_usage")
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { chatAccessWhere } from "@/lib/whatsapp/chat-visibility";
+import { setChatStatus } from "@/lib/whatsapp/chat-status";
 
 const VALID_STATUSES = ["OPEN", "PENDING", "RESOLVED"] as const;
 
@@ -20,7 +21,7 @@ export async function PATCH(
 
     const chat = await prisma.wAChat.findFirst({
       where: { id: chatId, ...accessWhere },
-      select: { status: true },
+      select: { id: true },
     });
 
     if (!chat) {
@@ -34,17 +35,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Estado no válido" }, { status: 400 });
     }
 
-    const wasResolved = chat.status === "RESOLVED";
-    const willBeResolved = status === "RESOLVED";
-
-    const updated = await prisma.wAChat.update({
-      where: { id: chatId },
-      data: {
-        status,
-        resolvedAt: willBeResolved ? new Date() : wasResolved && !willBeResolved ? null : undefined,
-      },
-      select: { id: true, status: true, resolvedAt: true },
-    });
+    const updated = await setChatStatus(chatId, status);
 
     return NextResponse.json(updated);
   } catch (error) {

@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { leadScorerBotUpdateSchema } from "@/lib/validations";
 import { getUserAccountIds } from "@/lib/shared-accounts";
+import { deleteScorer } from "@/lib/whatsapp/lead-scorers";
+import { NotFoundError } from "@/lib/errors";
 
 export async function GET(
   _req: Request,
@@ -124,19 +126,13 @@ export async function DELETE(
     }
 
     const { id } = await params;
-
-    const existing = await prisma.wALeadScorerBot.findFirst({
-      where: { id, userId: session.user.id },
-    });
-
-    if (!existing) {
-      return NextResponse.json({ error: "Calificador no encontrado" }, { status: 404 });
-    }
-
-    await prisma.wALeadScorerBot.delete({ where: { id } });
+    await deleteScorer(id, session.user.id);
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof NotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
+    }
     const message =
       error instanceof Error ? error.message : "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -8,6 +8,7 @@ import type { AppSettings, WABot, WAAccount } from "@prisma/client";
 // same reasoning as lead-scoring-worker.ts's CANDIDATE_POOL/BATCH_SIZE.
 const CANDIDATE_POOL = 200;
 const BATCH_SIZE = 20;
+const NOTIFY_DEDUP_HOURS = 6;
 
 export async function processLeadRecoveryTick() {
   const now = new Date();
@@ -67,6 +68,8 @@ async function runRecoveryForUser(settings: AppSettings, now: Date) {
   const botCache = new Map<string, (WABot & { waAccount: WAAccount | null }) | null>();
   let sentCount = 0;
   let sentAny = false;
+  let failCount = 0;
+  let lastError = "";
 
   for (const chat of silentChats) {
     if (sentCount >= BATCH_SIZE) break;
@@ -111,11 +114,38 @@ async function runRecoveryForUser(settings: AppSettings, now: Date) {
       sentAny = true;
       sentCount++;
     } catch (err) {
-      console.error(`[lead-recovery] Error enviando reactivación al chat ${chat.id}:`, err instanceof Error ? err.message : err);
+      failCount++;
+      lastError = err instanceof Error ? err.message : String(err);
+      console.error(`[lead-recovery] Error enviando reactivación al chat ${chat.id}:`, lastError);
     }
   }
 
   if (sentAny) {
     await checkBudgetAlert(settings.userId, now);
   }
+  if (failCount > 0) {
+    await notifyRecoveryFailures(settings.userId, failCount, lastError, now);
+  }
+}
+
+// Antes un fallo de envío solo quedaba en console.error, invisible para el
+// admin fuera de los logs del contenedor — dedupe por usuario (no por chat)
+// porque una sola causa raíz (ej. API key inválida) suele fallar varios chats
+// en el mismo tick.
+async function notifyRecoveryFailures(userId: string, failCount: number, lastError: string, now: Date) {
+  const since = new Date(now.getTime() - NOTIFY_DEDUP_HOURS * 3_600_000);
+  const recent = await prisma.notification.findFirst({
+    where: { userId, type: "SYSTEM_ISSUE", title: "Recuperación de leads con errores", createdAt: { gte: since } },
+  });
+  if (recent) return;
+
+  await prisma.notification.create({
+    data: {
+      userId,
+      type: "SYSTEM_ISSUE",
+      title: "Recuperación de leads con errores",
+      body: `${failCount} envío(s) de reactivación fallaron en esta corrida. Último error: ${lastError.slice(0, 300)}`,
+      link: "/configuracion/ia",
+    },
+  });
 }

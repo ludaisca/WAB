@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { botUpdateSchema } from "@/lib/validations";
 import { getUserAccountIds } from "@/lib/shared-accounts";
+import { deleteBot } from "@/lib/whatsapp/bots";
+import { NotFoundError } from "@/lib/errors";
 
 export async function GET(
   _req: Request,
@@ -173,19 +175,13 @@ export async function DELETE(
     }
 
     const { id } = await params;
-
-    const existing = await prisma.wABot.findFirst({
-      where: { id, userId: session.user.id },
-    });
-
-    if (!existing) {
-      return NextResponse.json({ error: "Bot no encontrado" }, { status: 404 });
-    }
-
-    await prisma.wABot.delete({ where: { id } });
+    await deleteBot(id, session.user.id);
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof NotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
+    }
     const message =
       error instanceof Error ? error.message : "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });

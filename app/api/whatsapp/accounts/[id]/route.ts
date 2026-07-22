@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { waAccountUpdateSchema } from "@/lib/validations";
 import { encrypt, hashToken } from "@/lib/crypto";
 import { validateToken } from "@/lib/whatsapp";
+import { deleteAccount } from "@/lib/whatsapp/accounts";
+import { NotFoundError } from "@/lib/errors";
 
 export async function GET(
   req: Request,
@@ -184,23 +186,13 @@ export async function DELETE(
     }
 
     const { id } = await params;
-
-    const existing = await prisma.wAAccount.findFirst({
-      where: { id, userId: session.user.id },
-    });
-
-    if (!existing) {
-      return NextResponse.json(
-        { error: "Cuenta no encontrada" },
-        { status: 404 }
-      );
-    }
-
-
-    await prisma.wAAccount.delete({ where: { id } });
+    await deleteAccount(id, session.user.id);
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof NotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
+    }
     const message =
       error instanceof Error ? error.message : "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { decrypt } from "@/lib/crypto";
 import { getUserAccountIds } from "@/lib/shared-accounts";
-import { deleteTemplate } from "@/lib/whatsapp/templates";
+import { deleteTemplateFully } from "@/lib/whatsapp/templates";
+import { NotFoundError, ValidationError } from "@/lib/errors";
 
 export async function GET(
   req: Request,
@@ -55,36 +55,16 @@ export async function DELETE(
     }
 
     const { id } = await params;
-
-    const template = await prisma.wATemplate.findUnique({
-      where: { id },
-      include: { waAccount: { select: { id: true, wabaId: true, accessToken: true } } },
-    });
-
-    if (!template) {
-      return NextResponse.json({ error: "Plantilla no encontrada" }, { status: 404 });
-    }
-
-    const accountIds = await getUserAccountIds(session.user.id);
-    if (!accountIds.includes(template.waAccountId)) {
-      return NextResponse.json({ error: "Plantilla no encontrada" }, { status: 404 });
-    }
-
-    // Si la cuenta tiene credenciales de Meta, intenta borrarla allá también.
-    // Una cuenta sin wabaId/accessToken (o una plantilla que Meta ya no tiene)
-    // no debe bloquear el borrado del registro local.
-    if (template.waAccount.wabaId && template.waAccount.accessToken) {
-      const accessToken = decrypt(template.waAccount.accessToken);
-      const result = await deleteTemplate(template.waAccount.wabaId, accessToken, template.name);
-      if (!result.success && !result.alreadyGone) {
-        return NextResponse.json({ error: result.error }, { status: 400 });
-      }
-    }
-
-    await prisma.wATemplate.delete({ where: { id } });
+    await deleteTemplateFully(id, session.user.id);
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof NotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
+    }
+    if (error instanceof ValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     const message = error instanceof Error ? error.message : "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });
   }

@@ -30,3 +30,9 @@ npm-debug.log*
 
 # Playwright MCP screenshots
 .playwright-mcp
+
+# Credenciales de servidor en texto plano — NUNCA deben llegar a git (repo público)
+Datos Servertxt
+Datos Server.txt
+datos-server.txt
+

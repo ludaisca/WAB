@@ -10,7 +10,9 @@ import { processLeadRecoveryTick } from "./lead-recovery-worker";
 import { processSheetsSyncTick } from "./sheets-sync-worker";
 import { processLeadSheetImportTick } from "./lead-sheet-worker";
 import { processTemplateSyncTick } from "./template-sync-worker";
-import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue, campaignQueue, sheetsSyncQueue, leadSheetImportQueue, templateSyncQueue } from "@/lib/queue";
+import { processAgentActionExpiryTick } from "./agent-action-expiry-worker";
+import { processSystemDiagnosticsTick } from "./system-diagnostics-worker";
+import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue, campaignQueue, sheetsSyncQueue, leadSheetImportQueue, templateSyncQueue, agentActionExpiryQueue, systemDiagnosticsQueue } from "@/lib/queue";
 
 const connection = {
   url: process.env.REDIS_URL || "redis://redis:6379",
@@ -80,7 +82,15 @@ export function startWorkers() {
     await processTemplateSyncTick();
   }, { connection, concurrency: 1 });
 
-  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker, sheetsSyncWorker, leadSheetImportWorker, templateSyncWorker);
+  const agentActionExpiryWorker = new Worker("agent-action-expiry", async () => {
+    await processAgentActionExpiryTick();
+  }, { connection, concurrency: 1 });
+
+  const systemDiagnosticsWorker = new Worker("system-diagnostics", async () => {
+    await processSystemDiagnosticsTick();
+  }, { connection, concurrency: 1 });
+
+  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker, sheetsSyncWorker, leadSheetImportWorker, templateSyncWorker, agentActionExpiryWorker, systemDiagnosticsWorker);
 
   mediaCleanupQueue
     .add(
@@ -152,6 +162,28 @@ export function startWorkers() {
       { jobId: "template-sync-tick", repeat: { pattern: "*/15 * * * *" } }
     )
     .catch((err) => console.error("[workers] No se pudo programar template-sync:", err));
+
+  // Las AgentAction CONFIRM expiran a las 24h de propuestas (ver orchestrator.ts) —
+  // 15 min de resolución es de sobra, ninguna acción queda "viva" mucho más de eso.
+  agentActionExpiryQueue
+    .add(
+      "tick",
+      {},
+      { jobId: "agent-action-expiry-tick", repeat: { pattern: "*/15 * * * *" } }
+    )
+    .catch((err) => console.error("[workers] No se pudo programar agent-action-expiry:", err));
+
+  // El barrido reconstruye estado estructural (campañas atascadas, cuentas en
+  // error, plantillas rechazadas, etc.), no eventos que cambien segundo a
+  // segundo — una hora de resolución es de sobra y evita golpear la DB con
+  // el mismo scan completo que ya corre bajo demanda vía la tool system.diagnostics.
+  systemDiagnosticsQueue
+    .add(
+      "tick",
+      {},
+      { jobId: "system-diagnostics-tick", repeat: { pattern: "0 * * * *" } }
+    )
+    .catch((err) => console.error("[workers] No se pudo programar system-diagnostics:", err));
 
   console.log("[workers] BullMQ workers started");
 }

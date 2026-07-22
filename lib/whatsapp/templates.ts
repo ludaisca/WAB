@@ -1,5 +1,9 @@
 import type { TemplateCreateInput } from "@/lib/validations";
 import { parseBodyParams } from "@/lib/whatsapp/template-variables";
+import { prisma } from "@/lib/prisma";
+import { decrypt } from "@/lib/crypto";
+import { getUserAccountIds } from "@/lib/shared-accounts";
+import { NotFoundError, ValidationError } from "@/lib/errors";
 
 const GRAPH_API = "https://graph.facebook.com/v21.0";
 
@@ -146,4 +150,27 @@ export async function deleteTemplate(
   }
 
   return { success: true };
+}
+
+// Agrupa los 2 pasos que hoy vivían inline en templates/[id]/route.ts DELETE:
+// borrar en Meta (si la cuenta tiene credenciales) + borrar el registro local.
+export async function deleteTemplateFully(id: string, userId: string) {
+  const template = await prisma.wATemplate.findUnique({
+    where: { id },
+    include: { waAccount: { select: { id: true, wabaId: true, accessToken: true } } },
+  });
+  if (!template) throw new NotFoundError("Plantilla no encontrada");
+
+  const accountIds = await getUserAccountIds(userId);
+  if (!accountIds.includes(template.waAccountId)) throw new NotFoundError("Plantilla no encontrada");
+
+  if (template.waAccount.wabaId && template.waAccount.accessToken) {
+    const accessToken = decrypt(template.waAccount.accessToken);
+    const result = await deleteTemplate(template.waAccount.wabaId, accessToken, template.name);
+    if (!result.success && !result.alreadyGone) {
+      throw new ValidationError(result.error);
+    }
+  }
+
+  await prisma.wATemplate.delete({ where: { id } });
 }

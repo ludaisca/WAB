@@ -1,11 +1,12 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import type { EmbedContentRequest } from "@google/generative-ai";
+import { GoogleGenerativeAI, FunctionCallingMode } from "@google/generative-ai";
+import type { EmbedContentRequest, FunctionDeclarationSchema } from "@google/generative-ai";
 import type {
   AICompletionParams,
   AICompletionResponse,
   AIEmbeddingParams,
   AIEmbeddingResponse,
   AIMessage,
+  AIToolCall,
   ContentPart,
 } from "../types";
 
@@ -21,9 +22,21 @@ type EmbedContentRequestWithDimensionality = EmbedContentRequest & {
 
 type GooglePart =
   | { text: string }
-  | { inlineData: { mimeType: string; data: string } };
+  | { inlineData: { mimeType: string; data: string } }
+  | { functionCall: { name: string; args: Record<string, unknown> } }
+  | { functionResponse: { name: string; response: Record<string, unknown> } };
 
-type GoogleRole = "user" | "model";
+type GoogleRole = "user" | "model" | "function";
+
+// Gemini exige que `functionResponse.response` sea un objeto — un tool que
+// devuelve un primitivo (string/number/bool) o un array se envuelve, nunca se
+// manda tal cual.
+function toFunctionResponsePayload(result: unknown): Record<string, unknown> {
+  if (result !== null && typeof result === "object" && !Array.isArray(result)) {
+    return result as Record<string, unknown>;
+  }
+  return { value: result };
+}
 
 function toParts(content: AIMessage["content"]): GooglePart[] {
   if (typeof content === "string") return [{ text: content }];
@@ -63,14 +76,53 @@ export function createGoogleClient(apiKey: string) {
     const model = genAI.getGenerativeModel({
       model: params.model,
       systemInstruction: systemText,
+      ...(params.tools?.length
+        ? {
+            // El SDK tipa `parameters` como su propio FunctionDeclarationSchema
+            // (subset de JSON Schema) — los tools del agente ya validan contra
+            // JSON Schema estándar en el registry, así que el cast es seguro:
+            // solo serializa hacia la REST API, no hay lógica del SDK que
+            // dependa de los tipos exactos de este campo.
+            tools: [{
+              functionDeclarations: params.tools.map((t) => ({
+                name: t.name,
+                description: t.description,
+                parameters: t.parameters as unknown as FunctionDeclarationSchema,
+              })),
+            }],
+            toolConfig: {
+              functionCallingConfig: {
+                mode: params.toolChoice === "none" ? FunctionCallingMode.NONE : FunctionCallingMode.AUTO,
+              },
+            },
+          }
+        : {}),
     });
 
     const nonSystem = params.messages.filter((m) => m.role !== "system");
 
-    const history = nonSystem.map((m) => ({
-      role: (m.role === "assistant" ? "model" : "user") as GoogleRole,
-      parts: toParts(m.content),
-    }));
+    const history = nonSystem.map((m) => {
+      if (m.role === "assistant" && m.toolCalls?.length) {
+        return {
+          role: "model" as GoogleRole,
+          parts: m.toolCalls.map((tc) => ({ functionCall: { name: tc.name, args: tc.arguments } })),
+        };
+      }
+      if (m.role === "tool" && m.toolResults?.length) {
+        // Los N resultados de un turno se agrupan en un solo Content role:"function"
+        // (a diferencia de OpenRouter, que manda un mensaje `tool` por tool_call_id).
+        return {
+          role: "function" as GoogleRole,
+          parts: m.toolResults.map((tr) => ({
+            functionResponse: { name: tr.name, response: toFunctionResponsePayload(tr.result) },
+          })),
+        };
+      }
+      return {
+        role: (m.role === "assistant" ? "model" : "user") as GoogleRole,
+        parts: toParts(m.content),
+      };
+    });
 
     // Gemini requires the first entry of `history` to have role "user" — it rejects the
     // call outright otherwise ("First content should be with role 'user', got model").
@@ -82,7 +134,7 @@ export function createGoogleClient(apiKey: string) {
     // synthetic user turn so the real history survives intact and Gemini's constraint is
     // still satisfied.
     const priorHistory = history.slice(0, -1);
-    const needsLeadingUser = priorHistory.length > 0 && priorHistory[0].role === "model";
+    const needsLeadingUser = priorHistory.length > 0 && priorHistory[0].role !== "user";
     const trimmedHistory = needsLeadingUser
       ? [{ role: "user" as GoogleRole, parts: [{ text: "(inicio de la conversación)" }] }, ...priorHistory]
       : priorHistory;
@@ -99,8 +151,17 @@ export function createGoogleClient(apiKey: string) {
     const result = await chat.sendMessage(lastMsg?.parts ?? [{ text: "" }]);
     const text = result.response.text();
 
+    // Gemini no da un id por function call — se sintetiza `${name}_${index}`
+    // (único dentro de la respuesta, que es todo lo que necesita el orchestrator
+    // para emparejar cada AIToolResult de vuelta con su llamada).
+    const calls = result.response.functionCalls();
+    const toolCalls: AIToolCall[] | undefined = calls?.length
+      ? calls.map((c, i) => ({ id: `${c.name}_${i}`, name: c.name, arguments: c.args as Record<string, unknown> }))
+      : undefined;
+
     return {
       content: text,
+      toolCalls,
       usage: result.response.usageMetadata
         ? {
             promptTokens: result.response.usageMetadata.promptTokenCount,

@@ -37,3 +37,5 @@ export const leadRecoveryQueue = new Queue("lead-recovery", { connection, defaul
 export const sheetsSyncQueue = new Queue("sheets-sync", { connection, defaultJobOptions });
 export const leadSheetImportQueue = new Queue("lead-sheet-import", { connection, defaultJobOptions });
 export const templateSyncQueue = new Queue("template-sync", { connection, defaultJobOptions });
+export const agentActionExpiryQueue = new Queue("agent-action-expiry", { connection, defaultJobOptions });
+export const systemDiagnosticsQueue = new Queue("system-diagnostics", { connection, defaultJobOptions });
