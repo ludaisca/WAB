@@ -54,3 +54,16 @@ export default async function proxy(req: NextRequest) {
 
   return NextResponse.next();
 }
+
+// Sin este matcher, Next.js corre el middleware en TODA petición (incl.
+// /api/*) — el `EXCLUDE` de arriba solo hace un return temprano DESPUÉS de
+// que la maquinaria de middleware ya envolvió el request, y esa maquinaria
+// trunca bodies binarios grandes en subidas por streaming (confirmado: una
+// subida de 134MB al restore de backups se cortaba siempre en el mismo punto,
+// ~10.4MB, exclusivamente cuando pasaba por el middleware — un pipeline
+// idéntico sin middleware de por medio, o vía `next start` en producción,
+// transfiere el archivo completo sin problema). Excluir /api aquí a nivel de
+// Next.js, no solo dentro de la función, evita ese envoltorio por completo.
+export const config = {
+  matcher: ["/((?!api|_next|favicon.ico).*)"],
+};

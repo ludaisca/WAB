@@ -136,7 +136,7 @@ export async function processCampaignJob(job: CampaignJob) {
         ? Object.values(recipient.parameters as Record<string, string>)
         : [];
 
-      const { wamid } = await sendTemplateMessage(campaign.waAccount, {
+      const { wamid, waId } = await sendTemplateMessage(campaign.waAccount, {
         to: recipient.phoneNumber,
         templateName,
         language,
@@ -158,7 +158,12 @@ export async function processCampaignJob(job: CampaignJob) {
       // Only attribute Contact/WAChat/WAMessage on an actual successful
       // send — a recipient that never got a message shouldn't leave a
       // phantom contact behind.
-      const remoteJid = recipient.phoneNumber;
+      //
+      // wa_id canónico de Meta, no recipient.phoneNumber tal cual — evita
+      // crear un chat "gemelo" del que recibirá la respuesta real del lead
+      // (ver el comentario en sendTemplateMessage sobre el quirk de números
+      // mexicanos). Fallback al número original solo si Meta no lo devuelve.
+      const remoteJid = waId ?? recipient.phoneNumber;
       const contactName = recipient.contactName ?? recipient.phoneNumber;
       const messageBody = renderTemplateText(campaign.waTemplate.components, {
         bodyParams,

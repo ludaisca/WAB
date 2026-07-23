@@ -27,7 +27,7 @@ export interface SendTemplateParams {
 export async function sendTemplateMessage(
   account: WAAccount,
   params: SendTemplateParams
-): Promise<{ wamid: string | null }> {
+): Promise<{ wamid: string | null; waId: string | null }> {
   if (!account.accessToken || !account.phoneNumberId) {
     throw new Error("La cuenta de WhatsApp no tiene accessToken/phoneNumberId configurados");
   }
@@ -107,6 +107,19 @@ export async function sendTemplateMessage(
     throw new Error(message);
   }
 
-  const responseData = (await res.json()) as { messages?: Array<{ id: string }> };
-  return { wamid: responseData?.messages?.[0]?.id ?? null };
+  // Meta reporta en `contacts[0].wa_id` el identificador CANÓNICO que le asigna a
+  // ese número — puede diferir del que se mandó en `to` (ej. números mexicanos:
+  // el `wa_id` real lleva un "1" extra después del "52" que el número tal cual
+  // no trae). Es el mismo valor que después reporta el webhook como `msg.from`
+  // cuando el lead responde. Si el caller sigue usando el `to` original como
+  // remoteJid en vez de este, termina creando un WAChat "gemelo" distinto al
+  // que usará la respuesta entrante — ver lib/whatsapp/chat-attribution.ts.
+  const responseData = (await res.json()) as {
+    messages?: Array<{ id: string }>;
+    contacts?: Array<{ wa_id?: string }>;
+  };
+  return {
+    wamid: responseData?.messages?.[0]?.id ?? null,
+    waId: responseData?.contacts?.[0]?.wa_id ?? null,
+  };
 }

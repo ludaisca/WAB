@@ -235,7 +235,7 @@ export async function importNewLeadsForSource(
     }
 
     try {
-      const { wamid } = await sendTemplateMessage(source.waAccount, {
+      const { wamid, waId } = await sendTemplateMessage(source.waAccount, {
         to: phone,
         templateName,
         language,
@@ -247,6 +247,12 @@ export async function importNewLeadsForSource(
         buttonParam: source.buttonParam,
       });
 
+      // wa_id canónico de Meta, no el número tal cual vino de la hoja — evita
+      // crear un chat "gemelo" del que recibirá la respuesta real del lead
+      // (ver el comentario en sendTemplateMessage). Fallback a `phone` solo si
+      // Meta excepcionalmente no lo devuelve.
+      const remoteJid = waId ?? phone;
+
       const sentAt = new Date();
       const messageBody =
         renderTemplateText(source.waTemplate.components, { bodyParams, headerParam: source.headerParam }) ||
@@ -255,22 +261,22 @@ export async function importNewLeadsForSource(
       const contactNameShouldUpdate = shouldUpdateName(contactName, contact?.name, phone);
 
       const upsertedContact = await prisma.contact.upsert({
-        where: { accountId_remoteJid: { accountId: source.waAccountId, remoteJid: phone } },
-        create: { accountId: source.waAccountId, remoteJid: phone, name: contactName },
+        where: { accountId_remoteJid: { accountId: source.waAccountId, remoteJid } },
+        create: { accountId: source.waAccountId, remoteJid, name: contactName },
         update: contactNameShouldUpdate ? { name: contactName } : {},
       });
 
       const existingChat = await prisma.wAChat.findUnique({
-        where: { accountId_remoteJid: { accountId: source.waAccountId, remoteJid: phone } },
+        where: { accountId_remoteJid: { accountId: source.waAccountId, remoteJid } },
         select: { name: true, assignedToId: true },
       });
       const chatNameShouldUpdate = shouldUpdateName(contactName, existingChat?.name, phone);
 
       const chat = await prisma.wAChat.upsert({
-        where: { accountId_remoteJid: { accountId: source.waAccountId, remoteJid: phone } },
+        where: { accountId_remoteJid: { accountId: source.waAccountId, remoteJid } },
         create: {
           accountId: source.waAccountId,
-          remoteJid: phone,
+          remoteJid,
           name: contactName,
           contactId: upsertedContact.id,
           lastMessage: messageBody.slice(0, 500),
