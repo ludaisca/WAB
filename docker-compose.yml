@@ -50,6 +50,9 @@ services:
       GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}"
       GOOGLE_OAUTH_REDIRECT_URI: "${GOOGLE_OAUTH_REDIRECT_URI:-}"
       MEDIA_RETENTION_DAYS: "${MEDIA_RETENTION_DAYS:-90}"
+      BACKUP_RETENTION_COUNT: "${BACKUP_RETENTION_COUNT:-7}"
+      BACKUP_TIMEOUT_MS: "${BACKUP_TIMEOUT_MS:-1800000}"
+      MAX_RESTORE_UPLOAD_BYTES: "${MAX_RESTORE_UPLOAD_BYTES:-5368709120}"
     healthcheck:
       # 127.0.0.1, no "localhost": dentro del contenedor localhost resuelve a
       # ::1 primero y next-server solo escucha en IPv4 — con localhost el
@@ -66,8 +69,10 @@ services:
         condition: service_healthy
     volumes:
       - media_data:/app/media
+      - backup_data:/app/backups
     restart: unless-stopped
 
 volumes:
   pgdata:
   media_data:
+  backup_data:

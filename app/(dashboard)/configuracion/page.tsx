@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import { User, Lock, Shield, CalendarDays, Brain, Users, FileSpreadsheet, ExternalLink, RefreshCw, Unlink } from "lucide-react";
+import { User, Lock, Shield, CalendarDays, Brain, Users, FileSpreadsheet, ExternalLink, RefreshCw, Unlink, DatabaseBackup } from "lucide-react";
 import { Card, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -310,6 +310,24 @@ export default function SettingsPage() {
             </p>
             <Button href="/configuracion/ia" variant="secondary" size="sm" icon={Brain}>
               Configurar IA
+            </Button>
+          </CardBody>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card>
+          <CardBody>
+            <div className="flex items-center gap-2 mb-4">
+              <DatabaseBackup size={16} className="text-accent" />
+              <CardTitle>Backups y restauración</CardTitle>
+            </div>
+            <p className="text-sm text-muted-darker mb-4">
+              Respalda toda la información del sistema (base de datos + medios) o restaura un respaldo para migrar
+              entre servidores.
+            </p>
+            <Button href="/configuracion/backups" variant="secondary" size="sm" icon={DatabaseBackup}>
+              Administrar backups
             </Button>
           </CardBody>
         </Card>

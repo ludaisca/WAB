@@ -33,6 +33,8 @@ model User {
   agentConversations     AgentConversation[]
   agentActionsRequested  AgentAction[]        @relation("AgentActionRequester")
   agentActionsResolved   AgentAction[]        @relation("AgentActionResolver")
+  systemBackups          SystemBackup[]
+  systemRestoreLogs      SystemRestoreLog[]
 
   @@map("users")
 }
@@ -41,6 +43,12 @@ model SystemConfig {
   id                 String   @id @default("default")
   allowRegistration  Boolean  @default(true)
   businessName       String?
+  // Pausa las 10 colas BullMQ + hace responder 503 al webhook de WhatsApp
+  // mientras corre una restauración de backup — ver lib/system-maintenance.ts.
+  // Nunca se activa manualmente desde la UI, solo por el propio pipeline de restore.
+  maintenanceMode      Boolean   @default(false)
+  maintenanceReason    String?
+  maintenanceStartedAt DateTime?
   updatedAt          DateTime @updatedAt @map("updated_at")
 
   @@map("system_config")
@@ -780,6 +788,14 @@ enum NotificationType {
   // o fallo de envío de recuperación de leads. Deduplicado por (userId, title)
   // en una ventana de 6h para no repetir alerta en cada tick si sigue roto.
   SYSTEM_ISSUE
+  // Backup manual/programado (lib/workers/backup-worker.ts) terminó de generarse
+  // o falló a mitad del pipeline.
+  BACKUP_COMPLETED
+  BACKUP_FAILED
+  // Restauración completa desde la UI (lib/workers/restore-worker.ts) terminó
+  // o falló — ver SystemRestoreLog para el detalle/auditoría completa.
+  RESTORE_COMPLETED
+  RESTORE_FAILED
 }
 
 model Notification {
@@ -894,4 +910,94 @@ model AgentUsage {
 
   @@index([conversationId, createdAt])
   @@map("agent_usage")
+}
+
+// Sistema de backup/restauración completo — ver plan en
+// ~/.claude/plans/continuemos-con-el-proyecto-shimmying-stroustrup.md.
+// SystemBackup es tanto el historial descargable (MANUAL/SCHEDULED) como la
+// red de seguridad automática tomada justo antes de sobrescribir todo en una
+// restauración (PRE_RESTORE) — esta última nunca se purga por rotación.
+enum BackupType {
+  MANUAL
+  SCHEDULED
+  PRE_RESTORE
+}
+
+enum BackupStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model SystemBackup {
+  id           String       @id @default(cuid())
+  type         BackupType
+  status       BackupStatus @default(PENDING)
+  filename     String?
+  // BigInt, no Int: un backup con medios puede superar los ~2.1GB que desborda Int.
+  sizeBytes    BigInt?
+  manifest     Json?
+  errorMessage String?      @db.Text
+  startedAt    DateTime     @default(now())
+  completedAt  DateTime?
+  createdById  String?
+  createdBy    User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  restoreLogsAsSource SystemRestoreLog[] @relation("RestoreSource")
+  restoreLogAsSafety  SystemRestoreLog?  @relation("RestoreSafety")
+
+  @@index([type, status, startedAt])
+  @@map("system_backups")
+}
+
+enum RestoreStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum RestoreSourceType {
+  UPLOADED
+  HISTORY
+}
+
+// Auditoría de cada intento de restauración (destructivo e irreversible) —
+// quién, cuándo, desde qué archivo, y qué campos cifrados quedaron
+// indescifrables si el ENCRYPTION_KEY del origen no coincide con el actual.
+model SystemRestoreLog {
+  id                    String            @id @default(cuid())
+  status                RestoreStatus     @default(PENDING)
+  sourceType            RestoreSourceType
+  sourceBackupId        String?
+  sourceBackup          SystemBackup?     @relation("RestoreSource", fields: [sourceBackupId], references: [id], onDelete: SetNull)
+  // Nombre original del archivo, sobrevive aunque se borre el SystemBackup de origen.
+  sourceFilename        String
+  // Ruta relativa a BACKUP_ROOT del .tar a restaurar — "uploads/<uuid>.tar"
+  // para UPLOADED o el filename del SystemBackup para HISTORY. Resuelta una
+  // vez por la API al disparar la restauración para que el worker no tenga
+  // que ramificar por sourceType al leer el archivo.
+  sourcePath             String
+  safetyBackupId        String?           @unique
+  safetyBackup          SystemBackup?     @relation("RestoreSafety", fields: [safetyBackupId], references: [id], onDelete: SetNull)
+  // Nullable a propósito: en una migración real entre instancias, system_backups/
+  // system_restore_logs se dropean+recrean vacías durante el propio restore (ver
+  // dropAuditTables() en restore-backup.ts) para no chocar con las FKs/tipos que
+  // bloquean el DROP de `users`. Al re-insertar el resultado de la operación
+  // actual después, el admin que la disparó puede ya no existir en la tabla
+  // `users` recién restaurada (fue reemplazada por la del origen) — se guarda
+  // null en ese caso en vez de fallar el insert por violación de FK.
+  requestedById         String?
+  requestedBy           User?             @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  encryptionKeyMismatch Boolean           @default(false)
+  // { waAccounts: string[], appSettingsUserIds: string[], googleAccounts: string[] } —
+  // lista concreta de qué filas quedaron indescifrables tras el restore, no un mensaje genérico.
+  postRestoreWarnings   Json?
+  errorMessage          String?           @db.Text
+  startedAt             DateTime          @default(now())
+  completedAt           DateTime?
+
+  @@index([status, startedAt])
+  @@map("system_restore_logs")
 }

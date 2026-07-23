@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import {
   LayoutDashboard,
@@ -14,6 +15,7 @@ import {
   Phone,
   Target,
   Sparkles,
+  DatabaseBackup,
 } from "lucide-react";
 import { AppShell, type NavItem, type NavGroup } from "@/app/components/ui/app-shell";
 import { NotificationBell } from "@/app/components/ui/notification-bell";
@@ -29,6 +31,25 @@ export function DashboardShell({
   const role = session?.user?.role;
   const isAdmin = role === "admin";
   const isEjecutivo = role === "ejecutivo";
+
+  // Visible para TODOS los roles (no solo admin) — un ejecutivo viendo el
+  // chat durante una restauración también debe saber por qué los datos
+  // pueden verse inconsistentes momentáneamente. Poll ligero, mismo cadence
+  // que la campanita de notificaciones.
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    let cancelled = false;
+    const check = () => {
+      fetch("/api/system/maintenance-status")
+        .then((r) => r.json())
+        .then((d) => { if (!cancelled) setMaintenanceMode(!!d.maintenanceMode); })
+        .catch(() => {});
+    };
+    check();
+    const interval = setInterval(check, 25000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [session?.user?.id]);
 
   const NAV: (NavItem | NavGroup)[] = isEjecutivo
     ? [
@@ -93,14 +114,24 @@ export function DashboardShell({
             ...(isAdmin
               ? [{ href: "/usuarios" as const,  label: "Usuarios",         icon: Users as React.ElementType, exact: true }]
               : []),
+            ...(isAdmin
+              ? [{ href: "/configuracion/backups" as const, label: "Backups", icon: DatabaseBackup as React.ElementType }]
+              : []),
             { href: "/configuracion",           label: "Configuración",    icon: Settings, exact: true },
           ],
         },
       ];
 
   return (
-    <AppShell nav={NAV} accent="accent" collapsible brand={businessName || undefined} headerRight={<NotificationBell />}>
-      {children}
-    </AppShell>
+    <>
+      {maintenanceMode && (
+        <div className="fixed top-0 inset-x-0 z-[60] bg-warning text-on-accent text-center text-xs sm:text-sm font-medium py-1.5 px-4">
+          Sistema en mantenimiento: restaurando un respaldo. Los datos pueden verse incompletos hasta que termine.
+        </div>
+      )}
+      <AppShell nav={NAV} accent="accent" collapsible brand={businessName || undefined} headerRight={<NotificationBell />}>
+        {children}
+      </AppShell>
+    </>
   );
 }

@@ -3,6 +3,7 @@ import { createHmac, createHash, timingSafeEqual } from "crypto";
 import type { RecipientStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ingestInboundMessage } from "@/lib/whatsapp/ingest-message";
+import { isMaintenanceMode } from "@/lib/system-maintenance";
 
 interface WebhookMessage {
   from: string;
@@ -403,6 +404,15 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    // Restauración de backup en curso — se responde 503 para que Meta
+    // reintregue la entrega más tarde (best-effort, no garantizado) en vez de
+    // dejar que cualquier ruta escriba en la DB mientras pg_restore corre.
+    // Solo aplica al POST, nunca al GET de verificación (debe responder
+    // siempre o Meta puede desactivar el webhook).
+    if (await isMaintenanceMode()) {
+      return new NextResponse("Sistema en mantenimiento, reintenta en unos minutos", { status: 503 });
+    }
+
     const rawBody = await req.text();
     const body = JSON.parse(rawBody);
     const signature = req.headers.get("x-hub-signature-256");

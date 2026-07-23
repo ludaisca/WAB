@@ -12,7 +12,9 @@ import { processLeadSheetImportTick } from "./lead-sheet-worker";
 import { processTemplateSyncTick } from "./template-sync-worker";
 import { processAgentActionExpiryTick } from "./agent-action-expiry-worker";
 import { processSystemDiagnosticsTick } from "./system-diagnostics-worker";
-import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue, campaignQueue, sheetsSyncQueue, leadSheetImportQueue, templateSyncQueue, agentActionExpiryQueue, systemDiagnosticsQueue } from "@/lib/queue";
+import { processBackupJob, processScheduledBackupTick } from "./backup-worker";
+import { processRestoreJob } from "./restore-worker";
+import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue, campaignQueue, sheetsSyncQueue, leadSheetImportQueue, templateSyncQueue, agentActionExpiryQueue, systemDiagnosticsQueue, backupQueue } from "@/lib/queue";
 
 const connection = {
   url: process.env.REDIS_URL || "redis://redis:6379",
@@ -90,7 +92,37 @@ export function startWorkers() {
     await processSystemDiagnosticsTick();
   }, { connection, concurrency: 1 });
 
-  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker, sheetsSyncWorker, leadSheetImportWorker, templateSyncWorker, agentActionExpiryWorker, systemDiagnosticsWorker);
+  const backupWorker = new Worker("system-backup", async (job) => {
+    // Misma cola lleva el tick diario ("scheduled-tick") y los backups
+    // manuales disparados desde la UI ("manual") — concurrency 1 evita que dos
+    // pg_dump corran en paralelo sobre la misma DB.
+    if (job.name === "scheduled-tick") {
+      await processScheduledBackupTick();
+      return;
+    }
+    await processBackupJob(job.data, {
+      attemptsMade: job.attemptsMade,
+      maxAttempts: job.opts.attempts ?? 1,
+    });
+  }, { connection, concurrency: 1 });
+
+  const restoreWorker = new Worker("system-restore", async (job) => {
+    await processRestoreJob(job.data);
+  }, { connection, concurrency: 1 });
+
+  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker, sheetsSyncWorker, leadSheetImportWorker, templateSyncWorker, agentActionExpiryWorker, systemDiagnosticsWorker, backupWorker, restoreWorker);
+
+  // 2am, antes del purge de media-cleanup (3am) — así el backup diario
+  // captura los medios que esa limpieza va a purgar esa misma madrugada, no
+  // después. La retención/rotación (BACKUP_RETENTION_COUNT) corre al final de
+  // cada backup exitoso, ver lib/backup/retention.ts.
+  backupQueue
+    .add(
+      "scheduled-tick",
+      {},
+      { jobId: "system-backup-scheduled-tick", repeat: { pattern: "0 2 * * *" } }
+    )
+    .catch((err) => console.error("[workers] No se pudo programar system-backup:", err));
 
   mediaCleanupQueue
     .add(

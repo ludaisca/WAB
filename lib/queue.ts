@@ -39,3 +39,17 @@ export const leadSheetImportQueue = new Queue("lead-sheet-import", { connection,
 export const templateSyncQueue = new Queue("template-sync", { connection, defaultJobOptions });
 export const agentActionExpiryQueue = new Queue("agent-action-expiry", { connection, defaultJobOptions });
 export const systemDiagnosticsQueue = new Queue("system-diagnostics", { connection, defaultJobOptions });
+export const backupQueue = new Queue("system-backup", { connection, defaultJobOptions });
+
+// attempts:1, sin retry automático — un reintento de BullMQ sobre un job que
+// ya falló a mitad de una restauración destructiva es exactamente el tipo de
+// comportamiento silencioso que hay que evitar: el fallo debe requerir una
+// acción explícita nueva del admin, no reintentarse solo.
+export const restoreQueue = new Queue("system-restore", {
+  connection,
+  defaultJobOptions: {
+    removeOnComplete: { count: 20 },
+    removeOnFail: { count: 20 },
+    attempts: 1,
+  },
+});

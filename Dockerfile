@@ -1,5 +1,8 @@
 FROM node:22-alpine AS base
-RUN apk add --no-cache openssl libc6-compat
+# postgresql16-client: matchea la versión mayor de "db" (pgvector/pgvector:pg16,
+# ver docker-compose.yml) — pg_dump/pg_restore/psql los usa lib/backup/ para el
+# sistema de respaldo/restauración, nunca el paquete de servidor completo.
+RUN apk add --no-cache openssl libc6-compat postgresql16-client
 WORKDIR /app
 
 FROM base AS dev
