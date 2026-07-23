@@ -29,7 +29,22 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json(sources);
+    // lastImportedCount es solo el resultado del último tick (cada 5 min) — casi
+    // siempre 0 en cuanto no hay leads nuevos en esa ventana, aunque la fuente
+    // lleve cientos de envíos acumulados. El total real (como ya lo calcula el
+    // detalle vía rowCounts) requiere agregar sobre todo el historial.
+    const counts = await prisma.leadSheetImportedRow.groupBy({
+      by: ["sourceId", "status"],
+      where: { sourceId: { in: sources.map((s) => s.id) } },
+      _count: { _all: true },
+    });
+    const sentTotals = new Map<string, number>();
+    for (const c of counts) {
+      if (c.status !== "sent" && c.status !== "delivered" && c.status !== "read") continue;
+      sentTotals.set(c.sourceId, (sentTotals.get(c.sourceId) ?? 0) + c._count._all);
+    }
+
+    return NextResponse.json(sources.map((s) => ({ ...s, sentTotal: sentTotals.get(s.id) ?? 0 })));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });

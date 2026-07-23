@@ -37,7 +37,7 @@ interface LeadSheetSource {
   sheetName: string;
   enabled: boolean;
   lastRunAt: string | null;
-  lastImportedCount: number;
+  sentTotal: number;
   lastError: string | null;
   waAccount: { id: string; name: string };
   waTemplate: { id: string; name: string; language: string };
@@ -330,7 +330,7 @@ function AutomationTab() {
               meta={
                 <span className="font-mono">
                   {s.lastRunAt
-                    ? `${new Date(s.lastRunAt).toLocaleString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} · ${s.lastImportedCount} enviado(s)`
+                    ? `${new Date(s.lastRunAt).toLocaleString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} · ${s.sentTotal} enviado(s) en total`
                     : "Aún no ha corrido"}
                 </span>
               }
