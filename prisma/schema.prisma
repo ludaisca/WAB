@@ -272,6 +272,11 @@ model WAChat {
   status          ChatStatus @default(OPEN)
   resolvedAt      DateTime?
   firstResponseAt DateTime?
+  // Token opaco (no el cuid del chat) que habilita /c/[token] — una vista
+  // pública de solo lectura de la conversación, sin login. Null = nunca se
+  // generó o fue revocado. Generado bajo demanda por lib/whatsapp/chat-public-link.ts,
+  // nunca al crear el chat, para no exponer por defecto miles de chats existentes.
+  publicShareToken String?    @unique
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 

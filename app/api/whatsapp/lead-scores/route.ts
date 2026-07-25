@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { chatAccessWhere } from "@/lib/whatsapp/chat-visibility";
 import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
+import { ensurePublicChatTokensForChats, publicChatUrl } from "@/lib/whatsapp/chat-public-link";
 
 export async function GET() {
   try {
@@ -28,6 +29,7 @@ export async function GET() {
             accountId: true,
             account: { select: { id: true, name: true, origen: true } },
             contact: { select: { realName: true } },
+            publicShareToken: true,
             messages: CHAT_ATTRIBUTION_MESSAGE_QUERY,
           },
         },
@@ -36,9 +38,19 @@ export async function GET() {
       take: 500,
     });
 
+    // Un token por chat, no por score — un mismo chat puede tener varios
+    // WALeadScore (uno por calificador) y todos deben apuntar al mismo link.
+    const tokens = await ensurePublicChatTokensForChats(
+      scores.map((s) => ({ id: s.chat.id, publicShareToken: s.chat.publicShareToken }))
+    );
+
     const rows = scores.map(({ chat, ...score }) => {
-      const { messages, ...chatRest } = chat;
-      return { ...score, chat: chatRest, campaign: resolveChatAttribution(messages) };
+      const { messages, publicShareToken, ...chatRest } = chat;
+      return {
+        ...score,
+        chat: { ...chatRest, publicLink: publicChatUrl(tokens.get(chat.id)!) },
+        campaign: resolveChatAttribution(messages),
+      };
     });
 
     return NextResponse.json(rows);

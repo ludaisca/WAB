@@ -34,6 +34,7 @@ import { ChatAssigneePicker } from "@/app/components/whatsapp/chat-assignee-pick
 import { ChatTagPicker } from "@/app/components/whatsapp/chat-tag-picker";
 import { LeadScoreBadge } from "@/app/components/whatsapp/lead-score-badge";
 import { ChatCostBadge } from "@/app/components/whatsapp/chat-cost-badge";
+import { ChatPublicLinkButton } from "@/app/components/whatsapp/chat-public-link-button";
 import { mediaEndpointFor, isImageMime, isAudioMime, isVideoMime } from "@/lib/whatsapp/media-shared";
 import { EntityAvatar } from "@/app/components/ui/avatar";
 import { hueClassFor } from "@/app/components/ui/hue";
@@ -1062,6 +1063,7 @@ export function ChatWorkspace({
                   <ChatTagPicker key={selectedChat.id} chatId={selectedChat.id} />
                   <LeadScoreBadge key={`score-${selectedChat.id}`} chatId={selectedChat.id} />
                   <ChatCostBadge key={`cost-${selectedChat.id}`} chatId={selectedChat.id} />
+                  <ChatPublicLinkButton key={`public-link-${selectedChat.id}`} chatId={selectedChat.id} />
                   <ChatAssigneePicker
                     chatId={selectedChat.id}
                     assignedTo={selectedChat.assignedTo}

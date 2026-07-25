@@ -43,6 +43,12 @@ services:
       ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
       REDIS_URL: "redis://redis:6379"
       NODE_ENV: "${NODE_ENV:-production}"
+      # Dominio público de la app (ej. https://wab.midominio.com) — usado
+      # server-side para construir URLs absolutas de /c/[token] (link público
+      # de solo lectura de un chat, ver lib/whatsapp/chat-public-link.ts) en
+      # el CSV de leads y en la sincronización a Google Sheets. Sin esto, esos
+      # links salen con dominio vacío.
+      NEXT_PUBLIC_APP_URL: "${NEXT_PUBLIC_APP_URL:-}"
       # Integración Google Sheets (opcional) — sin este passthrough las vars
       # definidas en Coolify solo servían para sustitución del compose, nunca
       # llegaban al proceso Node y la integración quedaba muerta en producción.

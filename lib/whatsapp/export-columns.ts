@@ -58,6 +58,12 @@ export interface LeadScoreRow {
     // Nombre aprendido por el calificador durante la conversación — distinto
     // del nombre de envío (chat.name), que viene del CSV/hoja de origen.
     contact: { realName: string | null } | null;
+    // URL absoluta a /c/[token] (vista pública de solo lectura del chat, sin
+    // login) — resuelta por el caller (API route / dataset-queries.ts) vía
+    // ensurePublicChatTokensForChats() ANTES de construir la fila, porque
+    // generar el token es una escritura async y esta interfaz debe quedar
+    // serializable/pura para el `get` síncrono de abajo.
+    publicLink: string;
   };
 }
 
@@ -113,6 +119,7 @@ export const EXPORT_COLUMNS: ExportColumnDef<LeadScoreRow>[] = [
   { key: "tono_interes", label: "Tono de interés", get: (r) => r.details?.tono_interes ?? "" },
   { key: "nivel_interaccion", label: "Nivel de interacción", get: (r) => r.details?.nivel_interaccion ?? "" },
   { key: "updatedAt", label: "Actualizado", get: (r) => formatDate(r.updatedAt) },
+  { key: "publicLink", label: "Link público del chat", get: (r) => r.chat.publicLink },
 ];
 
 // Fila unificada de "Resultados de campaña" — cubre tanto envíos de campañas

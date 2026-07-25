@@ -9,6 +9,7 @@ import type { ChatStatus, LeadStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
 import { chatAccessWhere, getChatVisibilityFilter } from "@/lib/whatsapp/chat-visibility";
+import { ensurePublicChatTokensForChats, publicChatUrl } from "@/lib/whatsapp/chat-public-link";
 import {
   type LeadScoreRow,
   type CampaignResultRow,
@@ -99,6 +100,7 @@ export async function buildLeadScoreRows(
           accountId: true,
           account: { select: { id: true, name: true, origen: true } },
           contact: { select: { realName: true } },
+          publicShareToken: true,
           messages: CHAT_ATTRIBUTION_MESSAGE_QUERY,
         },
       },
@@ -106,8 +108,14 @@ export async function buildLeadScoreRows(
     orderBy: { score: "desc" },
   });
 
+  // Un token por chat, no por score — un mismo chat puede tener varios
+  // WALeadScore (uno por calificador) y todos deben apuntar al mismo link.
+  const tokens = await ensurePublicChatTokensForChats(
+    scores.map((s) => ({ id: s.chat.id, publicShareToken: s.chat.publicShareToken }))
+  );
+
   return scores.map((s) => {
-    const { messages, ...chatRest } = s.chat;
+    const { messages, publicShareToken, ...chatRest } = s.chat;
     return {
       id: s.id,
       score: s.score,
@@ -118,7 +126,7 @@ export async function buildLeadScoreRows(
       updatedAt: s.updatedAt.toISOString(),
       scorer: s.scorer,
       campaign: resolveChatAttribution(messages),
-      chat: chatRest,
+      chat: { ...chatRest, publicLink: publicChatUrl(tokens.get(s.chat.id)!) },
     };
   });
 }
