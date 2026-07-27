@@ -15,6 +15,7 @@ import {
   type BackupManifest,
 } from "./manifest";
 import { purgeOldBackups } from "./retention";
+import { uploadBackupToS3 } from "./s3-storage";
 
 const execFileAsync = promisify(execFile);
 
@@ -132,6 +133,19 @@ export async function runBackupPipeline(backupId: string): Promise<void> {
     });
 
     await fs.rm(tmpDir, { recursive: true, force: true });
+
+    // Best-effort: un fallo de red/credencial acá no debe tumbar un backup
+    // local que ya es válido, ni disparar el retry de BullMQ sobre un
+    // pg_dump que sí funcionó — solo queda registrado en la fila.
+    try {
+      const s3Key = await uploadBackupToS3(finalPath, filename);
+      await prisma.systemBackup.update({ where: { id: backupId }, data: { s3Key, s3UploadError: null } });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await prisma.systemBackup
+        .update({ where: { id: backupId }, data: { s3UploadError: message.slice(0, 4000) } })
+        .catch(() => {});
+    }
 
     if (backup.type !== "PRE_RESTORE") {
       await purgeOldBackups();

@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { prisma } from "@/lib/prisma";
+import { deleteBackupFromS3 } from "./s3-storage";
 
 const BACKUP_ROOT = process.env.BACKUP_ROOT || "/app/backups";
 const RETENTION_COUNT = Number(process.env.BACKUP_RETENTION_COUNT) || 7;
@@ -14,7 +15,7 @@ export async function purgeOldBackups(): Promise<void> {
   const toPurge = await prisma.systemBackup.findMany({
     where: { type: { in: ["MANUAL", "SCHEDULED"] }, status: "COMPLETED" },
     orderBy: { completedAt: "desc" },
-    select: { id: true, filename: true },
+    select: { id: true, filename: true, s3Key: true },
     skip: RETENTION_COUNT,
   });
 
@@ -22,6 +23,9 @@ export async function purgeOldBackups(): Promise<void> {
     for (const backup of toPurge) {
       if (backup.filename) {
         await fs.rm(path.join(BACKUP_ROOT, backup.filename), { force: true }).catch(() => {});
+      }
+      if (backup.s3Key) {
+        await deleteBackupFromS3(backup.s3Key);
       }
     }
     await prisma.systemBackup.deleteMany({ where: { id: { in: toPurge.map((b) => b.id) } } });

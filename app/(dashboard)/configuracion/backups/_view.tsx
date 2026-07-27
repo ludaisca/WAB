@@ -9,6 +9,8 @@ import {
   Trash2,
   Upload,
   FileDown,
+  Cloud,
+  CloudOff,
 } from "lucide-react";
 import { PageHeader } from "@/app/components/ui/page-header";
 import { SectionHeader } from "@/app/components/ui/section-header";
@@ -22,6 +24,7 @@ import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { useToast } from "@/app/components/ui/toast";
 import { EXPORT_ENTITIES, EXPORT_ENTITY_LABELS, type ExportEntityKey } from "@/lib/backup/export-entities-shared";
 import { RestoreConfirmModal } from "./_restore-confirm-modal";
+import { StorageSettingsForm } from "./_storage-form";
 import type { BackupItem, RestoreLogItem, RestorePreviewResponse } from "./_types";
 
 const POLL_MS = 8000;
@@ -250,12 +253,20 @@ export function BackupsView() {
       key: "status",
       header: "Estado",
       render: (b) => (
-        <Badge tone={BACKUP_STATUS_TONE[b.status]} pulse={b.status === "RUNNING"}>
-          {b.status === "PENDING" && "Pendiente"}
-          {b.status === "RUNNING" && "En curso"}
-          {b.status === "COMPLETED" && "Completado"}
-          {b.status === "FAILED" && "Fallido"}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge tone={BACKUP_STATUS_TONE[b.status]} pulse={b.status === "RUNNING"}>
+            {b.status === "PENDING" && "Pendiente"}
+            {b.status === "RUNNING" && "En curso"}
+            {b.status === "COMPLETED" && "Completado"}
+            {b.status === "FAILED" && "Fallido"}
+          </Badge>
+          {b.status === "COMPLETED" && b.s3Key && (
+            <Cloud size={14} className="text-accent" aria-label="Copia en almacenamiento externo" />
+          )}
+          {b.status === "COMPLETED" && !b.s3Key && b.s3UploadError && (
+            <CloudOff size={14} className="text-danger" aria-label={`No se pudo subir a S3: ${b.s3UploadError}`} />
+          )}
+        </div>
       ),
     },
   ];
@@ -334,6 +345,8 @@ export function BackupsView() {
           </Banner>
         )}
       </section>
+
+      <StorageSettingsForm />
 
       <section className="space-y-4">
         <SectionHeader

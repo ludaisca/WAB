@@ -13,6 +13,7 @@ import { getTableCounts } from "./table-counts";
 import { validateManifest, encryptionKeyFingerprint, type BackupManifest } from "./manifest";
 import { runBackupPipeline } from "./create-backup";
 import { purgeOrphanedBackupFiles } from "./retention";
+import { ensureLocalBackupFile } from "./s3-storage";
 import { enterMaintenanceMode, exitMaintenanceMode } from "@/lib/system-maintenance";
 
 const execFileAsync = promisify(execFile);
@@ -206,7 +207,13 @@ export async function runRestorePipeline(restoreLogId: string): Promise<void> {
     data: { status: "RUNNING" },
   });
 
-  const tarPath = path.join(BACKUP_ROOT, restoreLog.sourcePath);
+  // El job de BullMQ puede correr minutos/horas después del pre-check en la
+  // ruta API — si el volumen local se perdió mientras tanto, HISTORY es la
+  // única fuente que puede recuperarse de S3 (UPLOADED nunca tiene s3Key).
+  const tarPath =
+    restoreLog.sourceType === "HISTORY" && restoreLog.sourceBackupId
+      ? await ensureLocalBackupFile(await prisma.systemBackup.findUniqueOrThrow({ where: { id: restoreLog.sourceBackupId } }))
+      : path.join(BACKUP_ROOT, restoreLog.sourcePath);
   const workDir = path.join(BACKUP_ROOT, "tmp", `restore-${restoreLogId}`);
   const stagingDir = path.join(MEDIA_ROOT, `.restore-staging-${restoreLogId}`);
   const oldDir = path.join(MEDIA_ROOT, `.restore-old-${restoreLogId}`);

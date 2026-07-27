@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import { restoreQueue } from "@/lib/queue";
 import { validateBackupFile } from "@/lib/backup/restore-backup";
+import { ensureLocalBackupFile } from "@/lib/backup/s3-storage";
 import { serializeRestoreLog } from "@/lib/backup/serialize";
 import { RESTORE_CONFIRMATION_PHRASE } from "@/lib/backup/constants";
 
@@ -70,6 +71,11 @@ export async function POST(req: Request) {
       const backup = await prisma.systemBackup.findUnique({ where: { id: body.historyId } });
       if (!backup || backup.status !== "COMPLETED" || !backup.filename) {
         return NextResponse.json({ error: "Backup no disponible" }, { status: 404 });
+      }
+      try {
+        await ensureLocalBackupFile(backup);
+      } catch {
+        return NextResponse.json({ error: "Archivo no encontrado en disco ni en almacenamiento externo" }, { status: 404 });
       }
       sourcePath = backup.filename;
       sourceFilename = backup.filename;

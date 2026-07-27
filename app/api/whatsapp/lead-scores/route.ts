@@ -27,8 +27,8 @@ export async function GET() {
             remoteJid: true,
             status: true,
             accountId: true,
-            account: { select: { id: true, name: true, origen: true } },
-            contact: { select: { realName: true } },
+            account: { select: { id: true, name: true, origen: true, leadIdPrefix: true } },
+            contact: { select: { realName: true, leadNumber: true } },
             publicShareToken: true,
             messages: CHAT_ATTRIBUTION_MESSAGE_QUERY,
           },
@@ -45,10 +45,15 @@ export async function GET() {
     );
 
     const rows = scores.map(({ chat, ...score }) => {
-      const { messages, publicShareToken, ...chatRest } = chat;
+      const { messages, publicShareToken, contact, ...chatRest } = chat;
       return {
         ...score,
-        chat: { ...chatRest, publicLink: publicChatUrl(tokens.get(chat.id)!) },
+        chat: {
+          ...chatRest,
+          // BigInt no es serializable por NextResponse.json() — convertir aquí.
+          contact: contact ? { ...contact, leadNumber: contact.leadNumber.toString() } : null,
+          publicLink: publicChatUrl(tokens.get(chat.id)!),
+        },
         campaign: resolveChatAttribution(messages),
       };
     });

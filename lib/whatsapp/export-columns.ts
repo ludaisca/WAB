@@ -3,6 +3,8 @@
 // Google Sheets (lib/google/sheets-sync.ts) — separan "qué campo mostrar" de
 // "cómo se entrega" para no duplicar la lista de columnas en dos lugares.
 
+import { formatLeadId } from "./lead-id";
+
 export interface ExportColumnDef<T> {
   key: string;
   label: string;
@@ -54,10 +56,12 @@ export interface LeadScoreRow {
     remoteJid: string;
     status: string;
     accountId: string;
-    account: { id: string; name: string; origen: string | null };
+    account: { id: string; name: string; origen: string | null; leadIdPrefix: string | null };
     // Nombre aprendido por el calificador durante la conversación — distinto
     // del nombre de envío (chat.name), que viene del CSV/hoja de origen.
-    contact: { realName: string | null } | null;
+    // leadNumber ya viene convertido a string (BigInt no es JSON-serializable),
+    // ver dataset-queries.ts / lead-scores/route.ts.
+    contact: { realName: string | null; leadNumber: string } | null;
     // URL absoluta a /c/[token] (vista pública de solo lectura del chat, sin
     // login) — resuelta por el caller (API route / dataset-queries.ts) vía
     // ensurePublicChatTokensForChats() ANTES de construir la fila, porque
@@ -94,6 +98,11 @@ function formatDate(value: string): string {
 }
 
 export const EXPORT_COLUMNS: ExportColumnDef<LeadScoreRow>[] = [
+  {
+    key: "leadId",
+    label: "ID de lead",
+    get: (r) => formatLeadId(r.chat.account.leadIdPrefix, r.chat.account.name, r.chat.contact?.leadNumber ?? null),
+  },
   { key: "lead", label: "Lead", get: (r) => r.chat.name || r.chat.remoteJid.split("@")[0] },
   { key: "realName", label: "Nombre real", get: (r) => r.chat.contact?.realName ?? "" },
   { key: "phone", label: "Teléfono", get: (r) => r.chat.remoteJid.split("@")[0] },

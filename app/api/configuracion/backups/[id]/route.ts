@@ -4,6 +4,7 @@ import path from "path";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { serializeBackup } from "@/lib/backup/serialize";
+import { deleteBackupFromS3 } from "@/lib/backup/s3-storage";
 
 const BACKUP_ROOT = process.env.BACKUP_ROOT || "/app/backups";
 
@@ -37,6 +38,9 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 
     if (backup.filename) {
       await fs.rm(path.join(BACKUP_ROOT, backup.filename), { force: true }).catch(() => {});
+    }
+    if (backup.s3Key) {
+      await deleteBackupFromS3(backup.s3Key);
     }
     await prisma.systemBackup.delete({ where: { id } });
 

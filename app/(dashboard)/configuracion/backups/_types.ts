@@ -30,6 +30,8 @@ export interface BackupItem {
   filename: string | null;
   sizeBytes: string | null;
   errorMessage: string | null;
+  s3Key: string | null;
+  s3UploadError: string | null;
   startedAt: string;
   completedAt: string | null;
   createdBy: { id: string; name: string | null; email: string } | null;

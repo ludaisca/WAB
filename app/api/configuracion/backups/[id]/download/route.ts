@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { createReadStream, promises as fs } from "fs";
-import path from "path";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-
-const BACKUP_ROOT = process.env.BACKUP_ROOT || "/app/backups";
+import { ensureLocalBackupFile } from "@/lib/backup/s3-storage";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -17,12 +15,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "Backup no disponible" }, { status: 404 });
   }
 
-  const absPath = path.join(BACKUP_ROOT, backup.filename);
+  let absPath: string;
   let stat;
   try {
+    absPath = await ensureLocalBackupFile(backup);
     stat = await fs.stat(absPath);
   } catch {
-    return NextResponse.json({ error: "Archivo no encontrado en disco" }, { status: 404 });
+    return NextResponse.json({ error: "Archivo no encontrado en disco ni en almacenamiento externo" }, { status: 404 });
   }
 
   const stream = createReadStream(absPath);

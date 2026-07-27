@@ -5,6 +5,22 @@ import { prisma } from "@/lib/prisma";
 import { waAccountSchema } from "@/lib/validations";
 import { encrypt, hashToken } from "@/lib/crypto";
 import { validateToken } from "@/lib/whatsapp";
+import { suggestLeadPrefix } from "@/lib/whatsapp/lead-id";
+
+// leadIdPrefix ya no es @unique (varias cuentas pueden compartir prefijo a
+// propósito para agruparse bajo una misma marca, editando el campo desde el
+// detalle de cuenta) — pero por default una cuenta nueva sigue recibiendo un
+// prefijo distinto al de las demás, para no generar ambigüedad sin querer.
+async function generateUniqueLeadPrefix(name: string): Promise<string> {
+  const base = suggestLeadPrefix(name);
+  let candidate = base;
+  let suffix = 2;
+  while (await prisma.wAAccount.findFirst({ where: { leadIdPrefix: candidate } })) {
+    candidate = `${base}${suffix}`;
+    suffix++;
+  }
+  return candidate;
+}
 
 export async function POST(req: Request) {
   try {
@@ -34,6 +50,7 @@ export async function POST(req: Request) {
     const encryptedToken = encrypt(accessToken);
     const resolvedVerifyToken = verifyToken || randomBytes(24).toString("hex");
     const verifyHash = hashToken(resolvedVerifyToken);
+    const leadIdPrefix = await generateUniqueLeadPrefix(name);
 
     const account = await prisma.wAAccount.create({
       data: {
@@ -48,6 +65,7 @@ export async function POST(req: Request) {
         appSecret: appSecret ? encrypt(appSecret) : null,
         status: "CONNECTED",
         lastActivity: new Date(),
+        leadIdPrefix,
       },
       select: {
         id: true,
@@ -58,6 +76,7 @@ export async function POST(req: Request) {
         status: true,
         lastActivity: true,
         createdAt: true,
+        leadIdPrefix: true,
       },
     });
 

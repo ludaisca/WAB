@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import { streamUploadToFile, discardUpload } from "@/lib/backup/upload";
 import { buildRestorePreview } from "@/lib/backup/restore-backup";
+import { ensureLocalBackupFile } from "@/lib/backup/s3-storage";
 
 const BACKUP_ROOT = process.env.BACKUP_ROOT || "/app/backups";
 
@@ -31,7 +32,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Backup no disponible" }, { status: 404 });
       }
 
-      const preview = await buildRestorePreview(path.join(BACKUP_ROOT, backup.filename));
+      const localPath = await ensureLocalBackupFile(backup);
+      const preview = await buildRestorePreview(localPath);
       return NextResponse.json({
         sourceType: "HISTORY" as const,
         historyId,

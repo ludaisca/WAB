@@ -49,6 +49,18 @@ model SystemConfig {
   maintenanceMode      Boolean   @default(false)
   maintenanceReason    String?
   maintenanceStartedAt DateTime?
+
+  // Almacenamiento externo S3/R2 para respaldos — copia durable fuera del
+  // volumen Docker. s3SecretAccessKey va cifrado con lib/crypto.ts (mismo
+  // patrón que WAAccount.accessToken / AppSettings.openrouterApiKey).
+  s3Enabled         Boolean  @default(false)
+  s3Endpoint        String?
+  s3Region          String?
+  s3Bucket          String?
+  s3AccessKeyId     String?
+  s3SecretAccessKey String?
+  s3ForcePathStyle  Boolean  @default(false)
+
   updatedAt          DateTime @updatedAt @map("updated_at")
 
   @@map("system_config")
@@ -166,6 +178,14 @@ model WAAccount {
   // el export a Sheets. Nada que ver con WACampaignRecipient/LeadSheetImportedRow
   // "origin" (manual vs automatización), que es un concepto distinto.
   origen          String?
+  // Prefijo corto para el ID de lead exportable (ej. "LM" -> "LM-482913776521"),
+  // ver lib/whatsapp/lead-id.ts. Auto-sugerido (y evitando choques) a partir
+  // del nombre al crear la cuenta; editable desde el detalle de cuenta. Null
+  // en cuentas creadas antes de este campo — el formateador cae a la misma
+  // sugerencia calculada al vuelo. Deliberadamente NO @unique: varias cuentas
+  // pueden compartir prefijo a propósito para agruparse bajo una misma marca
+  // — lo único que garantiza que un ID de lead no se repita es leadNumber.
+  leadIdPrefix    String?
   channel         WAChannel        @default(META_CLOUD)
   phoneNumber     String?
   phoneNumberId   String?
@@ -715,6 +735,14 @@ model Contact {
   // respuestas manuales/bot en un chat ya iniciado por el lead.
   optedOutMarketing Boolean   @default(false)
   optedOutAt        DateTime?
+  // ID de lead legible/exportable, distinto del cuid interno — 12 dígitos
+  // aleatorios generados por Postgres (no en código de app: hay 3 sitios que
+  // crean Contact vía upsert y un default a nivel de columna cubre los tres
+  // sin tocar ninguno, y además backfillea solo los contactos existentes al
+  // correr `prisma db push`). Se combina con WAAccount.leadIdPrefix para
+  // formar el ID mostrado en la exportación de Leads calificados, ver
+  // lib/whatsapp/lead-id.ts.
+  leadNumber BigInt     @unique @default(dbgenerated("floor(random() * 900000000000 + 100000000000)::bigint"))
   createdAt  DateTime   @default(now()) @map("created_at")
   updatedAt  DateTime   @updatedAt @map("updated_at")
 
@@ -944,6 +972,11 @@ model SystemBackup {
   sizeBytes    BigInt?
   manifest     Json?
   errorMessage String?      @db.Text
+  // Presencia de s3Key = esta copia también vive en el bucket configurado en
+  // SystemConfig. Nunca se borra si la subida falla — queda null y
+  // s3UploadError explica por qué (el respaldo local sigue siendo válido).
+  s3Key         String?
+  s3UploadError String?     @db.Text
   startedAt    DateTime     @default(now())
   completedAt  DateTime?
   createdById  String?

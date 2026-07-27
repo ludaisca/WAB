@@ -32,6 +32,7 @@ export async function GET(
         userId: true,
         name: true,
         origen: true,
+        leadIdPrefix: true,
         channel: true,
         phoneNumber: true,
         phoneNumberId: true,
@@ -102,12 +103,13 @@ export async function PATCH(
     }
 
     const data: Record<string, unknown> = {};
-    const { name, accessToken, verifyToken, appSecret, wabaId, appId, origen } = parsed.data;
+    const { name, accessToken, verifyToken, appSecret, wabaId, appId, origen, leadIdPrefix } = parsed.data;
 
     if (name) data.name = name;
     if (wabaId !== undefined) data.wabaId = wabaId || null;
     if (appId !== undefined) data.appId = appId || null;
     if (origen !== undefined) data.origen = origen || null;
+    if (leadIdPrefix !== undefined) data.leadIdPrefix = leadIdPrefix ? leadIdPrefix.toUpperCase() : null;
 
     if (typeof body?.autoAssignEnabled === "boolean") {
       data.autoAssignEnabled = body.autoAssignEnabled;
@@ -147,6 +149,7 @@ export async function PATCH(
         id: true,
         name: true,
         origen: true,
+        leadIdPrefix: true,
         channel: true,
         phoneNumber: true,
         phoneNumberId: true,

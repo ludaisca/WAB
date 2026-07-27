@@ -98,8 +98,8 @@ export async function buildLeadScoreRows(
           remoteJid: true,
           status: true,
           accountId: true,
-          account: { select: { id: true, name: true, origen: true } },
-          contact: { select: { realName: true } },
+          account: { select: { id: true, name: true, origen: true, leadIdPrefix: true } },
+          contact: { select: { realName: true, leadNumber: true } },
           publicShareToken: true,
           messages: CHAT_ATTRIBUTION_MESSAGE_QUERY,
         },
@@ -121,7 +121,7 @@ export async function buildLeadScoreRows(
   );
 
   return scores.map((s) => {
-    const { messages, publicShareToken, ...chatRest } = s.chat;
+    const { messages, publicShareToken, contact, ...chatRest } = s.chat;
     return {
       id: s.id,
       score: s.score,
@@ -132,7 +132,11 @@ export async function buildLeadScoreRows(
       updatedAt: s.updatedAt.toISOString(),
       scorer: s.scorer,
       campaign: resolveChatAttribution(messages),
-      chat: { ...chatRest, publicLink: publicChatUrl(tokens.get(s.chat.id)!) },
+      chat: {
+        ...chatRest,
+        contact: contact ? { ...contact, leadNumber: contact.leadNumber.toString() } : null,
+        publicLink: publicChatUrl(tokens.get(s.chat.id)!),
+      },
     };
   });
 }

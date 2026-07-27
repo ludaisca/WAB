@@ -56,6 +56,7 @@ export const waAccountUpdateSchema = z.object({
   wabaId: z.string().optional(),
   appId: z.string().optional(),
   origen: z.string().max(200).optional().or(z.literal("")),
+  leadIdPrefix: z.string().max(12).regex(/^[A-Za-z0-9]*$/, "Solo letras y números").optional().or(z.literal("")),
 });
 
 export const sendMessageSchema = z.object({

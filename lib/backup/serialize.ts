@@ -13,6 +13,8 @@ export function serializeBackup(b: BackupWithCreator) {
     sizeBytes: b.sizeBytes !== null ? b.sizeBytes.toString() : null,
     manifest: b.manifest,
     errorMessage: b.errorMessage,
+    s3Key: b.s3Key,
+    s3UploadError: b.s3UploadError,
     startedAt: b.startedAt,
     completedAt: b.completedAt,
     createdBy: b.createdBy ?? null,
