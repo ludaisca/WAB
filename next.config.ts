@@ -9,8 +9,10 @@ const nextConfig: NextConfig = {
   },
   // Next dev blocks cross-origin requests to dev resources (HMR websocket, RSC
   // payloads) by default. Needed while testing through an ngrok tunnel for the
-  // Meta webhook — without this, HMR silently fails and forces hard reloads.
-  allowedDevOrigins: ["*.ngrok-free.dev", "*.ngrok-free.app", "*.ngrok.io"],
+  // Meta webhook, and also for LAN/Tailscale hostnames used to reach this dev
+  // server from another machine — without this, HMR/RSC navigation silently
+  // fails (e.g. login/onboarding never completes) for any non-localhost host.
+  allowedDevOrigins: ["*.ngrok-free.dev", "*.ngrok-free.app", "*.ngrok.io", "rocky-server"],
   async headers() {
     // `unsafe-eval` solo se necesita en desarrollo (HMR / React Refresh de
     // Turbopack). En producción el bundle no lo requiere, así que se omite para

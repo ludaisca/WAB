@@ -13,7 +13,7 @@
 Everything runs in Docker. Never install dependencies or databases on the host.
 
 ```bash
-docker compose up --build   # dev server + postgres + redis, hot reload, port 3001
+docker compose up --build   # dev server + postgres + redis, hot reload, port 17100
 docker compose down -v      # full teardown including volumes
 npx tsc --noEmit            # type check
 npm run build               # production build check

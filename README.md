@@ -28,7 +28,7 @@ Todo corre en Docker — no se instalan dependencias ni bases de datos en el hos
 
 ```bash
 cp .env.example .env        # completa las variables (ver abajo)
-docker compose up --build   # app + postgres + redis, hot reload en :3001
+docker compose up --build   # app + postgres + redis, hot reload en :17100
 ```
 
 Comandos útiles dentro del contenedor:

@@ -2,8 +2,10 @@ services:
   app:
     build:
       target: dev
+    dns:
+      - 127.0.0.11
     ports:
-      - "3001:5000"
+      - "17100:5000"
     volumes:
       - .:/app
       - /app/node_modules

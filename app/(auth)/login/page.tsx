@@ -19,6 +19,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl");
+  const onboarded = searchParams.get("onboarded") === "1";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -68,6 +69,11 @@ function LoginForm() {
           <CardTitle>Iniciar sesión</CardTitle>
         </CardHeader>
         <CardBody>
+          {onboarded && (
+            <Banner tone="success" className="mb-4">
+              ¡Cuenta creada! Inicia sesión para continuar.
+            </Banner>
+          )}
           {serverError && (
             <Banner tone="danger" className="mb-4">
               {serverError}

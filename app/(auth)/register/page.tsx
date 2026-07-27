@@ -51,7 +51,7 @@ export default function RegisterPage() {
         throw new Error(data.error || "Error al registrar");
       }
 
-      router.push("/login?registered=1");
+      router.push("/login?onboarded=1");
     } catch (err) {
       setServerError(err instanceof Error ? err.message : "Error al registrar");
     } finally {
