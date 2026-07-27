@@ -105,7 +105,13 @@ export async function buildLeadScoreRows(
         },
       },
     },
-    orderBy: { score: "desc" },
+    // Cronológico y estable: createdAt nunca cambia al recalificar (ver upsert()
+    // en lib/whatsapp/lead-scoring.ts), a diferencia de score/updatedAt. Ordenar
+    // por score reordenaba filas en cada recalificación (el tick corre cada 5
+    // min), lo que hacía parecer que el formato manual (colores por lead) se
+    // perdía al sincronizar — en realidad el color se quedaba anclado a la fila
+    // vieja mientras los datos del lead se movían a otra.
+    orderBy: { createdAt: "asc" },
   });
 
   // Un token por chat, no por score — un mismo chat puede tener varios
