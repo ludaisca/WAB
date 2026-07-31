@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { Plus, Target, Trash2, Pencil, Sparkles, Clock, Download } from "lucide-react";
+import { Plus, Target, Trash2, Pencil, Sparkles, Clock, Download, RefreshCw } from "lucide-react";
 import { Card, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Switch } from "@/app/components/ui/switch";
@@ -121,6 +121,8 @@ function CalificadoresTab() {
   const [editId, setEditId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [rescoreTarget, setRescoreTarget] = useState<LeadScorerBot | null>(null);
+  const [rescoring, setRescoring] = useState(false);
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -156,6 +158,22 @@ function CalificadoresTab() {
       toastError(err instanceof Error ? err.message : "Error al eliminar");
     } finally {
       setDeleteId(null);
+    }
+  }
+
+  async function handleRescoreAll() {
+    if (!rescoreTarget) return;
+    setRescoring(true);
+    try {
+      const res = await fetch(`/api/whatsapp/lead-scorers/${rescoreTarget.id}/rescore-all`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Error al iniciar la recalificación");
+      success(`Recalificación iniciada para ~${data.estimatedCount} leads — puede tomar varios minutos en reflejarse en "Leads calificados".`);
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al iniciar la recalificación");
+    } finally {
+      setRescoring(false);
+      setRescoreTarget(null);
     }
   }
 
@@ -266,6 +284,9 @@ function CalificadoresTab() {
                 <DropdownItem icon={Pencil} onClick={() => { setEditId(r.id); setModalOpen(true); }}>
                   Editar
                 </DropdownItem>
+                <DropdownItem icon={RefreshCw} onClick={() => setRescoreTarget(r)}>
+                  Recalificar todos los leads
+                </DropdownItem>
                 <DropdownItem icon={Trash2} onClick={() => setDeleteId(r.id)}>
                   Eliminar
                 </DropdownItem>
@@ -290,6 +311,17 @@ function CalificadoresTab() {
         confirmLabel="Eliminar"
         tone="danger"
         onConfirm={handleDelete}
+      />
+
+      <ConfirmDialog
+        open={!!rescoreTarget}
+        onClose={() => setRescoreTarget(null)}
+        title="Recalificar todos los leads"
+        description={`Se va a re-evaluar con el prompt actual de "${rescoreTarget?.name}" cada chat calificable de sus cuentas (todo el historial, no solo lo reciente). Corre en segundo plano, puede tomar varios minutos y genera costo de IA por cada lead re-evaluado.`}
+        confirmLabel="Recalificar todos"
+        tone="danger"
+        loading={rescoring}
+        onConfirm={handleRescoreAll}
       />
     </>
   );

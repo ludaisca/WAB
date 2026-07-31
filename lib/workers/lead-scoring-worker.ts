@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { scoreChatWithScorer } from "@/lib/whatsapp/lead-scoring";
+import { scoreChatWithScorer, LeadScoringError } from "@/lib/whatsapp/lead-scoring";
 import { checkBudgetAlert, isMonthlyBudgetExceeded } from "@/lib/ai/budget";
 import { getUserAccountIds } from "@/lib/shared-accounts";
 import type { WALeadScorerBot } from "@prisma/client";
@@ -128,4 +128,64 @@ async function runScheduledScorer(scorer: WALeadScorerBot, now: Date) {
     where: { id: scorer.id },
     data: { lastRunAt: now },
   });
+}
+
+// Chats elegibles para una recalificación masiva: mismo criterio base que
+// scoreChatWithScorer exige (al menos un mensaje INBOUND), pero sin el filtro
+// de status OPEN/PENDING ni el CANDIDATE_POOL del tick programado — un
+// "recalificar todos" disparado a propósito por el admin (ej. tras cambiar el
+// prompt) debe cubrir el historial completo, no solo los chats activos recientes.
+export async function countBulkRescoreEligibleChats(scorer: WALeadScorerBot): Promise<number> {
+  const accountIds = await getUserAccountIds(scorer.userId);
+  if (accountIds.length === 0) return 0;
+  return prisma.wAChat.count({
+    where: { accountId: { in: accountIds }, messages: { some: { direction: "INBOUND" } } },
+  });
+}
+
+// Job disparado manualmente desde /whatsapp/calificadores ("Recalificar todos
+// los leads") — a diferencia del tick automático, no respeta scheduleAccountIds
+// (ese alcance es solo para las corridas desatendidas) ni el presupuesto
+// mensual: es una acción explícita de un admin, igual que el botón individual
+// "Calificar" tampoco lo respeta.
+export async function processBulkRescoreJob(scorerId: string) {
+  const scorer = await prisma.wALeadScorerBot.findUnique({ where: { id: scorerId } });
+  if (!scorer) {
+    console.error(`[lead-scoring] Recalificación masiva: calificador ${scorerId} no existe`);
+    return;
+  }
+
+  const accountIds = await getUserAccountIds(scorer.userId);
+  if (accountIds.length === 0) return;
+
+  const chats = await prisma.wAChat.findMany({
+    where: { accountId: { in: accountIds }, messages: { some: { direction: "INBOUND" } } },
+    select: { id: true },
+    orderBy: { lastMessageAt: "desc" },
+  });
+
+  let ok = 0;
+  let skipped = 0;
+  let failed = 0;
+  for (const chat of chats) {
+    try {
+      await scoreChatWithScorer(chat.id, scorer);
+      ok++;
+    } catch (err) {
+      if (err instanceof LeadScoringError) {
+        skipped++;
+      } else {
+        failed++;
+        console.error(`[lead-scoring] Recalificación masiva: error en chat ${chat.id}:`, err);
+      }
+    }
+  }
+
+  await checkBudgetAlert(scorer.userId, new Date());
+  await prisma.wALeadScorerBot.update({ where: { id: scorer.id }, data: { lastRunAt: new Date() } });
+
+  console.log(
+    `[lead-scoring] Recalificación masiva completa para "${scorer.name}" (${scorer.id}): ` +
+      `${ok} calificados, ${skipped} omitidos, ${failed} con error, de ${chats.length} chats totales.`
+  );
 }

@@ -5,7 +5,7 @@ import { processRagJob } from "./rag-worker";
 import { processMediaDownloadJob } from "./media-worker";
 import { processMediaCleanupJob } from "./media-cleanup-worker";
 import { processBotSendJob } from "./bot-send-worker";
-import { processLeadScoringTick } from "./lead-scoring-worker";
+import { processLeadScoringTick, processBulkRescoreJob } from "./lead-scoring-worker";
 import { processLeadRecoveryTick } from "./lead-recovery-worker";
 import { processSheetsSyncTick } from "./sheets-sync-worker";
 import { processLeadSheetImportTick } from "./lead-sheet-worker";
@@ -65,7 +65,14 @@ export function startWorkers() {
     });
   }, { connection, concurrency: 5 });
 
-  const leadScoringWorker = new Worker("lead-scoring", async () => {
+  const leadScoringWorker = new Worker("lead-scoring", async (job) => {
+    // Misma cola lleva el tick repetible y la recalificación masiva a petición
+    // (ver "Recalificar todos los leads" en /whatsapp/calificadores) —
+    // concurrency 1 evita que ambas corran en paralelo sobre el mismo calificador.
+    if (job.name === "rescore-all") {
+      await processBulkRescoreJob(job.data.scorerId);
+      return;
+    }
     await processLeadScoringTick();
   }, { connection, concurrency: 1 });
 
