@@ -3,6 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { botQueue, mediaDownloadQueue } from "@/lib/queue";
 import { autoAssignChat } from "@/lib/whatsapp/auto-assign";
 import { shouldUpdateName } from "@/lib/whatsapp/contact-name";
+import { getRedisClient } from "@/lib/redis";
+
+// Ventana de debounce: si el lead manda varios mensajes seguidos muy rápido,
+// se agrupan en UNA sola respuesta del bot en vez de disparar un job de IA por
+// cada uno (que antes corrían en paralelo — concurrencia 3 en bot-messages —
+// sin verse entre sí, produciendo respuestas contradictorias/duplicadas casi
+// al mismo tiempo; detectado en la auditoría de conversaciones reales).
+export const BOT_DEBOUNCE_MS = 6000;
 
 export interface NormalizedInboundMessage {
   remoteJid: string;
@@ -153,20 +161,22 @@ export async function ingestInboundMessage(
     select: { id: true },
   });
 
+  const redis = getRedisClient();
   for (const bot of activeBots) {
-    await botQueue.add("process-message", {
-      botId: bot.id,
-      accountId,
-      waChatId: chat.id,
-      incomingMessage: msg.body,
-      messageId: createdMessage.id,
-      messageType: msg.type,
-      mediaId: msg.mediaId ?? null,
-      localMediaPath: msg.localMediaPath ?? null,
-      mimeType: msg.mimeType ?? null,
-      caption: msg.caption ?? null,
-      filename: msg.filename ?? null,
-    });
+    // Lock de debounce por (bot, chat): el primer mensaje de una ráfaga la
+    // adquiere y encola el job con delay; cualquier mensaje que llegue dentro
+    // de la ventana encuentra el lock ya tomado y no encola nada — el job ya
+    // programado relee TODO lo pendiente (no solo el mensaje que lo originó)
+    // cuando finalmente dispara, así que ese mensaje igual queda cubierto.
+    const lockKey = `bot-debounce-lock:${bot.id}:${chat.id}`;
+    const acquired = await redis.set(lockKey, "1", "PX", BOT_DEBOUNCE_MS, "NX");
+    if (!acquired) continue;
+
+    await botQueue.add(
+      "process-message",
+      { botId: bot.id, accountId, waChatId: chat.id },
+      { delay: BOT_DEBOUNCE_MS }
+    );
   }
 
   return { messageId: createdMessage.id, chatId: chat.id };

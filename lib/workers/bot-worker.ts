@@ -20,14 +20,60 @@ interface BotMessageJob {
   // momento de encolar y la manda explícita.
   accountId: string;
   waChatId: string;
-  incomingMessage: string;
-  messageId?: string;
-  messageType?: string;
-  mediaId?: string | null;
-  localMediaPath?: string | null;
-  mimeType?: string | null;
-  caption?: string | null;
-  filename?: string | null;
+}
+
+// El turno que el bot va a responder no es "el mensaje que disparó el job" —
+// ingestInboundMessage() encola este job con un delay (debounce, ver
+// BOT_DEBOUNCE_MS) y deduplicado por lock de Redis, así que para cuando
+// realmente corre puede haber varios mensajes nuevos del lead acumulados.
+// Se relee todo lo INBOUND posterior al último OUTBOUND del chat — eso cubre
+// tanto la ráfaga que originó el job como cualquier otro mensaje que haya
+// entrado durante la ventana de espera.
+interface PendingMessage {
+  id: string;
+  messageType: string;
+  body: string | null;
+  caption: string | null;
+  mediaId: string | null;
+  mediaUrl: string | null;
+  mimeType: string | null;
+  filename: string | null;
+}
+
+async function getPendingInboundMessages(waChatId: string): Promise<PendingMessage[]> {
+  const lastOutbound = await prisma.wAMessage.findFirst({
+    where: { chatId: waChatId, direction: "OUTBOUND" },
+    orderBy: { timestamp: "desc" },
+    select: { timestamp: true },
+  });
+  return prisma.wAMessage.findMany({
+    where: {
+      chatId: waChatId,
+      direction: "INBOUND",
+      ...(lastOutbound ? { timestamp: { gt: lastOutbound.timestamp } } : {}),
+    },
+    orderBy: { timestamp: "asc" },
+    select: {
+      id: true,
+      messageType: true,
+      body: true,
+      caption: true,
+      mediaId: true,
+      mediaUrl: true,
+      mimeType: true,
+      filename: true,
+    },
+  });
+}
+
+// Texto plano de todos los mensajes pendientes, unidos — así "hola" + "quiero
+// cotizar una mesa quirúrgica" llegan al modelo como un solo turno coherente
+// en vez de dos turnos "user" consecutivos sin respuesta entre ellos.
+function combinedPendingText(pending: PendingMessage[]): string {
+  return pending
+    .map((m) => m.caption ?? m.body)
+    .filter((t): t is string => !!t && t.trim().length > 0)
+    .join("\n");
 }
 
 interface AttemptInfo {
@@ -124,7 +170,7 @@ async function sendFallbackReply(botId: string, accountId: string, waChatId: str
 }
 
 async function handleBotMessage(job: BotMessageJob) {
-  const { botId, accountId, waChatId, incomingMessage } = job;
+  const { botId, accountId, waChatId } = job;
 
   const bot = await prisma.wABot.findUnique({ where: { id: botId } });
   // La cuenta se resuelve por el accountId del mensaje entrante, no por el bot
@@ -132,6 +178,14 @@ async function handleBotMessage(job: BotMessageJob) {
   const account = await prisma.wAAccount.findUnique({ where: { id: accountId } });
 
   if (!bot || !bot.isActive || bot.status !== "ACTIVE" || !account) return;
+
+  const pendingMessages = await getPendingInboundMessages(waChatId);
+  // Nada pendiente que responder — ej. un humano ya contestó manualmente
+  // durante la ventana de debounce. No es un error, simplemente no hay nada
+  // que hacer (evita una respuesta redundante del bot encima de la humana).
+  if (pendingMessages.length === 0) return;
+  const pendingIds = pendingMessages.map((m) => m.id);
+  const incomingMessage = combinedPendingText(pendingMessages);
 
   // Mismo gate que lead-scoring y lead-recovery: con el presupuesto mensual ya
   // agotado, el bot deja de responder (sin marcar ERROR — no es una falla del
@@ -186,10 +240,10 @@ async function handleBotMessage(job: BotMessageJob) {
   const history: AIMessage[] = [];
   if (bot.memoryType === "RECENT" && bot.memoryLimit > 0) {
     const pastMessages = await prisma.wAMessage.findMany({
-      // Exclude the message currently being processed — it's already appended below as
-      // the final user turn via buildUserContent(); without this it shows up twice
-      // (once here from the desc-ordered fetch, once as the "current" turn).
-      where: { chatId: waChatId, ...(job.messageId ? { id: { not: job.messageId } } : {}) },
+      // Exclude every mensaje pendiente que se está procesando ahora — ya se
+      // agregan abajo como el turno "current" vía buildUserContent(); sin
+      // esto aparecerían dos veces (aquí y como el turno actual).
+      where: { chatId: waChatId, id: { notIn: pendingIds } },
       orderBy: { timestamp: "desc" },
       take: bot.memoryLimit * 2,
       select: {
@@ -229,10 +283,9 @@ async function handleBotMessage(job: BotMessageJob) {
 
   // Build the user turn — embed the latest image/audio inline, or the extracted text of a
   // document, if present and the provider/media type combination supports it.
-  const userContent = await buildUserContent(job, provider);
+  const userContent = await buildUserContent(pendingMessages, provider);
 
-  const ragQuery =
-    job.caption ?? (incomingMessage && incomingMessage !== `[${job.messageType}]` ? incomingMessage : job.messageType ?? "");
+  const ragQuery = incomingMessage || pendingMessages[pendingMessages.length - 1]?.messageType || "";
 
   const replyResult = await generateBotReply({
     bot,
@@ -335,7 +388,7 @@ async function handleBotMessage(job: BotMessageJob) {
               // respuestas del bot, la "memoria" olvidaba todo lo que el
               // cliente dijo.
               summary: summarizeText(
-                `Cliente: ${job.caption ?? incomingMessage}\nAsistente: ${result.content}`,
+                `Cliente: ${incomingMessage}\nAsistente: ${result.content}`,
                 conversation.summary
               ),
             }
@@ -370,26 +423,39 @@ async function handleBotMessage(job: BotMessageJob) {
   ]);
 }
 
-async function buildUserContent(job: BotMessageJob, provider: AIProvider): Promise<string | ContentPart[]> {
-  const isImage = job.messageType === "image" || job.messageType === "sticker";
-  // Audio understanding only works through Gemini's native inlineData — OpenRouter
-  // has no generic audio content shape (see ContentPart["audio_url"] comment).
-  const isAudio = job.messageType === "audio" && provider === "google";
-  const isDocument = job.messageType === "document";
-  const bodyText = job.caption ?? job.incomingMessage ?? "";
-  const fallbackLabel = `[${job.messageType === "audio" ? "audio" : job.messageType} recibido]`;
+// Un burst puede traer varios mensajes pendientes; a lo más UNO se procesa
+// como contenido multimodal (el más reciente con media soportada) — mandar
+// varias imágenes/audios en un solo turno no está soportado hoy y encarece
+// el turno sin necesidad real. El texto de TODOS los pendientes (incluidas
+// captions de mensajes con media anteriores) sí se combina siempre.
+async function buildUserContent(pending: PendingMessage[], provider: AIProvider): Promise<string | ContentPart[]> {
+  const textBlock = combinedPendingText(pending);
+  const mediaMsg = [...pending].reverse().find(
+    (m) =>
+      m.messageType === "image" ||
+      m.messageType === "sticker" ||
+      m.messageType === "document" ||
+      // Audio understanding only works through Gemini's native inlineData —
+      // OpenRouter has no generic audio content shape (see ContentPart["audio_url"]).
+      (m.messageType === "audio" && provider === "google")
+  );
 
-  if (!isImage && !isAudio && !isDocument) {
-    return bodyText || `[${job.messageType ?? "text"}]`;
+  if (!mediaMsg) {
+    return textBlock || `[${pending[pending.length - 1]?.messageType ?? "text"}]`;
   }
 
-  let localPath = job.localMediaPath ?? null;
-  let mimeType = job.mimeType ?? null;
+  const isImage = mediaMsg.messageType === "image" || mediaMsg.messageType === "sticker";
+  const isAudio = mediaMsg.messageType === "audio";
+  const isDocument = mediaMsg.messageType === "document";
+  const fallbackLabel = `[${isAudio ? "audio" : mediaMsg.messageType} recibido]`;
+
+  let localPath = mediaMsg.mediaUrl;
+  let mimeType = mediaMsg.mimeType;
 
   // The Meta download worker may not have finished yet — re-check DB.
-  if (!localPath && job.messageId) {
+  if (!localPath) {
     const latest = await prisma.wAMessage.findUnique({
-      where: { id: job.messageId },
+      where: { id: mediaMsg.id },
       select: { mediaUrl: true, mimeType: true },
     }).catch(() => null);
     if (latest?.mediaUrl) localPath = latest.mediaUrl;
@@ -397,17 +463,17 @@ async function buildUserContent(job: BotMessageJob, provider: AIProvider): Promi
   }
 
   if (!localPath) {
-    return bodyText && bodyText !== `[${job.messageType}]` ? `${fallbackLabel} ${bodyText}` : fallbackLabel;
+    return textBlock ? `${fallbackLabel} ${textBlock}` : fallbackLabel;
   }
   const absolute = resolveAbsolutePath(localPath);
 
   if (isDocument) {
     const extracted = await extractDocumentText(absolute, mimeType);
     if (!extracted) {
-      return bodyText && bodyText !== `[document]` ? `${fallbackLabel} ${bodyText}` : fallbackLabel;
+      return textBlock ? `${fallbackLabel} ${textBlock}` : fallbackLabel;
     }
-    const label = job.filename ? `Documento "${job.filename}"` : "Documento recibido";
-    const caption = bodyText && bodyText !== `[document]` ? `\nMensaje del prospecto: ${bodyText}` : "";
+    const label = mediaMsg.filename ? `Documento "${mediaMsg.filename}"` : "Documento recibido";
+    const caption = textBlock ? `\nMensaje del prospecto: ${textBlock}` : "";
     return `${label}, contenido extraído:\n\n${extracted}${caption}`;
   }
 
@@ -417,8 +483,8 @@ async function buildUserContent(job: BotMessageJob, provider: AIProvider): Promi
     const mime = mimeType ?? (isImage ? "image/jpeg" : "audio/ogg");
 
     const parts: ContentPart[] = [];
-    if (bodyText && bodyText !== `[${job.messageType}]`) {
-      parts.push({ type: "text", text: bodyText });
+    if (textBlock) {
+      parts.push({ type: "text", text: textBlock });
     }
     parts.push(
       isImage
@@ -428,6 +494,6 @@ async function buildUserContent(job: BotMessageJob, provider: AIProvider): Promi
     return parts;
   } catch (err) {
     console.error(`[bot-worker] No se pudo leer el ${isImage ? "imagen" : "audio"} local:`, err);
-    return bodyText || fallbackLabel;
+    return textBlock || fallbackLabel;
   }
 }
