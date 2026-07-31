@@ -4,6 +4,7 @@
 // "cómo se entrega" para no duplicar la lista de columnas en dos lugares.
 
 import { formatLeadId } from "./lead-id";
+import { formatDateTime } from "@/lib/timezone";
 
 export interface ExportColumnDef<T> {
   key: string;
@@ -93,8 +94,12 @@ export function reasonsList(reasons: string): string[] {
   }
 }
 
+// timeZone explícito (CDMX) — esta columna alimenta tanto el CSV manual
+// (navegador) como la sincronización desatendida a Google Sheets
+// (lib/google/sheet-export-runner.ts, corre en el worker sin navegador de
+// por medio), así que no puede depender de la zona de quien la ejecuta.
 function formatDate(value: string): string {
-  return new Date(value).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" });
+  return formatDateTime(value);
 }
 
 export const EXPORT_COLUMNS: ExportColumnDef<LeadScoreRow>[] = [

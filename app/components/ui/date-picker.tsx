@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Calendar, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { cn } from "./cn";
+import { dateKeyInTz } from "@/lib/timezone";
 
 interface DatePickerProps {
   value?: string;
@@ -65,9 +66,12 @@ export function DatePicker({
     setDisplay(formatDate(value));
   }
 
-  const today = new Date();
-  const [viewYear, setViewYear] = useState(today.getFullYear());
-  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  // "Hoy" es el día de calendario en CDMX, no en la zona del navegador —
+  // consistente con el resto de la app (ver lib/timezone.ts).
+  const todayISO = dateKeyInTz(new Date());
+  const [todayYear, todayMonth, todayDay] = todayISO.split("-").map(Number);
+  const [viewYear, setViewYear] = useState(todayYear);
+  const [viewMonth, setViewMonth] = useState(todayMonth - 1);
 
   useEffect(() => {
     if (!open) return;
@@ -122,7 +126,6 @@ export function DatePicker({
   for (let i = 0; i < firstDay; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
-  const todayISO = today.toISOString().split("T")[0];
   const selectedISO = parseDisplay(display);
 
   return (
@@ -233,7 +236,7 @@ export function DatePicker({
           <button
             type="button"
             onClick={() => {
-              applyDate(today.getFullYear(), today.getMonth(), today.getDate());
+              applyDate(todayYear, todayMonth - 1, todayDay);
             }}
             className="mt-3 w-full text-xs text-accent hover:text-accent-hover transition-colors py-1.5 rounded-md hover:bg-surface-light"
           >

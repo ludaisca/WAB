@@ -16,6 +16,7 @@ import { PageHeader } from "@/app/components/ui/page-header";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { useToast } from "@/app/components/ui/toast";
 import { RespuestasRapidasSection } from "./_respuestas-rapidas";
+import { formatDate, formatDateTime } from "@/lib/timezone";
 
 interface GoogleSheetsStatus {
   connected: boolean;
@@ -210,7 +211,7 @@ export default function SettingsPage() {
               <Badge tone="info" size="sm">{user?.role === "user" ? "Usuario" : user?.role}</Badge>
               <span className="text-xs text-muted-darker flex items-center gap-1">
                 <CalendarDays size={11} />
-                Miembro desde {createdAt ? new Date(createdAt).toLocaleDateString("es-MX", { year: "numeric", month: "long" }) : new Date().toLocaleDateString("es-MX", { year: "numeric", month: "long" })}
+                Miembro desde {formatDate(createdAt ?? new Date(), { year: "numeric", month: "long" })}
               </span>
             </div>
           </div>
@@ -411,7 +412,7 @@ export default function SettingsPage() {
               <p className="text-xs text-muted-darker">
                 Última sincronización:{" "}
                 {googleStatus.lastSyncedAt
-                  ? new Date(googleStatus.lastSyncedAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })
+                  ? formatDateTime(googleStatus.lastSyncedAt)
                   : "Nunca"}
               </p>
               <div className="flex flex-wrap items-center gap-2">

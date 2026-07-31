@@ -26,6 +26,7 @@ import { EXPORT_ENTITIES, EXPORT_ENTITY_LABELS, type ExportEntityKey } from "@/l
 import { RestoreConfirmModal } from "./_restore-confirm-modal";
 import { StorageSettingsForm } from "./_storage-form";
 import type { BackupItem, RestoreLogItem, RestorePreviewResponse } from "./_types";
+import { formatDateTime } from "@/lib/timezone";
 
 const POLL_MS = 8000;
 
@@ -39,7 +40,7 @@ function formatBytes(value: string | null): string {
 
 function formatDate(value: string | null): string {
   if (!value) return "—";
-  return new Date(value).toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" });
+  return formatDateTime(value, { dateStyle: "medium", timeStyle: "short" });
 }
 
 const BACKUP_STATUS_TONE: Record<BackupItem["status"], "neutral" | "info" | "success" | "danger"> = {

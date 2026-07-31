@@ -26,7 +26,7 @@ export async function POST(req: Request) {
 
     const {
       name,
-      waAccountId,
+      waAccountIds,
       provider,
       model,
       systemPrompt,
@@ -36,14 +36,20 @@ export async function POST(req: Request) {
       memoryLimit,
       ragEnabled,
       humanizeEnabled,
+      priceLookupEnabled,
+      priceLookupUrl,
+      priceLookupParam,
+      priceLookupExtraQuery,
+      priceLookupSkus,
     } = parsed.data;
 
-    if (waAccountId) {
+    if (waAccountIds?.length) {
       // getUserAccountIds() (propias + compartidas), no userId directo — un
       // admin con una cuenta compartida por otro admin debe poder asociarle
       // un bot, igual que ya puede con chats/plantillas/campañas.
       const accountIds = await getUserAccountIds(session.user.id);
-      if (!accountIds.includes(waAccountId)) {
+      const invalid = waAccountIds.find((id) => !accountIds.includes(id));
+      if (invalid) {
         return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
       }
     }
@@ -57,7 +63,9 @@ export async function POST(req: Request) {
     const bot = await prisma.wABot.create({
       data: {
         userId: session.user.id,
-        waAccountId: waAccountId ?? null,
+        accounts: waAccountIds?.length
+          ? { create: waAccountIds.map((waAccountId) => ({ waAccountId })) }
+          : undefined,
         name,
         provider,
         model,
@@ -68,6 +76,11 @@ export async function POST(req: Request) {
         memoryLimit: memoryLimit ?? 20,
         ragEnabled: ragEnabled ?? false,
         humanizeEnabled: humanizeEnabled ?? false,
+        priceLookupEnabled: priceLookupEnabled ?? false,
+        priceLookupUrl: priceLookupUrl || null,
+        priceLookupParam: priceLookupParam || "keywords",
+        priceLookupExtraQuery: priceLookupExtraQuery || null,
+        priceLookupSkus: priceLookupSkus ?? [],
       },
       select: {
         id: true,
@@ -81,9 +94,14 @@ export async function POST(req: Request) {
         memoryLimit: true,
         ragEnabled: true,
         humanizeEnabled: true,
+        priceLookupEnabled: true,
+        priceLookupUrl: true,
+        priceLookupParam: true,
+        priceLookupExtraQuery: true,
+        priceLookupSkus: true,
         isActive: true,
         status: true,
-        waAccountId: true,
+        accounts: { select: { waAccountId: true } },
         createdAt: true,
       },
     });
@@ -110,7 +128,7 @@ export async function GET(req: Request) {
     const waAccountId = searchParams.get("waAccountId");
 
     const where: Record<string, unknown> = { userId: session.user.id };
-    if (waAccountId) where.waAccountId = waAccountId;
+    if (waAccountId) where.accounts = { some: { waAccountId } };
 
     const bots = await prisma.wABot.findMany({
       where,
@@ -128,11 +146,10 @@ export async function GET(req: Request) {
         humanizeEnabled: true,
         isActive: true,
         status: true,
-        waAccountId: true,
         createdAt: true,
         updatedAt: true,
-        waAccount: {
-          select: { id: true, name: true, phoneNumber: true },
+        accounts: {
+          select: { waAccount: { select: { id: true, name: true, phoneNumber: true } } },
         },
         _count: { select: { conversations: true, knowledgeBots: true } },
       },

@@ -9,6 +9,7 @@ import { Button } from "@/app/components/ui/button";
 import { Select } from "@/app/components/ui/select";
 import { useToast } from "@/app/components/ui/toast";
 import type { ScoreDetails } from "@/lib/whatsapp/export-columns";
+import { formatDateTime } from "@/lib/timezone";
 
 interface LeadScore {
   id: string;
@@ -183,7 +184,7 @@ export function LeadScoreBadge({ chatId }: { chatId: string }) {
                 <div className="flex items-center justify-between">
                   <Badge tone={labelTone(selectedScore.label)}>{labelText(selectedScore.label)} · {selectedScore.score}/100</Badge>
                   <span className="text-[11px] text-muted-darker">
-                    {new Date(selectedScore.updatedAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })}
+                    {formatDateTime(selectedScore.updatedAt)}
                   </span>
                 </div>
                 <p className="text-[11px] text-muted-darker">Calificado por: {selectedScore.scorer.name}</p>

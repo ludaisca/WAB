@@ -13,6 +13,7 @@ import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { useToast } from "@/app/components/ui/toast";
 import { DATASET_LABELS } from "@/lib/whatsapp/sheet-export-access";
 import { SheetExportFormModal, type SheetExportRow } from "./_form";
+import { formatDateTime } from "@/lib/timezone";
 
 const DATASET_BADGE_TONE: Record<string, "info" | "accent" | "warning" | "success"> = {
   LEAD_SCORES: "accent",
@@ -160,7 +161,7 @@ export default function ExportacionesPage() {
               meta={
                 <span className="font-mono">
                   {r.lastSyncedAt
-                    ? new Date(r.lastSyncedAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })
+                    ? formatDateTime(r.lastSyncedAt)
                     : "Nunca sincronizada"}
                 </span>
               }

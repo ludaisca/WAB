@@ -16,6 +16,7 @@ import { PageHeader } from "@/app/components/ui/page-header";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
 import { CuentaFormModal } from "./_form";
+import { formatDate } from "@/lib/timezone";
 
 interface WaAccount {
   id: string;
@@ -155,7 +156,7 @@ function CuentasView() {
       render: (a) => (
         <span className="text-xs text-muted-darker">
           {a.lastActivity
-            ? new Date(a.lastActivity).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+            ? formatDate(a.lastActivity, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
             : "—"}
         </span>
       ),
@@ -244,7 +245,7 @@ function CuentasView() {
                   <span>{a._count.chats} chats</span>
                   {a.lastActivity && (
                     <span className="ml-auto">
-                      {new Date(a.lastActivity).toLocaleDateString("es-MX", { day: "2-digit", month: "short" })}
+                      {formatDate(a.lastActivity, { day: "2-digit", month: "short" })}
                     </span>
                   )}
                 </div>

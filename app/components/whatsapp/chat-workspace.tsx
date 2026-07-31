@@ -36,6 +36,8 @@ import { LeadScoreBadge } from "@/app/components/whatsapp/lead-score-badge";
 import { ChatCostBadge } from "@/app/components/whatsapp/chat-cost-badge";
 import { ChatPublicLinkButton } from "@/app/components/whatsapp/chat-public-link-button";
 import { mediaEndpointFor, isImageMime, isAudioMime, isVideoMime } from "@/lib/whatsapp/media-shared";
+import { formatBubbleTime, formatDayDivider, chatDayKey } from "@/lib/whatsapp/chat-format";
+import { formatDate as formatDateTz } from "@/lib/timezone";
 import { EntityAvatar } from "@/app/components/ui/avatar";
 import { hueClassFor } from "@/app/components/ui/hue";
 
@@ -98,36 +100,13 @@ interface Message {
   timestamp: string;
 }
 
+// formatBubbleTime/formatDayDivider viven en lib/whatsapp/chat-format.ts,
+// compartidas con public-chat-view.tsx (link público) — ambas explícitas en
+// CDMX (ver lib/timezone.ts), no en la zona del navegador.
 function formatTime(ts: string): string {
-  const d = new Date(ts);
-  const now = new Date();
-  const isToday = d.toDateString() === now.toDateString();
-  if (isToday) return d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
-  return d.toLocaleDateString("es-MX", { day: "2-digit", month: "short" });
-}
-
-// Bubbles always show a clock time (unlike the sidebar preview's formatTime,
-// which shows a date for older chats) — a day divider carries the date instead,
-// so a message from last week doesn't just silently lose its time-of-day.
-function formatBubbleTime(ts: string): string {
-  return new Date(ts).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
-}
-
-function startOfDay(d: Date): number {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-}
-
-function formatDayDivider(ts: string): string {
-  const d = new Date(ts);
-  const now = new Date();
-  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
-  if (diffDays === 0) return "Hoy";
-  if (diffDays === 1) return "Ayer";
-  return d.toLocaleDateString("es-MX", {
-    day: "2-digit",
-    month: "long",
-    year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
-  });
+  const isToday = chatDayKey(ts) === chatDayKey(new Date().toISOString());
+  if (isToday) return formatBubbleTime(ts);
+  return formatDateTz(ts, { day: "2-digit", month: "short" });
 }
 
 // Deterministic per-account color so the same number always reads with the
@@ -1112,7 +1091,7 @@ export function ChatWorkspace({
                 )}
                 {messages.map((msg, i) => {
                   const prev = messages[i - 1];
-                  const showDivider = !prev || new Date(prev.timestamp).toDateString() !== new Date(msg.timestamp).toDateString();
+                  const showDivider = !prev || chatDayKey(prev.timestamp) !== chatDayKey(msg.timestamp);
                   return (
                     <div key={msg.id}>
                       {showDivider && (

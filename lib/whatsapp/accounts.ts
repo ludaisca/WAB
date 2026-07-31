@@ -20,7 +20,7 @@ export async function countAccountDependents(id: string) {
     prisma.wAChat.count({ where: { accountId: id } }),
     prisma.wATemplate.count({ where: { waAccountId: id } }),
     prisma.wACampaign.count({ where: { waAccountId: id } }),
-    prisma.wABot.count({ where: { waAccountId: id } }),
+    prisma.wABot.count({ where: { accounts: { some: { waAccountId: id } } } }),
     prisma.contact.count({ where: { accountId: id } }),
   ]);
   return { chats, templates, campaigns, bots, contacts };

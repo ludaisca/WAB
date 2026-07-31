@@ -12,6 +12,7 @@ import { EntityAvatar } from "@/app/components/ui/avatar";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { PageHeader } from "@/app/components/ui/page-header";
 import { useToast } from "@/app/components/ui/toast";
+import { formatDateTime } from "@/lib/timezone";
 
 interface Campaign {
   id: string;
@@ -330,7 +331,7 @@ function AutomationTab() {
               meta={
                 <span className="font-mono">
                   {s.lastRunAt
-                    ? `${new Date(s.lastRunAt).toLocaleString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} · ${s.sentTotal} enviado(s) en total`
+                    ? `${formatDateTime(s.lastRunAt, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} · ${s.sentTotal} enviado(s) en total`
                     : "Aún no ha corrido"}
                 </span>
               }

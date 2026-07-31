@@ -220,7 +220,7 @@ model WAAccount {
   chats           WAChat[]
   templates       WATemplate[]
   campaigns       WACampaign[]
-  bots            WABot[]
+  bots            WABotAccount[]
   sharedWith      WAAccountShare[]
   contacts        Contact[]
 
@@ -619,8 +619,6 @@ model WABot {
   id           String        @id @default(cuid())
   userId       String
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  waAccountId  String?
-  waAccount    WAAccount?    @relation(fields: [waAccountId], references: [id], onDelete: SetNull)
   name         String
   provider     String
   model        String
@@ -631,6 +629,26 @@ model WABot {
   memoryLimit  Int           @default(20)
   ragEnabled   Boolean       @default(false)
   humanizeEnabled Boolean    @default(false)
+  // Tool-calling genérico (no atado a un CRM/marca en particular): el bot puede
+  // consultar en vivo el precio real de un producto por código en vez de
+  // inventarlo. priceLookupUrl es la URL base (sin query string); priceLookupParam
+  // es el nombre del query param donde va el código buscado (default "keywords",
+  // editable porque no todas las APIs usan ese nombre); priceLookupExtraQuery es
+  // una query string cruda que se concatena tal cual (ej. "ejecutivephone=123") —
+  // deliberadamente sin editor key/value en la UI, para no sobre-construir un
+  // formulario genérico para una única API de ejemplo (ver lib/whatsapp/bot-tools/price-lookup.ts).
+  priceLookupEnabled    Boolean @default(false)
+  priceLookupUrl        String?
+  priceLookupParam      String  @default("keywords")
+  priceLookupExtraQuery String? @db.Text
+  // Lista curada de SKUs que este bot puede consultar — cada elemento es la
+  // línea cruda tal como la escribió el admin ("CODIGO | Descripción breve").
+  // Vacía = sin restricción (comportamiento previo a esto: el bot usa
+  // cualquier código que crea saber vía RAG). No vacía = la tool de precio
+  // rechaza cualquier código fuera de esta lista antes de tocar la red, y su
+  // descripción para el modelo incluye la lista completa — así el bot ya no
+  // depende del RAG para saber qué códigos existen (ver price-lookup.ts).
+  priceLookupSkus       String[] @default([])
   isActive     Boolean       @default(false)
   status       BotStatus     @default(ACTIVE)
   createdAt    DateTime      @default(now()) @map("created_at")
@@ -639,15 +657,79 @@ model WABot {
   conversations WABotConversation[]
   knowledgeBots WABotKnowledgeBot[]
   usage         WABotUsage[]
+  testConversations WABotTestConversation[]
+  accounts      WABotAccount[]
 
   @@unique([userId, name])
   @@map("wa_bots")
+}
+
+// Un bot puede atender varias cuentas de WhatsApp a la vez (ej. un bot
+// genérico como "General" respondiendo simultáneamente en Lifemedic, Meison
+// y Medicalbuy) y, en teoría, una cuenta podría tener más de un bot vinculado
+// — pero `lib/whatsapp/bots.ts:toggleBot()` sigue exigiendo que como máximo
+// UNO de los bots vinculados a una misma cuenta esté `isActive` a la vez, para
+// no responder dos veces al mismo mensaje entrante (ver ingestInboundMessage,
+// que encola un job por cada bot activo que encuentre para esa cuenta). Mismo
+// patrón que WABotKnowledgeBot (bot↔documento) aplicado ahora a bot↔cuenta.
+model WABotAccount {
+  botId       String
+  bot         WABot     @relation(fields: [botId], references: [id], onDelete: Cascade)
+  waAccountId String
+  waAccount   WAAccount @relation(fields: [waAccountId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@id([botId, waAccountId])
+  @@index([waAccountId])
+  @@map("wa_bot_accounts")
 }
 
 enum BotMemoryType {
   NONE
   RECENT
   SUMMARY
+}
+
+// Conversaciones de prueba desde la pestaña "Probar" de un bot — separadas de
+// WABotConversation (que es 1:1 con un WAChat real) porque acá no hay ningún
+// chat/lead real detrás, solo el admin probando. Calcado de AgentConversation/
+// AgentMessage (el Asistente IA) pero sin toolCalls/actionId: las pruebas no
+// ejecutan nada real, así que no hay nada que confirmar.
+model WABotTestConversation {
+  id            String   @id @default(cuid())
+  botId         String
+  bot           WABot    @relation(fields: [botId], references: [id], onDelete: Cascade)
+  title         String?
+  // Datos de sondeo confirmados por el prospecto de prueba, registrados por el
+  // bot vía la tool "registrar_dato_prospecto" (lib/whatsapp/bot-tools/qualified-data.ts)
+  // — Record<string,string> plano, claves libres decididas por el propio
+  // systemPrompt del bot. Ver WABotConversation.qualifiedData para el
+  // equivalente en conversaciones reales.
+  qualifiedData Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  messages  WABotTestMessage[]
+
+  @@index([botId, updatedAt])
+  @@map("wa_bot_test_conversations")
+}
+
+enum WABotTestRole {
+  USER
+  ASSISTANT
+}
+
+model WABotTestMessage {
+  id             String                @id @default(cuid())
+  conversationId String
+  conversation   WABotTestConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           WABotTestRole
+  content        String                @db.Text
+  createdAt      DateTime              @default(now()) @map("created_at")
+
+  @@index([conversationId, createdAt])
+  @@map("wa_bot_test_messages")
 }
 
 enum BotStatus {
@@ -662,6 +744,16 @@ model WABotConversation {
   waChatId        String
   waChat          WAChat   @relation(fields: [waChatId], references: [id], onDelete: Cascade)
   summary         String?  @db.Text
+  // Datos de sondeo confirmados por el lead a lo largo de la conversación
+  // (nombre, equipo de interés, presupuesto, quién decide, etc. — las claves
+  // las decide libremente cada bot según su propio systemPrompt, no hay un
+  // esquema fijo). El bot los registra vía la tool "registrar_dato_prospecto"
+  // (lib/whatsapp/bot-tools/qualified-data.ts) en vez de tener que
+  // re-derivarlos del historial crudo turno a turno — evita que la condición
+  // de revelar precio/modelo ("¿ya conozco 3 datos de sondeo?") dependa de una
+  // auto-evaluación poco confiable del modelo. Independiente de memoryType:
+  // se trackea aunque el bot use memoria RECENT en vez de SUMMARY.
+  qualifiedData   Json?
 
   @@unique([botId, waChatId])
   @@map("wa_bot_conversations")

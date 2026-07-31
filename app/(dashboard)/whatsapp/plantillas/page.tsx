@@ -13,6 +13,7 @@ import { PageHeader } from "@/app/components/ui/page-header";
 import { EntityList, EntityRow } from "@/app/components/ui/entity-list";
 import { EntityAvatar } from "@/app/components/ui/avatar";
 import { useToast } from "@/app/components/ui/toast";
+import { formatDate } from "@/lib/timezone";
 import { TemplateFormModal } from "./_form";
 import { TemplateMetricsModal } from "@/app/components/whatsapp/template-metrics-modal";
 
@@ -192,7 +193,7 @@ function TemplatesContent() {
                 meta={
                   <>
                     <span className="font-mono">
-                      {new Date(t.syncedAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                      {formatDate(t.syncedAt, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                     </span>
                     <span className="text-accent">Ver métricas →</span>
                   </>

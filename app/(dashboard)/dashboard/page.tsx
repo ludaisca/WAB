@@ -20,7 +20,13 @@ import { EntityAvatar } from "@/app/components/ui/avatar";
 import { IconBox } from "@/app/components/ui/icon-box";
 import { Badge } from "@/app/components/ui/badge";
 import { PageHeader } from "@/app/components/ui/page-header";
+import { formatDate } from "@/lib/timezone";
 
+// Server Component — este render corre una sola vez en el servidor (sin
+// hidratación/corrección del lado del cliente), así que el fallback de fecha
+// debe llevar timeZone explícito o cada visitante vería la hora del servidor
+// (UTC) en vez de CDMX. El "hace X min/h" es agnóstico de zona (solo resta
+// epochs), no necesita el fix.
 function formatTime(ts: Date | null): string {
   if (!ts) return "—";
   const now = new Date();
@@ -31,7 +37,7 @@ function formatTime(ts: Date | null): string {
   if (diffMin < 60) return `Hace ${diffMin} min`;
   const diffH = Math.floor(diffMin / 60);
   if (diffH < 24) return `Hace ${diffH}h`;
-  return ts.toLocaleDateString("es-MX", { day: "2-digit", month: "short" });
+  return formatDate(ts, { day: "2-digit", month: "short" });
 }
 
 export default async function DashboardPage() {

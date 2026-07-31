@@ -36,3 +36,7 @@ Datos Servertxt
 Datos Server.txt
 datos-server.txt
 
+# Backups descargados de /configuracion/backups — pueden pesar cientos de MB,
+# nunca deben ir al repo (usa el propio sistema de backups/S3, no git)
+Respaldos/
+

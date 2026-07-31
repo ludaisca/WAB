@@ -35,13 +35,17 @@ export async function GET(
         memoryLimit: true,
         ragEnabled: true,
         humanizeEnabled: true,
+        priceLookupEnabled: true,
+        priceLookupUrl: true,
+        priceLookupParam: true,
+        priceLookupExtraQuery: true,
+        priceLookupSkus: true,
         isActive: true,
         status: true,
-        waAccountId: true,
         createdAt: true,
         updatedAt: true,
-        waAccount: {
-          select: { id: true, name: true, phoneNumber: true },
+        accounts: {
+          select: { waAccount: { select: { id: true, name: true, phoneNumber: true } } },
         },
         _count: { select: { conversations: true, knowledgeBots: true } },
       },
@@ -76,6 +80,7 @@ export async function PATCH(
 
     const existing = await prisma.wABot.findFirst({
       where: { id, userId: session.user.id },
+      include: { accounts: { select: { waAccountId: true } } },
     });
 
     if (!existing) {
@@ -96,18 +101,29 @@ export async function PATCH(
     const fields = parsed.data;
 
     if (fields.name) data.name = fields.name;
-    if (fields.waAccountId !== undefined) {
-      if (fields.waAccountId) {
+    if (fields.waAccountIds !== undefined) {
+      const existingAccountIds = new Set(existing.accounts.map((a) => a.waAccountId));
+      if (fields.waAccountIds.length) {
         const accountIds = await getUserAccountIds(session.user.id);
-        if (!accountIds.includes(fields.waAccountId)) {
+        const invalid = fields.waAccountIds.find((aid) => !accountIds.includes(aid));
+        if (invalid) {
           return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
         }
-        // Reasignar un bot YA activo a otra cuenta que también tiene un bot
-        // activo produciría el mismo doble-respuesta que /toggle ya evita —
-        // este es el otro único punto donde waAccountId cambia.
-        if (existing.isActive && existing.status === "ACTIVE" && fields.waAccountId !== existing.waAccountId) {
+      }
+      // Reasignar un bot YA activo a una cuenta que también tiene otro bot
+      // activo produciría el mismo doble-respuesta que /toggle ya evita — solo
+      // hace falta revisar las cuentas NUEVAS que este bot no tenía antes
+      // (una cuenta que ya estaba vinculada no es un conflicto nuevo).
+      if (existing.isActive && existing.status === "ACTIVE") {
+        const newAccountIds = fields.waAccountIds.filter((aid) => !existingAccountIds.has(aid));
+        if (newAccountIds.length) {
           const conflict = await prisma.wABot.findFirst({
-            where: { waAccountId: fields.waAccountId, isActive: true, status: "ACTIVE", id: { not: id } },
+            where: {
+              accounts: { some: { waAccountId: { in: newAccountIds } } },
+              isActive: true,
+              status: "ACTIVE",
+              id: { not: id },
+            },
             select: { name: true },
           });
           if (conflict) {
@@ -118,7 +134,10 @@ export async function PATCH(
           }
         }
       }
-      data.waAccountId = fields.waAccountId || null;
+      data.accounts = {
+        deleteMany: {},
+        create: fields.waAccountIds.map((waAccountId) => ({ waAccountId })),
+      };
     }
     if (fields.provider) data.provider = fields.provider;
     if (fields.model) data.model = fields.model;
@@ -129,6 +148,11 @@ export async function PATCH(
     if (fields.memoryLimit !== undefined) data.memoryLimit = fields.memoryLimit;
     if (fields.ragEnabled !== undefined) data.ragEnabled = fields.ragEnabled;
     if (fields.humanizeEnabled !== undefined) data.humanizeEnabled = fields.humanizeEnabled;
+    if (fields.priceLookupEnabled !== undefined) data.priceLookupEnabled = fields.priceLookupEnabled;
+    if (fields.priceLookupUrl !== undefined) data.priceLookupUrl = fields.priceLookupUrl || null;
+    if (fields.priceLookupParam !== undefined) data.priceLookupParam = fields.priceLookupParam || "keywords";
+    if (fields.priceLookupExtraQuery !== undefined) data.priceLookupExtraQuery = fields.priceLookupExtraQuery || null;
+    if (fields.priceLookupSkus !== undefined) data.priceLookupSkus = fields.priceLookupSkus;
 
     const updated = await prisma.wABot.update({
       where: { id },
@@ -145,9 +169,14 @@ export async function PATCH(
         memoryLimit: true,
         ragEnabled: true,
         humanizeEnabled: true,
+        priceLookupEnabled: true,
+        priceLookupUrl: true,
+        priceLookupParam: true,
+        priceLookupExtraQuery: true,
+        priceLookupSkus: true,
         isActive: true,
         status: true,
-        waAccountId: true,
+        accounts: { select: { waAccount: { select: { id: true, name: true, phoneNumber: true } } } },
         createdAt: true,
         updatedAt: true,
       },

@@ -1,21 +1,24 @@
 import { promises as fs } from "fs";
 import { prisma } from "@/lib/prisma";
 import { sendWhatsAppMessage } from "@/lib/whatsapp/send";
-import { getAIProvider } from "@/lib/ai/factory";
-import { searchKnowledge } from "@/lib/ai/rag";
 import { getUserApiKey } from "@/lib/ai/settings";
 import { estimateCost } from "@/lib/ai/pricing";
-import { wrapUserPrompt, SCOPE_GUARDRAIL } from "@/lib/ai/prompt-sanitizer";
 import { checkBudgetAlert, isMonthlyBudgetExceeded } from "@/lib/ai/budget";
 import { resolveAbsolutePath } from "@/lib/whatsapp/media-store";
 import { extractDocumentText } from "@/lib/whatsapp/extract-document-text";
 import { splitReply, computeTypingDelay } from "@/lib/whatsapp/humanize";
 import { summarizeText } from "@/lib/ai/summarize";
 import { botSendQueue } from "@/lib/queue";
+import { generateBotReply } from "@/lib/whatsapp/bot-tools/generate-reply";
 import type { AIProvider, AIMessage, ContentPart } from "@/lib/ai/types";
 
 interface BotMessageJob {
   botId: string;
+  // La cuenta de WhatsApp específica de este mensaje entrante — un bot puede
+  // estar vinculado a varias cuentas (WABotAccount), así que ya no se puede
+  // derivar "la" cuenta del bot; ingestInboundMessage() la conoce en el
+  // momento de encolar y la manda explícita.
+  accountId: string;
   waChatId: string;
   incomingMessage: string;
   messageId?: string;
@@ -49,6 +52,7 @@ export async function processBotMessageJob(
     }
     await failBotAndNotify(
       job.botId,
+      job.accountId,
       job.waChatId,
       err instanceof Error ? err.message : "Error desconocido"
     );
@@ -59,7 +63,7 @@ export async function processBotMessageJob(
 // failed — after retries are exhausted (or immediately for a non-retryable
 // failure like a missing API key), mark the bot ERROR, notify the team, and
 // still attempt a graceful hand-off message so the lead gets a reply either way.
-async function failBotAndNotify(botId: string, waChatId: string, errorMessage: string) {
+async function failBotAndNotify(botId: string, accountId: string, waChatId: string, errorMessage: string) {
   const bot = await prisma.wABot
     .update({ where: { id: botId }, data: { status: "ERROR" } })
     .catch(() => null);
@@ -70,24 +74,25 @@ async function failBotAndNotify(botId: string, waChatId: string, errorMessage: s
         type: "BOT_ERROR",
         title: `Bot "${bot.name}" con error`,
         body: errorMessage.slice(0, 200),
-        link: `/whatsapp/chat/${bot.waAccountId}/${waChatId}`,
+        link: `/whatsapp/chat/${accountId}/${waChatId}`,
       },
     });
   }
-  await sendFallbackReply(botId, waChatId);
+  await sendFallbackReply(botId, accountId, waChatId);
 }
 
 const FALLBACK_REPLY =
   "Gracias por tu mensaje. Estamos teniendo un inconveniente técnico en este momento — un miembro de nuestro equipo te contactará en breve para continuar la conversación.";
 
-async function sendFallbackReply(botId: string, waChatId: string) {
+async function sendFallbackReply(botId: string, accountId: string, waChatId: string) {
   try {
-    const bot = await prisma.wABot.findUnique({ where: { id: botId }, include: { waAccount: true } });
+    const bot = await prisma.wABot.findUnique({ where: { id: botId } });
+    const account = await prisma.wAAccount.findUnique({ where: { id: accountId } });
     const chat = await prisma.wAChat.findUnique({ where: { id: waChatId }, select: { remoteJid: true } });
-    if (!bot?.waAccount || !chat) return;
+    if (!bot || !account || !chat) return;
 
     const now = new Date();
-    const sendResult = await sendWhatsAppMessage(bot.waAccount, {
+    const sendResult = await sendWhatsAppMessage(account, {
       to: chat.remoteJid,
       type: "text",
       body: FALLBACK_REPLY,
@@ -119,14 +124,14 @@ async function sendFallbackReply(botId: string, waChatId: string) {
 }
 
 async function handleBotMessage(job: BotMessageJob) {
-  const { botId, waChatId, incomingMessage } = job;
+  const { botId, accountId, waChatId, incomingMessage } = job;
 
-  const bot = await prisma.wABot.findUnique({
-    where: { id: botId },
-    include: { waAccount: true },
-  });
+  const bot = await prisma.wABot.findUnique({ where: { id: botId } });
+  // La cuenta se resuelve por el accountId del mensaje entrante, no por el bot
+  // — un bot puede estar vinculado a varias cuentas (WABotAccount) a la vez.
+  const account = await prisma.wAAccount.findUnique({ where: { id: accountId } });
 
-  if (!bot || !bot.isActive || bot.status !== "ACTIVE" || !bot.waAccount) return;
+  if (!bot || !bot.isActive || bot.status !== "ACTIVE" || !account) return;
 
   // Mismo gate que lead-scoring y lead-recovery: con el presupuesto mensual ya
   // agotado, el bot deja de responder (sin marcar ERROR — no es una falla del
@@ -141,7 +146,7 @@ async function handleBotMessage(job: BotMessageJob) {
   const apiKey = await getUserApiKey(bot.userId, provider);
 
   if (!apiKey) {
-    await failBotAndNotify(botId, waChatId, "Configura la clave del proveedor de IA en Configuración.");
+    await failBotAndNotify(botId, accountId, waChatId, "Configura la clave del proveedor de IA en Configuración.");
     return;
   }
 
@@ -156,22 +161,6 @@ async function handleBotMessage(job: BotMessageJob) {
     update: {},
   });
 
-  const messages: AIMessage[] = [];
-  messages.push({ role: "system", content: wrapUserPrompt(bot.systemPrompt) });
-  messages.push({ role: "system", content: SCOPE_GUARDRAIL });
-
-  if (bot.ragEnabled) {
-    const ragQuery =
-      job.caption ?? (incomingMessage && incomingMessage !== `[${job.messageType}]` ? incomingMessage : job.messageType ?? "");
-    const knowledge = await searchKnowledge(botId, ragQuery, provider, apiKey);
-    if (knowledge) {
-      messages.push({
-        role: "system",
-        content: `Información relevante de la base de conocimiento:\n\n${knowledge}`,
-      });
-    }
-  }
-
   // Regardless of memoryType, if the most recent outbound message in this chat came
   // from a campaign send, tell the bot what the customer is replying to — otherwise
   // it replies "blind" to a lead who just received a specific marketing offer.
@@ -183,18 +172,20 @@ async function handleBotMessage(job: BotMessageJob) {
       campaign: { select: { name: true, waTemplate: { select: { name: true } } } },
     },
   });
+
+  const extraSystemNotes: string[] = [];
   if (lastOutbound?.campaign) {
     const exactMessage = lastOutbound.body
       ? `\n\nEl mensaje exacto que recibió el cliente fue:\n"${lastOutbound.body}"`
       : "";
-    messages.push({
-      role: "system",
-      content: `Esta conversación inició a partir de la campaña "${lastOutbound.campaign.name}" usando la plantilla "${lastOutbound.campaign.waTemplate.name}".${exactMessage}\n\nTen este contenido en cuenta al responder — el cliente puede estar reaccionando directamente a este mensaje.`,
-    });
+    extraSystemNotes.push(
+      `Esta conversación inició a partir de la campaña "${lastOutbound.campaign.name}" usando la plantilla "${lastOutbound.campaign.waTemplate.name}".${exactMessage}\n\nTen este contenido en cuenta al responder — el cliente puede estar reaccionando directamente a este mensaje.`
+    );
   }
 
+  const history: AIMessage[] = [];
   if (bot.memoryType === "RECENT" && bot.memoryLimit > 0) {
-    const history = await prisma.wAMessage.findMany({
+    const pastMessages = await prisma.wAMessage.findMany({
       // Exclude the message currently being processed — it's already appended below as
       // the final user turn via buildUserContent(); without this it shows up twice
       // (once here from the desc-ordered fetch, once as the "current" turn).
@@ -213,19 +204,19 @@ async function handleBotMessage(job: BotMessageJob) {
 
     // Reverse to chronological order; build user/assistant turns preserving plain text
     // (historical images are NOT forwarded to keep token cost bounded).
-    for (const msg of history.reverse()) {
+    for (const msg of pastMessages.reverse()) {
       const textPart = msg.caption ?? msg.body;
       if (!textPart) {
         if (msg.messageType && msg.messageType !== "text") {
           // Pure media without caption — describe it briefly so the bot has context.
-          messages.push({
+          history.push({
             role: msg.direction === "INBOUND" ? "user" : "assistant",
             content: `[${msg.messageType}]`,
           });
         }
         continue;
       }
-      messages.push({
+      history.push({
         role: msg.direction === "INBOUND" ? "user" : "assistant",
         content: textPart,
       });
@@ -233,24 +224,27 @@ async function handleBotMessage(job: BotMessageJob) {
   }
 
   if (bot.memoryType === "SUMMARY" && conversation.summary) {
-    messages.push({
-      role: "system",
-      content: `Resumen de la conversación anterior:\n${conversation.summary}`,
-    });
+    extraSystemNotes.push(`Resumen de la conversación anterior:\n${conversation.summary}`);
   }
 
   // Build the user turn — embed the latest image/audio inline, or the extracted text of a
   // document, if present and the provider/media type combination supports it.
   const userContent = await buildUserContent(job, provider);
-  messages.push({ role: "user", content: userContent });
 
-  const client = getAIProvider(provider, apiKey);
-  const result = await client.complete({
-    model: bot.model,
-    messages,
-    temperature: bot.temperature,
-    maxTokens: bot.maxTokens,
+  const ragQuery =
+    job.caption ?? (incomingMessage && incomingMessage !== `[${job.messageType}]` ? incomingMessage : job.messageType ?? "");
+
+  const replyResult = await generateBotReply({
+    bot,
+    provider,
+    apiKey,
+    ragQuery,
+    extraSystemNotes,
+    history,
+    userContent,
+    qualifiedData: (conversation.qualifiedData as Record<string, string> | null) ?? undefined,
   });
+  const result = { content: replyResult.content, usage: replyResult.usage ?? undefined };
 
   const chat = await prisma.wAChat.findUnique({
     where: { id: waChatId },
@@ -279,7 +273,7 @@ async function handleBotMessage(job: BotMessageJob) {
         cumulativeDelay += computeTypingDelay(chunk);
         await botSendQueue.add(
           "send-chunk",
-          { accountId: bot.waAccount.id, waChatId, remoteJid: chat.remoteJid, chunk },
+          { accountId, waChatId, remoteJid: chat.remoteJid, chunk },
           { delay: cumulativeDelay }
         );
       }
@@ -294,12 +288,12 @@ async function handleBotMessage(job: BotMessageJob) {
           type: "BOT_ERROR",
           title: `Bot "${bot.name}" — envío incompleto`,
           body: "Una respuesta dividida en varios mensajes no se terminó de encolar — revisa la conexión con Redis.",
-          link: `/whatsapp/chat/${bot.waAccount.id}/${waChatId}`,
+          link: `/whatsapp/chat/${accountId}/${waChatId}`,
         },
       });
     }
   } else {
-    const sendResult = await sendWhatsAppMessage(bot.waAccount, {
+    const sendResult = await sendWhatsAppMessage(account, {
       to: chat.remoteJid,
       type: "text",
       body: result.content,
@@ -328,22 +322,28 @@ async function handleBotMessage(job: BotMessageJob) {
   }
 
   await Promise.all([
-    bot.memoryType === "SUMMARY"
-      ? prisma.wABotConversation.update({
-          where: { id: conversation.id },
-          data: {
-            // El resumen debe acumular AMBOS lados del turno — solo con las
-            // respuestas del bot, la "memoria" olvidaba todo lo que el
-            // cliente dijo.
-            summary: summarizeText(
-              `Cliente: ${job.caption ?? incomingMessage}\nAsistente: ${result.content}`,
-              conversation.summary
-            ),
-          },
-        })
-      : Promise.resolve(),
+    // qualifiedData se persiste siempre (independiente de memoryType) — el
+    // sondeo del prospecto no depende de qué tipo de memoria de historial usa
+    // el bot. summary solo se actualiza si el bot usa memoria SUMMARY.
+    prisma.wABotConversation.update({
+      where: { id: conversation.id },
+      data: {
+        qualifiedData: replyResult.qualifiedData,
+        ...(bot.memoryType === "SUMMARY"
+          ? {
+              // El resumen debe acumular AMBOS lados del turno — solo con las
+              // respuestas del bot, la "memoria" olvidaba todo lo que el
+              // cliente dijo.
+              summary: summarizeText(
+                `Cliente: ${job.caption ?? incomingMessage}\nAsistente: ${result.content}`,
+                conversation.summary
+              ),
+            }
+          : {}),
+      },
+    }),
     prisma.wAAccount.update({
-      where: { id: bot.waAccount.id },
+      where: { id: accountId },
       data: { lastActivity: now },
     }),
     (async () => {

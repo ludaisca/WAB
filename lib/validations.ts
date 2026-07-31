@@ -81,7 +81,10 @@ export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 
 export const botSchema = z.object({
   name: z.string().min(1, "El nombre es requerido").max(100),
-  waAccountId: z.string().min(1).optional().nullable(),
+  // Un bot puede responder por varias cuentas de WhatsApp a la vez (ej. el bot
+  // "General" atendiendo Lifemedic + Meison + Medicalbuy) — ver WABotAccount
+  // en el schema. Vacío/ausente = sin cuenta, solo usable en la pestaña "Probar".
+  waAccountIds: z.array(z.string().min(1)).optional(),
   provider: z.enum(["openrouter", "google"], { message: "Proveedor inválido" }),
   model: z.string().min(1, "El modelo es requerido"),
   systemPrompt: z.string().min(1, "El prompt del sistema es requerido"),
@@ -91,6 +94,11 @@ export const botSchema = z.object({
   memoryLimit: z.number().min(1).max(100).optional(),
   ragEnabled: z.boolean().optional(),
   humanizeEnabled: z.boolean().optional(),
+  priceLookupEnabled: z.boolean().optional(),
+  priceLookupUrl: z.union([z.string().url("URL inválida"), z.literal("")]).optional().nullable(),
+  priceLookupParam: z.string().min(1).max(100).optional(),
+  priceLookupExtraQuery: z.string().max(2000).optional().nullable(),
+  priceLookupSkus: z.array(z.string().min(1)).optional(),
 });
 
 export const botUpdateSchema = botSchema.partial();

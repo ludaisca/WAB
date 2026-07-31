@@ -7,6 +7,7 @@ import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { Textarea } from "@/app/components/ui/textarea";
 import { Select } from "@/app/components/ui/select";
+import { MultiSelect } from "@/app/components/ui/multi-select";
 import { FormField } from "@/app/components/ui/form-field";
 import { Switch } from "@/app/components/ui/switch";
 import { Banner } from "@/app/components/ui/banner";
@@ -40,7 +41,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
   const { success, error: toastError } = useToast();
 
   const [name, setName] = useState("");
-  const [waAccountId, setWaAccountId] = useState("");
+  const [waAccountIds, setWaAccountIds] = useState<string[]>([]);
   const [provider, setProvider] = useState("openrouter");
   const [model, setModel] = useState("google/gemini-2.5-flash");
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -50,6 +51,11 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
   const [memoryLimit, setMemoryLimit] = useState("20");
   const [ragEnabled, setRagEnabled] = useState(false);
   const [humanizeEnabled, setHumanizeEnabled] = useState(false);
+  const [priceLookupEnabled, setPriceLookupEnabled] = useState(false);
+  const [priceLookupUrl, setPriceLookupUrl] = useState("");
+  const [priceLookupParam, setPriceLookupParam] = useState("keywords");
+  const [priceLookupExtraQuery, setPriceLookupExtraQuery] = useState("");
+  const [priceLookupSkusText, setPriceLookupSkusText] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -62,7 +68,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
 
   const resetForm = useCallback(() => {
     setName("");
-    setWaAccountId("");
+    setWaAccountIds([]);
     setProvider("openrouter");
     setModel("google/gemini-2.5-flash");
     setSystemPrompt("");
@@ -72,6 +78,11 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
     setMemoryLimit("20");
     setRagEnabled(false);
     setHumanizeEnabled(false);
+    setPriceLookupEnabled(false);
+    setPriceLookupUrl("");
+    setPriceLookupParam("keywords");
+    setPriceLookupExtraQuery("");
+    setPriceLookupSkusText("");
     setErrors({});
     setError("");
   }, []);
@@ -130,7 +141,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
       .then((d) => {
         if (d.name) {
           setName(d.name);
-          setWaAccountId(d.waAccountId ?? "");
+          setWaAccountIds((d.accounts ?? []).map((a: { waAccount: { id: string } }) => a.waAccount.id));
           setProvider(d.provider);
           setModel(d.model);
           setSystemPrompt(d.systemPrompt);
@@ -140,6 +151,11 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
           setMemoryLimit(String(d.memoryLimit ?? 20));
           setRagEnabled(d.ragEnabled);
           setHumanizeEnabled(d.humanizeEnabled ?? false);
+          setPriceLookupEnabled(d.priceLookupEnabled ?? false);
+          setPriceLookupUrl(d.priceLookupUrl ?? "");
+          setPriceLookupParam(d.priceLookupParam ?? "keywords");
+          setPriceLookupExtraQuery(d.priceLookupExtraQuery ?? "");
+          setPriceLookupSkusText((d.priceLookupSkus ?? []).join("\n"));
         }
       })
       .catch(() => toastError("Error al cargar bot"))
@@ -187,7 +203,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
     try {
       const body = {
         name: name.trim(),
-        waAccountId: waAccountId || null,
+        waAccountIds,
         provider,
         model,
         systemPrompt: systemPrompt.trim(),
@@ -197,6 +213,11 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
         memoryLimit: Number(memoryLimit),
         ragEnabled,
         humanizeEnabled,
+        priceLookupEnabled,
+        priceLookupUrl: priceLookupUrl.trim() || null,
+        priceLookupParam: priceLookupParam.trim() || "keywords",
+        priceLookupExtraQuery: priceLookupExtraQuery.trim() || null,
+        priceLookupSkus: priceLookupSkusText.split("\n").map((v) => v.trim()).filter(Boolean),
       };
 
       const url = isEditing ? `/api/whatsapp/bots/${editId}` : "/api/whatsapp/bots";
@@ -246,14 +267,15 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
                 <Input id={id} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Soporte IA" error={errors.name} />
               )}
             </FormField>
-            <FormField label="Cuenta WhatsApp" hint="Opcional — sin cuenta el bot solo se puede usar en la pestaña «Probar», no responderá mensajes reales.">
+            <FormField label="Cuentas WhatsApp" hint="Opcional y puedes elegir varias — el mismo bot puede responder por distintas cuentas a la vez. Sin ninguna, el bot solo se puede usar en la pestaña «Probar».">
               {(id) => (
-                <Select id={id} value={waAccountId} onChange={(e) => setWaAccountId(e.target.value)}>
-                  <option value="">Sin cuenta (solo pruebas)</option>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
-                  ))}
-                </Select>
+                <MultiSelect
+                  id={id}
+                  value={waAccountIds}
+                  onChange={setWaAccountIds}
+                  placeholder="Sin cuenta (solo pruebas)"
+                  options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+                />
               )}
             </FormField>
           </div>
@@ -354,6 +376,47 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
               </div>
               <Switch checked={humanizeEnabled} onCheckedChange={setHumanizeEnabled} />
             </div>
+
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <p className="text-sm font-medium">Consulta de precio en tiempo real</p>
+                <p className="text-xs text-muted-darker">El bot puede consultar una API externa para dar precios reales en vez de inventarlos</p>
+              </div>
+              <Switch checked={priceLookupEnabled} onCheckedChange={setPriceLookupEnabled} />
+            </div>
+            {priceLookupEnabled && (
+              <div className="space-y-4 pl-1">
+                <FormField label="URL de la API" hint="GET, sin autenticación. Ej: https://crmc.limenka360.com/agents/search-product">
+                  {(id) => (
+                    <Input id={id} value={priceLookupUrl} onChange={(e) => setPriceLookupUrl(e.target.value)} placeholder="https://..." />
+                  )}
+                </FormField>
+                <FormField label="Nombre del parámetro de búsqueda" hint="Query param donde el bot manda el código del producto">
+                  {(id) => (
+                    <Input id={id} value={priceLookupParam} onChange={(e) => setPriceLookupParam(e.target.value)} placeholder="keywords" />
+                  )}
+                </FormField>
+                <FormField label="Parámetros fijos adicionales" hint="Query string cruda, se concatena tal cual. Ej: ejecutivephone=5636791648">
+                  {(id) => (
+                    <Input id={id} value={priceLookupExtraQuery} onChange={(e) => setPriceLookupExtraQuery(e.target.value)} placeholder="clave=valor&otra=valor" />
+                  )}
+                </FormField>
+                <FormField
+                  label="Códigos de producto (SKU)"
+                  hint="Uno por línea: CODIGO | Descripción breve. Vacío = sin restricción, el bot usa lo que sepa por RAG."
+                >
+                  {(id) => (
+                    <Textarea
+                      id={id}
+                      value={priceLookupSkusText}
+                      onChange={(e) => setPriceLookupSkusText(e.target.value)}
+                      placeholder={"EBIT50-1 | Ebit50 Con 1 Tx (convexo, lineal o vaginal)\nEBIT50-2 | Ebit50 Con 2 Tx"}
+                      rows={4}
+                    />
+                  )}
+                </FormField>
+              </div>
+            )}
           </div>
         </div>
       )}

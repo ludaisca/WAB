@@ -5,16 +5,11 @@ import { getUserApiKey } from "@/lib/ai/settings";
 import { estimateCost } from "@/lib/ai/pricing";
 import { wrapUserPrompt, SCOPE_GUARDRAIL } from "@/lib/ai/prompt-sanitizer";
 import { isWithinServiceWindow } from "@/lib/whatsapp/service-window";
+import { localHourInTz } from "@/lib/timezone";
 import type { AIProvider, AIMessage } from "@/lib/ai/types";
 import type { WABot, WAAccount } from "@prisma/client";
 
 const HISTORY_LIMIT = 12;
-
-function localHourInTz(date: Date, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone, hour12: false, hour: "2-digit" }).formatToParts(date);
-  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
-  return hour % 24;
-}
 
 export function isWithinBusinessHours(
   now: Date,
@@ -42,15 +37,17 @@ interface RecoveryChat {
   remoteJid: string;
 }
 
-type RecoveryBot = WABot & { waAccount: WAAccount | null };
-
 // Generates (via the same bot that already talks to this lead) and sends a
 // reactivation message, then logs it as a WAMessage + WALeadRecoveryAttempt.
 // Throws on failure — the caller (the tick worker) catches per-chat so one
 // bad send doesn't abort the whole batch.
 export async function sendRecoveryMessage(
   chat: RecoveryChat,
-  bot: RecoveryBot,
+  bot: WABot,
+  // La cuenta se pasa aparte del bot — un bot puede estar vinculado a varias
+  // cuentas (WABotAccount) a la vez, así que ya no hay "la" cuenta del bot;
+  // el llamador (el worker) sabe cuál es la cuenta de este chat en particular.
+  waAccount: WAAccount,
   attemptNumber: 1 | 2,
   lastInboundAt: Date,
   now: Date
@@ -59,11 +56,6 @@ export async function sendRecoveryMessage(
     throw new Error(
       `Ventana de 24h de Meta ya cerrada para el chat ${chat.id} — se omite el mensaje de reactivación (no hay plantilla configurada todavía)`
     );
-  }
-
-  const waAccount = bot.waAccount;
-  if (!waAccount) {
-    throw new Error(`Bot "${bot.name}" no tiene una cuenta de WhatsApp asociada`);
   }
 
   const provider = bot.provider as AIProvider;

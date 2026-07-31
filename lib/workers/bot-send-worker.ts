@@ -65,7 +65,7 @@ export async function processBotSendJob(
     // notifica vía failBotAndNotify en bot-worker.ts).
     console.error("[bot-send-worker] Un chunk agotó sus reintentos sin poder enviarse:", err);
     const bot = await prisma.wABot.findFirst({
-      where: { waAccountId: job.accountId, isActive: true, status: "ACTIVE" },
+      where: { accounts: { some: { waAccountId: job.accountId } }, isActive: true, status: "ACTIVE" },
     });
     if (bot) {
       await prisma.notification.create({

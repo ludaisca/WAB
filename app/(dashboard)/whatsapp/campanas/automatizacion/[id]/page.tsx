@@ -18,6 +18,7 @@ import { Input } from "@/app/components/ui/input";
 import { Banner } from "@/app/components/ui/banner";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
+import { formatDateTime } from "@/lib/timezone";
 
 interface SourceDetail {
   id: string;
@@ -262,13 +263,13 @@ export default function LeadSheetSourceDetailPage() {
           // lectura equivocada de fechas ambiguas (07/03 = 7 de marzo o 3 de julio).
           render: (r: ImportedRow) => (
             <span className="font-mono text-xs">
-              {r.leadDate ? new Date(r.leadDate).toLocaleString("es-MX") : r.leadDateRaw || "—"}
+              {r.leadDate ? formatDateTime(r.leadDate) : r.leadDateRaw || "—"}
             </span>
           ),
         }]
       : []),
     { key: "errorMessage", header: "Detalle", render: (r) => <span className="text-xs text-muted-darker">{r.errorMessage || "—"}</span>, hideBelow: "sm" },
-    { key: "importedAt", header: "Sincronizado", render: (r) => <span className="text-xs text-muted-darker">{new Date(r.importedAt).toLocaleString("es-MX")}</span> },
+    { key: "importedAt", header: "Sincronizado", render: (r) => <span className="text-xs text-muted-darker">{formatDateTime(r.importedAt)}</span> },
   ];
 
   if (loading) {
@@ -396,7 +397,7 @@ export default function LeadSheetSourceDetailPage() {
               )}
               <div className="flex justify-between gap-4">
                 <dt className="text-muted-darker">Última corrida</dt>
-                <dd className="text-xs">{source.lastRunAt ? new Date(source.lastRunAt).toLocaleString("es-MX") : "Nunca"}</dd>
+                <dd className="text-xs">{source.lastRunAt ? formatDateTime(source.lastRunAt) : "Nunca"}</dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-muted-darker">Enviados en la última corrida</dt>

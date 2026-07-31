@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { startOfDayInTz, startOfMonthInTz } from "@/lib/timezone";
 
 export async function GET(
   _req: Request,
@@ -50,8 +51,8 @@ export async function GET(
       }),
     ]);
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const today = startOfDayInTz(now);
 
     const todayUsage = await prisma.wABotUsage.aggregate({
       where: {
@@ -64,7 +65,7 @@ export async function GET(
       },
     });
 
-    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const monthStart = startOfMonthInTz(now);
     const monthUsage = await prisma.wABotUsage.aggregate({
       where: {
         botId: id,

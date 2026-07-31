@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { isWithinBusinessHours } from "@/lib/whatsapp/lead-recovery";
 import { isRevokedGrantError } from "@/lib/google/errors";
 import { importNewLeadsForSource, type SourceWithRelations } from "@/lib/google/lead-sheet-import";
+import { MEXICO_CITY_TZ } from "@/lib/timezone";
 import type { AppSettings } from "@prisma/client";
 
 export async function processLeadSheetImportTick() {
@@ -21,7 +22,7 @@ export async function processLeadSheetImportTick() {
   // un lead de Facebook Ads espera respuesta rápida, pero fuera del horario del
   // negocio se prefiere esperar al siguiente tick dentro de horario en vez de
   // mandar una plantilla a medianoche.
-  const defaultBusinessHours = { timezone: "America/Mexico_City", startHour: 8, endHour: 20 };
+  const defaultBusinessHours = { timezone: MEXICO_CITY_TZ, startHour: 8, endHour: 20 };
 
   for (const source of sources as SourceWithRelations[]) {
     const settings = settingsByUser.get(source.userId);

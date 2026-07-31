@@ -64,7 +64,7 @@ export async function findUnassignedLeadChats(userId: string, now: Date): Promis
   const accountsWithoutBot = await prisma.wAAccount.findMany({
     where: {
       id: { in: accountIds },
-      bots: { none: { isActive: true, status: "ACTIVE" } },
+      bots: { none: { bot: { isActive: true, status: "ACTIVE" } } },
     },
     select: { id: true },
   });

@@ -105,7 +105,14 @@ export function createGoogleClient(apiKey: string) {
       if (m.role === "assistant" && m.toolCalls?.length) {
         return {
           role: "model" as GoogleRole,
-          parts: m.toolCalls.map((tc) => ({ functionCall: { name: tc.name, args: tc.arguments } })),
+          // thoughtSignature va SIBLING a functionCall dentro de la misma parte
+          // (no anidado) — Gemini 3 rechaza con 400 una parte functionCall
+          // replayada en el historial si le falta (ver AIToolCall.thoughtSignature).
+          // Ausente en Gemini 2.x/OpenRouter, así que se omite si no vino.
+          parts: m.toolCalls.map((tc) => ({
+            functionCall: { name: tc.name, args: tc.arguments },
+            ...(tc.thoughtSignature ? { thoughtSignature: tc.thoughtSignature } : {}),
+          })),
         };
       }
       if (m.role === "tool" && m.toolResults?.length) {
@@ -155,8 +162,24 @@ export function createGoogleClient(apiKey: string) {
     // (único dentro de la respuesta, que es todo lo que necesita el orchestrator
     // para emparejar cada AIToolResult de vuelta con su llamada).
     const calls = result.response.functionCalls();
+    // functionCalls() (el helper de conveniencia del SDK) descarta thoughtSignature
+    // — hay que releerlo de las partes crudas de la respuesta. Mismo orden que
+    // functionCalls() (ambos recorren candidates[0].content.parts en secuencia
+    // filtrando solo las que traen functionCall), así que emparejar por índice
+    // es seguro. Campo nuevo de Gemini 3 (ver AIToolCall.thoughtSignature) — el
+    // SDK instalado no lo tipa todavía, de ahí el cast.
+    const rawParts = (result.response.candidates?.[0]?.content?.parts ?? []) as Array<{
+      functionCall?: unknown;
+      thoughtSignature?: string;
+    }>;
+    const signatures = rawParts.filter((p) => p.functionCall).map((p) => p.thoughtSignature);
     const toolCalls: AIToolCall[] | undefined = calls?.length
-      ? calls.map((c, i) => ({ id: `${c.name}_${i}`, name: c.name, arguments: c.args as Record<string, unknown> }))
+      ? calls.map((c, i) => ({
+          id: `${c.name}_${i}`,
+          name: c.name,
+          arguments: c.args as Record<string, unknown>,
+          thoughtSignature: signatures[i],
+        }))
       : undefined;
 
     return {

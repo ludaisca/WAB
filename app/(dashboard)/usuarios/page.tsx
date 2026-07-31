@@ -10,6 +10,7 @@ import { EntityList, EntityRow } from "@/app/components/ui/entity-list";
 import { EntityAvatar } from "@/app/components/ui/avatar";
 import { useToast } from "@/app/components/ui/toast";
 import { UserFormModal } from "./_form";
+import { formatDate } from "@/lib/timezone";
 
 interface UserData {
   id: string;
@@ -119,7 +120,7 @@ export default function UsersPage() {
               }
               meta={
                 <span className="font-mono">
-                  {new Date(u.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}
+                  {formatDate(u.createdAt, { day: "2-digit", month: "short", year: "numeric" })}
                 </span>
               }
             />

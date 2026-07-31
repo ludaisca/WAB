@@ -20,6 +20,7 @@ import { Checkbox } from "@/app/components/ui/checkbox";
 import { RadioGroup } from "@/app/components/ui/radio";
 import { useToast } from "@/app/components/ui/toast";
 import { toCsv, downloadCsv } from "@/lib/csv";
+import { formatDateTime } from "@/lib/timezone";
 import { EXPORT_COLUMNS, labelText, type LeadScoreRow } from "@/lib/whatsapp/export-columns";
 import { LeadScorerFormModal } from "./_form";
 
@@ -465,7 +466,7 @@ function LeadsTab() {
       cellClassName: "text-right",
       render: (r) => (
         <span className="text-xs text-muted-darker">
-          {new Date(r.updatedAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })}
+          {formatDateTime(r.updatedAt)}
         </span>
       ),
     },
@@ -563,7 +564,7 @@ function LeadsTab() {
                     </div>
                     <p className="text-xs text-muted-darker line-clamp-2">{r.summary}</p>
                     <p className="text-[11px] text-muted-darker">
-                      {new Date(r.updatedAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })}
+                      {formatDateTime(r.updatedAt)}
                     </p>
                   </div>
                 </div>
@@ -589,7 +590,7 @@ function LeadsTab() {
             <div className="flex items-center justify-between">
               <Badge tone={labelTone(detailRow.label)}>{labelText(detailRow.label)} · {detailRow.score}/100</Badge>
               <span className="text-xs text-muted-darker">
-                {new Date(detailRow.updatedAt).toLocaleString("es-MX", { dateStyle: "long", timeStyle: "short" })}
+                {formatDateTime(detailRow.updatedAt, { dateStyle: "long", timeStyle: "short" })}
               </span>
             </div>
             <dl className="grid grid-cols-2 gap-3 text-sm">

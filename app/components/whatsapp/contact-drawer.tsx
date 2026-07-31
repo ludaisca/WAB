@@ -11,6 +11,7 @@ import { Input } from "@/app/components/ui/input";
 import { Button } from "@/app/components/ui/button";
 import { Spinner } from "@/app/components/ui/spinner";
 import { useToast } from "@/app/components/ui/toast";
+import { formatDate } from "@/lib/timezone";
 
 interface ContactDetail {
   id: string;
@@ -258,7 +259,7 @@ export function ContactDrawer({
                   <div key={note.id} className="rounded-lg border border-border bg-surface-light p-3">
                     <p className="text-sm text-foreground whitespace-pre-wrap">{note.body}</p>
                     <p className="text-xs text-muted-darker mt-1.5">
-                      {note.author.name ?? "Usuario"} · {new Date(note.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                      {note.author.name ?? "Usuario"} · {formatDate(note.createdAt, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                     </p>
                   </div>
                 ))

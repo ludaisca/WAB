@@ -13,12 +13,19 @@ export const botsList: ToolDefinition<Record<string, never>> = {
       where: { userId: ctx.userId },
       select: {
         id: true, name: true, provider: true, model: true, isActive: true, status: true,
-        waAccountId: true, waAccount: { select: { name: true } },
+        accounts: { select: { waAccount: { select: { name: true } } } },
         _count: { select: { conversations: true } },
       },
       orderBy: { createdAt: "desc" },
     });
-    return { bots };
+    // Aplana accounts -> accountNames para que el modelo del asistente no
+    // tenga que interpretar la forma anidada de la tabla puente WABotAccount.
+    return {
+      bots: bots.map(({ accounts, ...rest }) => ({
+        ...rest,
+        accountNames: accounts.map((a) => a.waAccount.name),
+      })),
+    };
   },
 };
 
@@ -62,13 +69,13 @@ export const botsUsage: ToolDefinition<{ botId: string }> = {
 export const botsToggle: ToolDefinition<{ botId: string }> = {
   name: "bots.toggle",
   riskTier: "CONFIRM",
-  description: "Activa o desactiva un bot de IA (invierte su estado actual). Encenderlo hace que empiece a responder mensajes reales de WhatsApp en su cuenta asignada. Requiere confirmación humana.",
+  description: "Activa o desactiva un bot de IA (invierte su estado actual). Encenderlo hace que empiece a responder mensajes reales de WhatsApp en la(s) cuenta(s) a las que esté vinculado. Requiere confirmación humana.",
   parameters: { type: "object", properties: { botId: { type: "string" } }, required: ["botId"] },
   describeConfirm: async (params, ctx) => {
     const bot = await prisma.wABot.findFirst({ where: { id: params.botId, userId: ctx.userId }, select: { name: true, isActive: true } });
     if (!bot) throw new NotFoundError("Bot no encontrado");
     const action = bot.isActive ? "Desactivar" : "Activar";
-    const consequence = bot.isActive ? "dejará de responder mensajes de WhatsApp" : "empezará a responder mensajes reales de WhatsApp en su cuenta asignada";
+    const consequence = bot.isActive ? "dejará de responder mensajes de WhatsApp" : "empezará a responder mensajes reales de WhatsApp en la(s) cuenta(s) a las que esté vinculado";
     return { description: `${action} el bot "${bot.name}" — ${consequence}.`, params };
   },
   executeConfirm: async (params, ctx) => toggleBot(params.botId, ctx.userId),

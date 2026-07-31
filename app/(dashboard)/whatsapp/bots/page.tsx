@@ -22,12 +22,11 @@ interface WaBot {
   model: string;
   isActive: boolean;
   status: string;
-  waAccountId: string | null;
   memoryType: string;
   ragEnabled: boolean;
   createdAt: string;
   updatedAt: string;
-  waAccount: { id: string; name: string; phoneNumber: string | null } | null;
+  accounts: { waAccount: { id: string; name: string; phoneNumber: string | null } }[];
   _count: { conversations: number; knowledgeBots: number };
 }
 
@@ -124,10 +123,17 @@ export default function BotsPage() {
         onRowClick={(bot) => router.push(`/whatsapp/bots/${bot.id}`)}
         renderRow={(bot) => {
           const provider = PROVIDER_BADGE[bot.provider] ?? { label: bot.provider, tone: "info" as const };
+          const accountNames = bot.accounts.map((a) => a.waAccount.name);
+          const accountLabel =
+            accountNames.length === 0
+              ? "Sin cuenta (solo pruebas)"
+              : accountNames.length <= 2
+                ? accountNames.join(", ")
+                : `${accountNames.slice(0, 2).join(", ")} +${accountNames.length - 2}`;
           return (
             <>
             <EntityRow
-              leading={<EntityAvatar id={bot.waAccountId ?? bot.id} name={bot.name} size="sm" />}
+              leading={<EntityAvatar id={bot.id} name={bot.name} size="sm" />}
               title={
                 <Link
                   href={`/whatsapp/bots/${bot.id}`}
@@ -151,7 +157,7 @@ export default function BotsPage() {
               }
               subtitle={
                 <>
-                  {bot.waAccount?.name ?? "Sin cuenta (solo pruebas)"} · {bot.model} ·{" "}
+                  {accountLabel} · {bot.model} ·{" "}
                   {bot._count.conversations} conversaciones · {bot._count.knowledgeBots} docs
                 </>
               }

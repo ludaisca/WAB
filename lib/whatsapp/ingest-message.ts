@@ -149,13 +149,14 @@ export async function ingestInboundMessage(
   });
 
   const activeBots = await prisma.wABot.findMany({
-    where: { waAccountId: accountId, isActive: true, status: "ACTIVE" },
+    where: { accounts: { some: { waAccountId: accountId } }, isActive: true, status: "ACTIVE" },
     select: { id: true },
   });
 
   for (const bot of activeBots) {
     await botQueue.add("process-message", {
       botId: bot.id,
+      accountId,
       waChatId: chat.id,
       incomingMessage: msg.body,
       messageId: createdMessage.id,

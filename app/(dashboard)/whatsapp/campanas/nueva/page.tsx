@@ -18,6 +18,7 @@ import { useToast } from "@/app/components/ui/toast";
 import { getTemplateVariables } from "@/lib/whatsapp/template-variables";
 import { parseCsv, type ParsedCsvRow } from "@/lib/whatsapp/parse-csv";
 import { TemplatePreview } from "@/app/components/whatsapp/template-preview";
+import { zonedDateTimeToUtc } from "@/lib/timezone";
 
 interface Account { id: string; name: string; channel: string; }
 interface Template { id: string; name: string; language: string; category: string; status: string; components: unknown; }
@@ -47,6 +48,7 @@ export default function NewCampaignPage() {
   const [waAccountId, setWaAccountId] = useState("");
   const [waTemplateId, setWaTemplateId] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
+  const [scheduledTime, setScheduledTime] = useState("09:00");
   const [sendNow, setSendNow] = useState(true);
   const [headerParam, setHeaderParam] = useState("");
   const [headerFileName, setHeaderFileName] = useState<string | null>(null);
@@ -240,10 +242,17 @@ export default function NewCampaignPage() {
       newErrors.buttonParam = "El botón de esta plantilla requiere un valor";
     }
 
+    // El horario CDMX del admin se convierte al instante UTC correcto acá —
+    // scheduledAt/scheduledTime son "hora de pared" en CDMX sin importar en
+    // qué zona corran el navegador o el servidor (ver lib/timezone.ts).
+    const scheduledAtIso = scheduledAt && scheduledTime
+      ? zonedDateTimeToUtc(scheduledAt, scheduledTime).toISOString()
+      : "";
+
     if (!sendNow) {
-      if (!scheduledAt) {
+      if (!scheduledAt || !scheduledTime) {
         newErrors.scheduledAt = "Selecciona la fecha y hora de envío";
-      } else if (new Date(scheduledAt).getTime() < Date.now() - 60_000) {
+      } else if (new Date(scheduledAtIso).getTime() < Date.now() - 60_000) {
         newErrors.scheduledAt = "La fecha ya pasó — elige una fecha futura";
       }
     }
@@ -288,7 +297,7 @@ export default function NewCampaignPage() {
           name: name.trim(),
           waAccountId,
           waTemplateId,
-          scheduledAt: sendNow ? null : scheduledAt || null,
+          scheduledAt: sendNow ? null : scheduledAtIso || null,
           headerParam: headerParam.trim() || undefined,
           buttonParam: buttonParam.trim() || undefined,
           recipients: allRecipients.map(r => ({
@@ -464,8 +473,17 @@ export default function NewCampaignPage() {
                 </div>
 
                 {!sendNow && (
-                  <FormField label="Programar para" required hint="Fecha y hora de inicio" error={errors.scheduledAt}>
-                    {(id) => <DatePicker id={id} value={scheduledAt} onChange={setScheduledAt} placeholder="Seleccionar fecha" />}
+                  <FormField label="Programar para" required hint="Fecha y hora de inicio, horario de Ciudad de México" error={errors.scheduledAt}>
+                    {(id) => (
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <DatePicker id={id} value={scheduledAt} onChange={setScheduledAt} placeholder="Seleccionar fecha" />
+                        </div>
+                        <div className="w-32">
+                          <Input type="time" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} />
+                        </div>
+                      </div>
+                    )}
                   </FormField>
                 )}
 

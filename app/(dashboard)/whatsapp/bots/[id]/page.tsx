@@ -6,7 +6,6 @@ import Link from "next/link";
 import { ArrowLeft, Trash2, Power, PowerOff, Send, Upload, X } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
-import { Textarea } from "@/app/components/ui/textarea";
 import { Input } from "@/app/components/ui/input";
 import { FormField } from "@/app/components/ui/form-field";
 import { Spinner } from "@/app/components/ui/spinner";
@@ -17,6 +16,8 @@ import { Banner } from "@/app/components/ui/banner";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
 import { BotFormModal } from "../_form";
+import { TestPanel } from "./_test-panel";
+import { formatDate, zonedDateTimeToUtc, dateKeyInTz } from "@/lib/timezone";
 
 interface BotDetail {
   id: string;
@@ -31,10 +32,9 @@ interface BotDetail {
   ragEnabled: boolean;
   isActive: boolean;
   status: string;
-  waAccountId: string | null;
   createdAt: string;
   updatedAt: string;
-  waAccount: { id: string; name: string; phoneNumber: string | null } | null;
+  accounts: { waAccount: { id: string; name: string; phoneNumber: string | null } }[];
   _count: { conversations: number; knowledgeBots: number };
 }
 
@@ -75,10 +75,6 @@ export default function BotDetailPage() {
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-
-  const [testMessage, setTestMessage] = useState("");
-  const [testResponse, setTestResponse] = useState("");
-  const [testing, setTesting] = useState(false);
 
   const [usageData, setUsageData] = useState<UsageData | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
@@ -184,31 +180,13 @@ export default function BotDetailPage() {
     } finally { setDeletingDocId(null); }
   }
 
-  async function handleTest() {
-    if (!testMessage.trim()) return;
-    setTesting(true);
-    setTestResponse("");
-    try {
-      const res = await fetch(`/api/whatsapp/bots/${id}/test`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: testMessage }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setTestResponse(data.response);
-    } catch (err) {
-      toastError(err instanceof Error ? err.message : "Error en el test");
-    } finally { setTesting(false); }
-  }
-
   const usageColumns: TableColumn<UsageData["recent"][number]>[] = useMemo(() => [
     {
       key: "createdAt",
       header: "Fecha",
       render: (u) => (
         <span className="text-xs">
-          {new Date(u.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+          {formatDate(u.createdAt, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
         </span>
       ),
     },
@@ -233,13 +211,15 @@ export default function BotDetailPage() {
   const usageTrend = useMemo(() => {
     const byDay = new Map<string, number>();
     for (const u of usageData?.recent ?? []) {
-      const day = u.createdAt.slice(0, 10);
+      // Día de calendario CDMX, no el prefijo UTC del ISO string — evita
+      // que uso de la tarde/noche CDMX se cuente en el día equivocado.
+      const day = dateKeyInTz(new Date(u.createdAt));
       byDay.set(day, (byDay.get(day) ?? 0) + u.totalTokens);
     }
     return Array.from(byDay.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([day, tokens]) => ({
-        label: new Date(day + "T00:00:00").toLocaleDateString("es-MX", {
+        label: formatDate(zonedDateTimeToUtc(day, "00:00"), {
           day: "2-digit",
           month: "short",
         }),
@@ -266,7 +246,10 @@ export default function BotDetailPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{bot.name}</h1>
           <p className="text-sm text-muted-darker mt-1">
-            {bot.waAccount?.name ?? "Sin cuenta (solo pruebas)"} · {bot.provider === "openrouter" ? "OpenRouter" : "Gemini"} · {bot.model}
+            {bot.accounts.length === 0
+              ? "Sin cuenta (solo pruebas)"
+              : bot.accounts.map((a) => a.waAccount.name).join(", ")}{" "}
+            · {bot.provider === "openrouter" ? "OpenRouter" : "Gemini"} · {bot.model}
           </p>
         </div>
         <div className="flex gap-2">
@@ -330,7 +313,7 @@ export default function BotDetailPage() {
                 <Row label="Max tokens" value={bot.maxTokens.toLocaleString("es-MX")} mono />
                 <Row label="Memoria" value={bot.memoryType === "RECENT" ? `Reciente (${bot.memoryLimit} msgs)` : bot.memoryType === "SUMMARY" ? "Resumen acumulativo" : "Ninguna"} />
                 <Row label="RAG" value={bot.ragEnabled ? "Activado" : "Desactivado"} />
-                <Row label="Creado" value={new Date(bot.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" })} mono />
+                <Row label="Creado" value={formatDate(bot.createdAt, { day: "2-digit", month: "long", year: "numeric" })} mono />
               </dl>
             </CardBody>
           </Card>
@@ -376,7 +359,7 @@ export default function BotDetailPage() {
                     <div key={doc.id} className="flex items-center justify-between px-5 py-3">
                       <div>
                         <p className="text-sm font-medium">{doc.title}</p>
-                        <p className="text-xs text-muted-darker">Chunk {doc.chunkIndex}{doc.sourceName ? ` · ${doc.sourceName}` : ""} · {new Date(doc.createdAt).toLocaleDateString("es-MX")}</p>
+                        <p className="text-xs text-muted-darker">Chunk {doc.chunkIndex}{doc.sourceName ? ` · ${doc.sourceName}` : ""} · {formatDate(doc.createdAt)}</p>
                       </div>
                       <Button
                         variant="ghost"
@@ -394,29 +377,7 @@ export default function BotDetailPage() {
         </div>
       )}
 
-      {tab === "test" && (
-        <Card>
-          <CardHeader><CardTitle>Probar el bot</CardTitle></CardHeader>
-          <CardBody>
-            <div className="space-y-4">
-              <FormField label="Mensaje de prueba">
-                {(id) => (
-                  <Textarea id={id} value={testMessage} onChange={(e) => setTestMessage(e.target.value)} placeholder="Escribe un mensaje para probar..." rows={3} />
-                )}
-              </FormField>
-              <Button icon={Send} size="sm" onClick={handleTest} disabled={testing || !testMessage.trim()}>
-                {testing ? <Spinner /> : "Enviar"}
-              </Button>
-              {testResponse && (
-                <div className="p-4 bg-surface rounded-lg border border-border">
-                  <p className="text-xs text-muted-darker mb-2 font-medium">Respuesta:</p>
-                  <p className="text-sm whitespace-pre-wrap">{testResponse}</p>
-                </div>
-              )}
-            </div>
-          </CardBody>
-        </Card>
-      )}
+      {tab === "test" && <TestPanel botId={id} />}
 
       {tab === "uso" && (
         <div className="space-y-4">

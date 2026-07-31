@@ -6,6 +6,7 @@ import { Button } from "@/app/components/ui/button";
 import { Banner } from "@/app/components/ui/banner";
 import { Input } from "@/app/components/ui/input";
 import { RESTORE_CONFIRMATION_PHRASE } from "@/lib/backup/constants";
+import { formatDateTime } from "@/lib/timezone";
 import type { RestorePreviewResponse } from "./_types";
 
 interface Props {
@@ -64,7 +65,7 @@ export function RestoreConfirmModal({ open, onClose, preview, onConfirm, loading
 
         <div className="text-sm space-y-1">
           <p><span className="text-muted-darker">Archivo:</span> {preview.sourceFilename}</p>
-          <p><span className="text-muted-darker">Generado:</span> {new Date(preview.manifest.createdAt).toLocaleString("es-MX")}</p>
+          <p><span className="text-muted-darker">Generado:</span> {formatDateTime(preview.manifest.createdAt)}</p>
           <p><span className="text-muted-darker">Tipo de respaldo:</span> {preview.manifest.type}</p>
           <p><span className="text-muted-darker">Medios incluidos:</span> {preview.manifest.mediaFileCount} archivos</p>
         </div>

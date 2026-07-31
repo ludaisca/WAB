@@ -13,6 +13,7 @@ import { EntityAvatar } from "@/app/components/ui/avatar";
 import { Pagination } from "@/app/components/ui/pagination";
 import { useToast } from "@/app/components/ui/toast";
 import { ContactDrawer } from "@/app/components/whatsapp/contact-drawer";
+import { formatDate } from "@/lib/timezone";
 
 const PAGE_SIZE = 25;
 
@@ -198,7 +199,7 @@ export default function ContactosPage() {
                   <>
                     <span className="font-mono">
                       {contact.chat?.lastMessageAt
-                        ? new Date(contact.chat.lastMessageAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+                        ? formatDate(contact.chat.lastMessageAt, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
                         : "—"}
                     </span>
                     {contact.chat && (

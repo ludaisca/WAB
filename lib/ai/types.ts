@@ -14,6 +14,14 @@ export interface AIToolCall {
   id: string; // OpenRouter: id real del SDK. Google no da id — se sintetiza `${name}_${index}` en el provider.
   name: string;
   arguments: Record<string, unknown>;
+  // Solo Gemini 3+ (google.ts): firma opaca que la API adjunta a cada parte
+  // functionCall de su respuesta. Si un turno assistant con toolCalls se
+  // vuelve a mandar como historial en la MISMA llamada (el loop de tools de
+  // run-tool-loop.ts), Gemini 3 exige que esa firma viaje de vuelta tal cual
+  // en esa parte — sin ella responde 400 ("Function call is missing a
+  // thought_signature"). Ver https://ai.google.dev/gemini-api/docs/thought-signatures.
+  // undefined para OpenRouter y para Gemini 2.x (no lo requieren).
+  thoughtSignature?: string;
 }
 
 export interface AIToolResult {

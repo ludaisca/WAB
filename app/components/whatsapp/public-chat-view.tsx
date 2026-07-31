@@ -9,31 +9,11 @@ import { useState } from "react";
 import { Eye, FileAudio, Video, FileText, Image as ImageIcon, Download, Maximize2, Check, CheckCheck } from "lucide-react";
 import { Modal } from "@/app/components/ui/modal";
 import { Button } from "@/app/components/ui/button";
+import { formatBubbleTime, formatDayDivider, chatDayKey } from "@/lib/whatsapp/chat-format";
 import type { PublicChatData, PublicChatMessage } from "@/lib/whatsapp/public-chat-data";
 
 function mediaEndpoint(token: string, messageId: string): string {
   return `/api/public/chat/${encodeURIComponent(token)}/media/${encodeURIComponent(messageId)}`;
-}
-
-function formatBubbleTime(ts: string): string {
-  return new Date(ts).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
-}
-
-function startOfDay(d: Date): number {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-}
-
-function formatDayDivider(ts: string): string {
-  const d = new Date(ts);
-  const now = new Date();
-  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
-  if (diffDays === 0) return "Hoy";
-  if (diffDays === 1) return "Ayer";
-  return d.toLocaleDateString("es-MX", {
-    day: "2-digit",
-    month: "long",
-    year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
-  });
 }
 
 function formatBytes(bytes: number | null): string {
@@ -154,12 +134,7 @@ function MessageBubble({ token, msg, onPreview }: { token: string; msg: PublicCh
         )}
         {msg.messageType === "text" && msg.body}
         <div className={`flex items-center justify-end gap-1 mt-1 ${isInbound ? "text-muted-darker" : "text-on-accent/70"}`}>
-          {/* suppressHydrationWarning: la hora se formatea en la zona horaria
-              local de quien la ve — el SSR inicial (contenedor, normalmente
-              UTC) y la hidratación en el navegador del visitante legítimamente
-              producen strings distintos; no es un bug, es el mismo caso que
-              next-themes documenta para el toggle de tema. */}
-          <span className="text-[10px]" suppressHydrationWarning>{formatBubbleTime(msg.timestamp)}</span>
+          <span className="text-[10px]">{formatBubbleTime(msg.timestamp)}</span>
           {!isInbound && msg.status && (
             <span className="text-[10px]">
               {msg.status === "sent" && <Check size={10} />}
@@ -176,7 +151,7 @@ function MessageBubble({ token, msg, onPreview }: { token: string; msg: PublicCh
 export function PublicChatView({ token, data }: { token: string; data: PublicChatData }) {
   const [preview, setPreview] = useState<PreviewMedia | null>(null);
 
-  let lastDay: number | null = null;
+  let lastDay: string | null = null;
 
   return (
     <div className="max-w-2xl mx-auto min-h-dvh flex flex-col">
@@ -197,14 +172,14 @@ export function PublicChatView({ token, data }: { token: string; data: PublicCha
           <p className="text-center text-sm text-muted-darker py-16">Esta conversación aún no tiene mensajes.</p>
         ) : (
           data.messages.map((msg) => {
-            const day = startOfDay(new Date(msg.timestamp));
+            const day = chatDayKey(msg.timestamp);
             const showDivider = day !== lastDay;
             lastDay = day;
             return (
               <div key={msg.id}>
                 {showDivider && (
                   <div className="flex justify-center my-3">
-                    <span className="text-[11px] font-medium text-muted-darker bg-surface px-2.5 py-1 rounded-full" suppressHydrationWarning>
+                    <span className="text-[11px] font-medium text-muted-darker bg-surface px-2.5 py-1 rounded-full">
                       {formatDayDivider(msg.timestamp)}
                     </span>
                   </div>

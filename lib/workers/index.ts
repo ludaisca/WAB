@@ -15,6 +15,7 @@ import { processSystemDiagnosticsTick } from "./system-diagnostics-worker";
 import { processBackupJob, processScheduledBackupTick } from "./backup-worker";
 import { processRestoreJob } from "./restore-worker";
 import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue, campaignQueue, sheetsSyncQueue, leadSheetImportQueue, templateSyncQueue, agentActionExpiryQueue, systemDiagnosticsQueue, backupQueue } from "@/lib/queue";
+import { MEXICO_CITY_TZ } from "@/lib/timezone";
 
 const connection = {
   url: process.env.REDIS_URL || "redis://redis:6379",
@@ -116,11 +117,15 @@ export function startWorkers() {
   // captura los medios que esa limpieza va a purgar esa misma madrugada, no
   // después. La retención/rotación (BACKUP_RETENTION_COUNT) corre al final de
   // cada backup exitoso, ver lib/backup/retention.ts.
+  // Todos los patrones cron de abajo llevan `tz: MEXICO_CITY_TZ` explícito —
+  // sin esto, BullMQ/cron-parser interpretan el patrón en la zona local del
+  // proceso (UTC en el contenedor), así que "0 2 * * *" corría a las 8pm CDMX
+  // del día anterior, no a las 2am CDMX como dicen los comentarios.
   backupQueue
     .add(
       "scheduled-tick",
       {},
-      { jobId: "system-backup-scheduled-tick", repeat: { pattern: "0 2 * * *" } }
+      { jobId: "system-backup-scheduled-tick", repeat: { pattern: "0 2 * * *", tz: MEXICO_CITY_TZ } }
     )
     .catch((err) => console.error("[workers] No se pudo programar system-backup:", err));
 
@@ -128,7 +133,7 @@ export function startWorkers() {
     .add(
       "purge",
       {},
-      { jobId: "media-cleanup-daily", repeat: { pattern: "0 3 * * *" } }
+      { jobId: "media-cleanup-daily", repeat: { pattern: "0 3 * * *", tz: MEXICO_CITY_TZ } }
     )
     .catch((err) => console.error("[workers] No se pudo programar media-cleanup:", err));
 
@@ -139,7 +144,7 @@ export function startWorkers() {
     .add(
       "tick",
       {},
-      { jobId: "lead-scoring-tick", repeat: { pattern: "*/5 * * * *" } }
+      { jobId: "lead-scoring-tick", repeat: { pattern: "*/5 * * * *", tz: MEXICO_CITY_TZ } }
     )
     .catch((err) => console.error("[workers] No se pudo programar lead-scoring:", err));
 
@@ -149,7 +154,7 @@ export function startWorkers() {
     .add(
       "scheduled-tick",
       {},
-      { jobId: "campaign-scheduled-tick", repeat: { pattern: "* * * * *" } }
+      { jobId: "campaign-scheduled-tick", repeat: { pattern: "* * * * *", tz: MEXICO_CITY_TZ } }
     )
     .catch((err) => console.error("[workers] No se pudo programar campaign-scheduled-tick:", err));
 
@@ -159,7 +164,7 @@ export function startWorkers() {
     .add(
       "tick",
       {},
-      { jobId: "lead-recovery-tick", repeat: { pattern: "*/15 * * * *" } }
+      { jobId: "lead-recovery-tick", repeat: { pattern: "*/15 * * * *", tz: MEXICO_CITY_TZ } }
     )
     .catch((err) => console.error("[workers] No se pudo programar lead-recovery:", err));
 
@@ -169,7 +174,7 @@ export function startWorkers() {
     .add(
       "tick",
       {},
-      { jobId: "sheets-sync-tick", repeat: { pattern: "*/15 * * * *" } }
+      { jobId: "sheets-sync-tick", repeat: { pattern: "*/15 * * * *", tz: MEXICO_CITY_TZ } }
     )
     .catch((err) => console.error("[workers] No se pudo programar sheets-sync:", err));
 
@@ -180,7 +185,7 @@ export function startWorkers() {
     .add(
       "tick",
       {},
-      { jobId: "lead-sheet-import-tick", repeat: { pattern: "*/5 * * * *" } }
+      { jobId: "lead-sheet-import-tick", repeat: { pattern: "*/5 * * * *", tz: MEXICO_CITY_TZ } }
     )
     .catch((err) => console.error("[workers] No se pudo programar lead-sheet-import:", err));
 
@@ -191,7 +196,7 @@ export function startWorkers() {
     .add(
       "tick",
       {},
-      { jobId: "template-sync-tick", repeat: { pattern: "*/15 * * * *" } }
+      { jobId: "template-sync-tick", repeat: { pattern: "*/15 * * * *", tz: MEXICO_CITY_TZ } }
     )
     .catch((err) => console.error("[workers] No se pudo programar template-sync:", err));
 
@@ -201,7 +206,7 @@ export function startWorkers() {
     .add(
       "tick",
       {},
-      { jobId: "agent-action-expiry-tick", repeat: { pattern: "*/15 * * * *" } }
+      { jobId: "agent-action-expiry-tick", repeat: { pattern: "*/15 * * * *", tz: MEXICO_CITY_TZ } }
     )
     .catch((err) => console.error("[workers] No se pudo programar agent-action-expiry:", err));
 
@@ -213,7 +218,7 @@ export function startWorkers() {
     .add(
       "tick",
       {},
-      { jobId: "system-diagnostics-tick", repeat: { pattern: "0 * * * *" } }
+      { jobId: "system-diagnostics-tick", repeat: { pattern: "0 * * * *", tz: MEXICO_CITY_TZ } }
     )
     .catch((err) => console.error("[workers] No se pudo programar system-diagnostics:", err));
 

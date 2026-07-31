@@ -18,6 +18,7 @@ import { Banner } from "@/app/components/ui/banner";
 import { Switch } from "@/app/components/ui/switch";
 import { useToast } from "@/app/components/ui/toast";
 import { suggestLeadPrefix } from "@/lib/whatsapp/lead-id";
+import { formatDate } from "@/lib/timezone";
 
 interface AccountDetail {
   id: string;
@@ -488,7 +489,7 @@ export default function CuentaDetailPage() {
               mono
               value={
                 account.lastActivity
-                  ? new Date(account.lastActivity).toLocaleDateString("es-MX", {
+                  ? formatDate(account.lastActivity, {
                       day: "2-digit", month: "long", year: "numeric",
                       hour: "2-digit", minute: "2-digit",
                     })
@@ -498,7 +499,7 @@ export default function CuentaDetailPage() {
             <InfoRow
               label="Creada"
               mono
-              value={new Date(account.createdAt).toLocaleDateString("es-MX", {
+              value={formatDate(account.createdAt, {
                 day: "2-digit", month: "long", year: "numeric",
               })}
             />

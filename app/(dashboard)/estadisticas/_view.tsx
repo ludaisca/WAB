@@ -13,6 +13,7 @@ import { TrendChart, DonutChart, FunnelBars } from "@/app/components/ui/chart";
 import { AnimatedNumber } from "@/app/components/ui/animated-number";
 import type { Estadisticas } from "@/lib/estadisticas/get-stats";
 import { CAMPAIGN_ORIGIN_LABEL, LABEL_TEXT } from "@/lib/whatsapp/export-columns";
+import { formatDate, zonedDateTimeToUtc } from "@/lib/timezone";
 
 function botStatusBadge(b: { status: string; isActive: boolean }): { label: string; tone: "success" | "danger" | "neutral" } {
   if (b.status === "ERROR") return { label: "Error", tone: "danger" };
@@ -147,7 +148,7 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
   const dailySeries = useMemo(
     () =>
       stats.dailyMessages.map((d) => ({
-        label: new Date(d.date + "T00:00:00").toLocaleDateString("es-MX", {
+        label: formatDate(zonedDateTimeToUtc(d.date, "00:00"), {
           day: "2-digit",
           month: "short",
         }),

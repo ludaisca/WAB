@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { DollarSign, Bot, Sparkles } from "lucide-react";
 import { Dropdown, DropdownButton } from "@/app/components/ui/dropdown";
 import { Badge } from "@/app/components/ui/badge";
+import { formatDateTime } from "@/lib/timezone";
 
 interface UsageEntry {
   source: "bot" | "scorer";
@@ -90,7 +91,7 @@ export function ChatCostBadge({ chatId }: { chatId: string }) {
                 <div className="min-w-0">
                   <p className="truncate text-foreground">{entry.name}</p>
                   <p className="text-[10px] text-muted-darker">
-                    {new Date(entry.createdAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })} · {entry.totalTokens} tok
+                    {formatDateTime(entry.createdAt)} · {entry.totalTokens} tok
                   </p>
                 </div>
               </div>

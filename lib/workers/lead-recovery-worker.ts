@@ -65,7 +65,7 @@ async function runRecoveryForUser(settings: AppSettings, now: Date) {
 
   const silentChats = candidates.filter((c) => c.messages[0]?.direction === "OUTBOUND");
 
-  const botCache = new Map<string, (WABot & { waAccount: WAAccount | null }) | null>();
+  const botCache = new Map<string, { bot: WABot; account: WAAccount } | null>();
   let sentCount = 0;
   let sentAny = false;
   let failCount = 0;
@@ -101,16 +101,16 @@ async function runRecoveryForUser(settings: AppSettings, now: Date) {
 
     if (!botCache.has(chat.accountId)) {
       const bot = await prisma.wABot.findFirst({
-        where: { waAccountId: chat.accountId, isActive: true, status: "ACTIVE" },
-        include: { waAccount: true },
+        where: { accounts: { some: { waAccountId: chat.accountId } }, isActive: true, status: "ACTIVE" },
       });
-      botCache.set(chat.accountId, bot);
+      const account = bot ? await prisma.wAAccount.findUnique({ where: { id: chat.accountId } }) : null;
+      botCache.set(chat.accountId, bot && account ? { bot, account } : null);
     }
-    const bot = botCache.get(chat.accountId);
-    if (!bot) continue; // sin bot activo en esa cuenta, no hay con qué generar el mensaje
+    const cached = botCache.get(chat.accountId);
+    if (!cached) continue; // sin bot activo en esa cuenta, no hay con qué generar el mensaje
 
     try {
-      await sendRecoveryMessage(chat, bot, attemptNumber, lastInbound.timestamp, now);
+      await sendRecoveryMessage(chat, cached.bot, cached.account, attemptNumber, lastInbound.timestamp, now);
       sentAny = true;
       sentCount++;
     } catch (err) {

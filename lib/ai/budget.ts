@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { startOfMonthInTz, monthKeyInTz } from "@/lib/timezone";
 
 // Combines WABotUsage (chat-reply bots), WALeadScorerUsage (lead scorer
 // runs, including scheduled ones), WALeadRecoveryAttempt (reactivation
@@ -36,7 +37,7 @@ export async function isMonthlyBudgetExceeded(userId: string, now: Date): Promis
   const settings = await prisma.appSettings.findUnique({ where: { userId } });
   if (!settings?.monthlyBudgetUsd) return false;
 
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthStart = startOfMonthInTz(now);
   const monthlyCost = await getMonthlyAiCost(userId, monthStart);
   return monthlyCost >= settings.monthlyBudgetUsd;
 }
@@ -45,10 +46,10 @@ export async function checkBudgetAlert(userId: string, now: Date) {
   const settings = await prisma.appSettings.findUnique({ where: { userId } });
   if (!settings?.monthlyBudgetUsd) return;
 
-  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const monthKey = monthKeyInTz(now);
   if (settings.budgetAlertMonth === monthKey) return;
 
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthStart = startOfMonthInTz(now);
   const monthlyCost = await getMonthlyAiCost(userId, monthStart);
 
   if (monthlyCost < settings.monthlyBudgetUsd) return;
