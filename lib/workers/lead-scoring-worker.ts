@@ -143,6 +143,29 @@ export async function countBulkRescoreEligibleChats(scorer: WALeadScorerBot): Pr
   });
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Cubre la forma de error de ambos proveedores: el SDK de Google adjunta el
+// código HTTP dentro del mensaje (ej. "[429 Too Many Requests]" o
+// "RESOURCE_EXHAUSTED"), mientras que el SDK de OpenRouter (OpenAI-compatible)
+// expone `status`/`statusCode` como propiedad del error además del mensaje.
+function isRateLimitError(err: unknown): boolean {
+  const status = (err as { status?: number; statusCode?: number })?.status
+    ?? (err as { status?: number; statusCode?: number })?.statusCode;
+  if (status === 429) return true;
+  const message = err instanceof Error ? err.message : String(err);
+  return /429|too many requests|rate.?limit|resource_exhausted|quota/i.test(message);
+}
+
+const RATE_LIMIT_RETRY_DELAYS_MS = [2000, 5000, 15000, 30000];
+// Pausa base entre chats para no ráfaguear el proveedor de entrada — casi
+// 2000 leads en un solo job secuencial es exactamente el escenario donde un
+// modelo con cuota ajustada (ej. tier gratuito o bajo de Gemini) puede
+// empezar a devolver 429 si se le pide un lead tras otro sin respiro.
+const PACE_DELAY_MS = 1200;
+
 // Job disparado manualmente desde /whatsapp/calificadores ("Recalificar todos
 // los leads") — a diferencia del tick automático, no respeta scheduleAccountIds
 // (ese alcance es solo para las corridas desatendidas) ni el presupuesto
@@ -167,18 +190,35 @@ export async function processBulkRescoreJob(scorerId: string) {
   let ok = 0;
   let skipped = 0;
   let failed = 0;
+  let rateLimited = 0;
   for (const chat of chats) {
-    try {
-      await scoreChatWithScorer(chat.id, scorer);
-      ok++;
-    } catch (err) {
-      if (err instanceof LeadScoringError) {
-        skipped++;
-      } else {
+    let attempt = 0;
+    for (;;) {
+      try {
+        await scoreChatWithScorer(chat.id, scorer);
+        ok++;
+        break;
+      } catch (err) {
+        if (err instanceof LeadScoringError) {
+          skipped++;
+          break;
+        }
+        if (isRateLimitError(err) && attempt < RATE_LIMIT_RETRY_DELAYS_MS.length) {
+          rateLimited++;
+          const delay = RATE_LIMIT_RETRY_DELAYS_MS[attempt];
+          console.warn(
+            `[lead-scoring] Recalificación masiva: rate limit en chat ${chat.id}, reintento ${attempt + 1} en ${delay}ms`
+          );
+          await sleep(delay);
+          attempt++;
+          continue;
+        }
         failed++;
         console.error(`[lead-scoring] Recalificación masiva: error en chat ${chat.id}:`, err);
+        break;
       }
     }
+    await sleep(PACE_DELAY_MS);
   }
 
   await checkBudgetAlert(scorer.userId, new Date());
@@ -186,6 +226,7 @@ export async function processBulkRescoreJob(scorerId: string) {
 
   console.log(
     `[lead-scoring] Recalificación masiva completa para "${scorer.name}" (${scorer.id}): ` +
-      `${ok} calificados, ${skipped} omitidos, ${failed} con error, de ${chats.length} chats totales.`
+      `${ok} calificados, ${skipped} omitidos, ${failed} con error, de ${chats.length} chats totales ` +
+      `(${rateLimited} reintentos por rate limit).`
   );
 }

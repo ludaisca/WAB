@@ -168,7 +168,7 @@ function CalificadoresTab() {
       const res = await fetch(`/api/whatsapp/lead-scorers/${rescoreTarget.id}/rescore-all`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al iniciar la recalificación");
-      success(`Recalificación iniciada para ~${data.estimatedCount} leads — puede tomar varios minutos en reflejarse en "Leads calificados".`);
+      success(`Recalificación iniciada para ~${data.estimatedCount} leads — corre a un ritmo controlado (evita saturar al proveedor de IA), puede tomar más de una hora en reflejarse por completo en "Leads calificados".`);
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Error al iniciar la recalificación");
     } finally {
@@ -317,7 +317,7 @@ function CalificadoresTab() {
         open={!!rescoreTarget}
         onClose={() => setRescoreTarget(null)}
         title="Recalificar todos los leads"
-        description={`Se va a re-evaluar con el prompt actual de "${rescoreTarget?.name}" cada chat calificable de sus cuentas (todo el historial, no solo lo reciente). Corre en segundo plano, puede tomar varios minutos y genera costo de IA por cada lead re-evaluado.`}
+        description={`Se va a re-evaluar con el prompt actual de "${rescoreTarget?.name}" cada chat calificable de sus cuentas (todo el historial, no solo lo reciente). Corre en segundo plano a un ritmo controlado para no saturar al proveedor de IA — con el volumen actual puede tomar más de una hora, y genera costo de IA por cada lead re-evaluado.`}
         confirmLabel="Recalificar todos"
         tone="danger"
         loading={rescoring}
