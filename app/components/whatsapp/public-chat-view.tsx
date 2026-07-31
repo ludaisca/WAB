@@ -114,10 +114,20 @@ function MediaContent({
   return null;
 }
 
+// Tipos que MediaContent sabe renderizar — cualquier otro messageType (ej.
+// "button"/"interactive", respuestas de botones de WhatsApp sin media ni
+// caption) debe caer al texto plano de msg.body, igual que chat-workspace.tsx
+// ya hace vía su propio `hasMedia` (mediaUrl || mediaId). Antes este
+// componente usaba `messageType !== "text"` como gate único — un mensaje tipo
+// "button" entraba a la rama de media, MediaContent devolvía null (tipo no
+// reconocido) y, al no tener caption tampoco, la burbuja quedaba vacía salvo
+// por la hora.
+const MEDIA_MESSAGE_TYPES = new Set(["image", "sticker", "audio", "video", "document"]);
+
 function MessageBubble({ token, msg, onPreview }: { token: string; msg: PublicChatMessage; onPreview: (media: PreviewMedia) => void }) {
   const isInbound = msg.direction === "INBOUND";
-  const hasMediaType = msg.messageType !== "text" && msg.hasMedia;
-  const caption = msg.caption ?? (hasMediaType && msg.body && msg.body !== `[${msg.messageType}]` ? msg.body : null);
+  const isMediaType = MEDIA_MESSAGE_TYPES.has(msg.messageType);
+  const caption = msg.caption ?? (isMediaType && msg.body && msg.body !== `[${msg.messageType}]` ? msg.body : null);
 
   return (
     <div className={`flex ${isInbound ? "justify-start" : "justify-end"}`}>
@@ -126,13 +136,14 @@ function MessageBubble({ token, msg, onPreview }: { token: string; msg: PublicCh
           isInbound ? "rounded-2xl rounded-tl-sm bg-surface text-foreground" : "rounded-bubble-br bg-accent text-on-accent"
         }`}
       >
-        {msg.messageType !== "text" && (
+        {isMediaType && (
           <div className="mb-1 space-y-1">
             <MediaContent token={token} msg={msg} onPreview={onPreview} />
             {caption && <p className="whitespace-pre-wrap break-words">{caption}</p>}
           </div>
         )}
-        {msg.messageType === "text" && msg.body}
+        {!isMediaType && msg.body}
+        {isMediaType && !caption && !msg.body && <span className="sr-only">[{msg.messageType}]</span>}
         <div className={`flex items-center justify-end gap-1 mt-1 ${isInbound ? "text-muted-darker" : "text-on-accent/70"}`}>
           <span className="text-[10px]">{formatBubbleTime(msg.timestamp)}</span>
           {!isInbound && msg.status && (
