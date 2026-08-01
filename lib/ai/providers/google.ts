@@ -156,45 +156,59 @@ export function createGoogleClient(apiKey: string) {
 
     const lastMsg = history[history.length - 1];
     const result = await chat.sendMessage(lastMsg?.parts ?? [{ text: "" }]);
-    const text = result.response.text();
 
-    // Gemini no da un id por function call — se sintetiza `${name}_${index}`
-    // (único dentro de la respuesta, que es todo lo que necesita el orchestrator
-    // para emparejar cada AIToolResult de vuelta con su llamada).
-    const calls = result.response.functionCalls();
-    // functionCalls() (el helper de conveniencia del SDK) descarta thoughtSignature
-    // — hay que releerlo de las partes crudas de la respuesta. Mismo orden que
-    // functionCalls() (ambos recorren candidates[0].content.parts en secuencia
-    // filtrando solo las que traen functionCall), así que emparejar por índice
-    // es seguro. Campo nuevo de Gemini 3 (ver AIToolCall.thoughtSignature) — el
-    // SDK instalado no lo tipa todavía, de ahí el cast.
-    const rawParts = (result.response.candidates?.[0]?.content?.parts ?? []) as Array<{
-      functionCall?: unknown;
-      thoughtSignature?: string;
-    }>;
-    const signatures = rawParts.filter((p) => p.functionCall).map((p) => p.thoughtSignature);
-    const toolCalls: AIToolCall[] | undefined = calls?.length
-      ? calls.map((c, i) => ({
-          id: `${c.name}_${i}`,
-          name: c.name,
-          arguments: c.args as Record<string, unknown>,
-          thoughtSignature: signatures[i],
-        }))
+    const usage = result.response.usageMetadata
+      ? {
+          promptTokens: result.response.usageMetadata.promptTokenCount,
+          completionTokens:
+            result.response.usageMetadata.candidatesTokenCount ??
+            result.response.usageMetadata.totalTokenCount -
+              result.response.usageMetadata.promptTokenCount,
+        }
       : undefined;
 
-    return {
-      content: text,
-      toolCalls,
-      usage: result.response.usageMetadata
-        ? {
-            promptTokens: result.response.usageMetadata.promptTokenCount,
-            completionTokens:
-              result.response.usageMetadata.candidatesTokenCount ??
-              result.response.usageMetadata.totalTokenCount -
-                result.response.usageMetadata.promptTokenCount,
-          }
-        : undefined,
-    };
+    let text: string;
+    let toolCalls: AIToolCall[] | undefined;
+    try {
+      text = result.response.text();
+
+      // Gemini no da un id por function call — se sintetiza `${name}_${index}`
+      // (único dentro de la respuesta, que es todo lo que necesita el orchestrator
+      // para emparejar cada AIToolResult de vuelta con su llamada).
+      const calls = result.response.functionCalls();
+      // functionCalls() (el helper de conveniencia del SDK) descarta thoughtSignature
+      // — hay que releerlo de las partes crudas de la respuesta. Mismo orden que
+      // functionCalls() (ambos recorren candidates[0].content.parts en secuencia
+      // filtrando solo las que traen functionCall), así que emparejar por índice
+      // es seguro. Campo nuevo de Gemini 3 (ver AIToolCall.thoughtSignature) — el
+      // SDK instalado no lo tipa todavía, de ahí el cast.
+      const rawParts = (result.response.candidates?.[0]?.content?.parts ?? []) as Array<{
+        functionCall?: unknown;
+        thoughtSignature?: string;
+      }>;
+      const signatures = rawParts.filter((p) => p.functionCall).map((p) => p.thoughtSignature);
+      toolCalls = calls?.length
+        ? calls.map((c, i) => ({
+            id: `${c.name}_${i}`,
+            name: c.name,
+            arguments: c.args as Record<string, unknown>,
+            thoughtSignature: signatures[i],
+          }))
+        : undefined;
+    } catch (err) {
+      // Gemini bloquea contenido puntual por seguridad (ej. "PROHIBITED_CONTENT")
+      // lanzando desde .text()/.functionCalls() en vez de devolver algo vacío —
+      // sin este catch, el bloqueo de UN turno se propagaba como error genérico
+      // hasta bot-worker.ts, que agota sus 3 reintentos y marca el bot entero
+      // como status ERROR (deja de responder en TODAS las cuentas vinculadas
+      // hasta reactivación manual, por un bloqueo de un solo mensaje). content
+      // vacío deja que el guardrail de "respuesta vacía" de generate-reply.ts
+      // sustituya un mensaje de espera seguro para ESTE turno nada más.
+      console.warn("[ai/google] Respuesta bloqueada o no disponible:", err instanceof Error ? err.message : err);
+      text = "";
+    }
+
+    return { content: text, toolCalls, usage };
   }
 
   async function generateEmbeddings(params: AIEmbeddingParams): Promise<AIEmbeddingResponse> {

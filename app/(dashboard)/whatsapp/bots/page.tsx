@@ -104,7 +104,7 @@ export default function BotsPage() {
               size="sm"
               onClick={() => setResponderOpen(true)}
             >
-              Responder leads sin bot
+              Responder pendientes
             </Button>
             <Button icon={Plus} size="sm" onClick={() => setFormOpen(true)}>
               Crear bot

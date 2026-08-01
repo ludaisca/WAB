@@ -15,6 +15,12 @@ import type { AIProvider, AIMessage } from "@/lib/ai/types";
 import type { WABot, WAAccount } from "@prisma/client";
 
 const CANDIDATE_POOL = 100;
+// Un chat en una cuenta CON bot activo solo cuenta como "sin respuesta" si el
+// mensaje ya lleva más de esto sin contestar — le da tiempo al pipeline
+// normal (debounce de ~6s, cola bot-messages) antes de asumir que algo falló.
+// Cuentas SIN bot activo no tienen este umbral: nada va a intentar responder
+// ahí jamás, así que cualquier mensaje sin contestar ya califica.
+const STALE_WITH_BOT_MINUTES = 15;
 
 export interface UnassignedLeadChat {
   id: string;
@@ -41,11 +47,20 @@ interface LastMessagePerChatRow {
   timestamp: Date;
 }
 
-// Cuentas del usuario SIN bot activo × chats de esas cuentas cuyo último
-// mensaje es INBOUND (nunca se les contestó, ni bot ni humano). Espejo
-// invertido de la query de candidatos de lead-recovery-worker.ts:47-65 (que
-// busca el caso contrario: último mensaje OUTBOUND, lead que se quedó
-// callado tras nuestra respuesta).
+// Chats del usuario cuyo último mensaje es INBOUND (nunca se les contestó, ni
+// bot ni humano). Espejo invertido de la query de candidatos de
+// lead-recovery-worker.ts:47-65 (que busca el caso contrario: último mensaje
+// OUTBOUND, lead que se quedó callado tras nuestra respuesta).
+//
+// Cubre DOS escenarios, no solo "la cuenta no tiene bot":
+// 1. Cuenta sin ningún bot activo — nada va a contestar jamás, así que
+//    cualquier chat sin respuesta califica de inmediato.
+// 2. Cuenta CON bot activo cuyo mensaje lleva más de STALE_WITH_BOT_MINUTES
+//    sin respuesta — el bot "debería" haber contestado pero algo falló
+//    (cayó en ERROR, se agotó el presupuesto mensual, un fallo silencioso
+//    cualquiera). Antes esta función solo cubría el escenario 1, así que un
+//    bot atorado en ERROR dejaba leads reales sin respuesta y sin ninguna
+//    forma de detectarlos/responderlos manualmente desde acá.
 //
 // Va por SQL crudo (DISTINCT ON, patrón estándar de Postgres para "última
 // fila por grupo") en vez de `wAChat.findMany({ messages: { take: 1 } })` +
@@ -61,14 +76,14 @@ export async function findUnassignedLeadChats(userId: string, now: Date): Promis
   const accountIds = await getUserAccountIds(userId);
   if (accountIds.length === 0) return [];
 
-  const accountsWithoutBot = await prisma.wAAccount.findMany({
+  const accountsWithBot = await prisma.wAAccount.findMany({
     where: {
       id: { in: accountIds },
-      bots: { none: { bot: { isActive: true, status: "ACTIVE" } } },
+      bots: { some: { bot: { isActive: true, status: "ACTIVE" } } },
     },
     select: { id: true },
   });
-  if (accountsWithoutBot.length === 0) return [];
+  const accountsWithBotIds = new Set(accountsWithBot.map((a) => a.id));
 
   const rows = await prisma.$queryRaw<LastMessagePerChatRow[]>`
     SELECT DISTINCT ON (c.id)
@@ -87,13 +102,19 @@ export async function findUnassignedLeadChats(userId: string, now: Date): Promis
     JOIN wa_accounts a ON a.id = c."accountId"
     LEFT JOIN contacts ct ON ct.id = c."contactId"
     JOIN wa_messages m ON m."chatId" = c.id
-    WHERE c."accountId" IN (${Prisma.join(accountsWithoutBot.map((a) => a.id))})
+    WHERE c."accountId" IN (${Prisma.join(accountIds)})
       AND c.status IN ('OPEN', 'PENDING')
     ORDER BY c.id, m.timestamp DESC
   `;
 
+  const staleCutoffMs = now.getTime() - STALE_WITH_BOT_MINUTES * 60_000;
+
   return rows
-    .filter((r) => r.direction === "INBOUND")
+    .filter((r) => {
+      if (r.direction !== "INBOUND") return false;
+      if (!accountsWithBotIds.has(r.accountId)) return true;
+      return r.timestamp.getTime() < staleCutoffMs;
+    })
     .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
     .slice(0, CANDIDATE_POOL)
     .map((r) => ({

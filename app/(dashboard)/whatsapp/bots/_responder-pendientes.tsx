@@ -157,8 +157,8 @@ export function UnassignedLeadsModal({ open, onClose, bots }: Props) {
     <Modal
       open={open}
       onClose={onClose}
-      title="Responder leads sin bot"
-      description="Leads que le escribieron a una cuenta sin bot activo y nunca recibieron respuesta."
+      title="Responder mensajes sin respuesta del bot"
+      description="Leads sin respuesta: sea porque su cuenta no tiene bot activo, o porque el bot debería haber contestado y no lo hizo (más de 15 min sin respuesta)."
       size="lg"
       footer={
         <>
@@ -219,7 +219,7 @@ export function UnassignedLeadsModal({ open, onClose, bots }: Props) {
           <EmptyState
             icon={MessageCircleOff}
             title="Sin leads pendientes"
-            description="No hay leads sin responder en cuentas sin bot activo — todo al día."
+            description="No hay leads sin responder — todo al día."
           />
         ) : visibleChats.length === 0 ? (
           <EmptyState
