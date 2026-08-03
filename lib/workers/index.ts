@@ -1,6 +1,6 @@
 import { Worker } from "bullmq";
 import { processBotMessageJob } from "./bot-worker";
-import { processCampaignJob, processScheduledCampaignsTick } from "./campaign-worker";
+import { processCampaignJob, processScheduledCampaignsTick, processStuckCampaignsTick } from "./campaign-worker";
 import { processRagJob } from "./rag-worker";
 import { processMediaDownloadJob } from "./media-worker";
 import { processMediaCleanupJob } from "./media-cleanup-worker";
@@ -36,11 +36,16 @@ export function startWorkers() {
   }, { connection, concurrency: 3 });
 
   const campaignWorker = new Worker("campaign-send", async (job) => {
-    // La misma cola lleva los envíos ("send") y el tick repetible que reclama
-    // campañas SCHEDULED vencidas ("scheduled-tick") — concurrency 1 garantiza
-    // que el tick nunca corre en paralelo con un envío en curso.
+    // La misma cola lleva los envíos ("send"), el tick que reclama campañas
+    // SCHEDULED vencidas ("scheduled-tick") y el tick que reclama campañas
+    // atoradas en SENDING ("stuck-tick") — concurrency 1 garantiza que ninguno
+    // de los dos ticks corre en paralelo con un envío en curso.
     if (job.name === "scheduled-tick") {
       await processScheduledCampaignsTick();
+      return;
+    }
+    if (job.name === "stuck-tick") {
+      await processStuckCampaignsTick();
       return;
     }
     await processCampaignJob(job.data);
@@ -164,6 +169,18 @@ export function startWorkers() {
       { jobId: "campaign-scheduled-tick", repeat: { pattern: "* * * * *", tz: MEXICO_CITY_TZ } }
     )
     .catch((err) => console.error("[workers] No se pudo programar campaign-scheduled-tick:", err));
+
+  // Reclama campañas atoradas en SENDING con destinatarios PENDING desde hace
+  // rato — ver el comentario de processStuckCampaignsTick() en campaign-worker.ts.
+  // 10 min de resolución da dos oportunidades de detección dentro del umbral
+  // de 20 min sin sondear la DB de más.
+  campaignQueue
+    .add(
+      "stuck-tick",
+      {},
+      { jobId: "campaign-stuck-tick", repeat: { pattern: "*/10 * * * *", tz: MEXICO_CITY_TZ } }
+    )
+    .catch((err) => console.error("[workers] No se pudo programar campaign-stuck-tick:", err));
 
   // Umbrales en horas (mínimo configurable: horas enteras) — un tick cada 15
   // minutos da resolución de sobra sin sondear Redis de más.

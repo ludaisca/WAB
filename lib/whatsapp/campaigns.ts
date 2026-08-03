@@ -45,5 +45,10 @@ export async function sendCampaign(id: string, userId: string) {
     throw new ValidationError("La campaña ya está en envío o completada");
   }
 
-  await campaignQueue.add("send", { campaignId: id });
+  // jobId determinístico: si el proceso muere entre el updateMany de arriba y
+  // este add() (la ventana que dejó campañas reales atoradas en SENDING sin
+  // que ningún job llegara a correr), processStuckCampaignsTick() en
+  // campaign-worker.ts reencola con el mismo jobId — BullMQ lo dedupea si por
+  // alguna otra vía ya quedó un job vivo con este id.
+  await campaignQueue.add("send", { campaignId: id }, { jobId: `campaign-send-${id}` });
 }

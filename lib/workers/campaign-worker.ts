@@ -33,7 +33,36 @@ export async function processScheduledCampaignsTick() {
       data: { status: "SENDING", sentAt: now },
     });
     if (claimed.count === 0) continue;
-    await campaignQueue.add("send", { campaignId: id });
+    await campaignQueue.add("send", { campaignId: id }, { jobId: `campaign-send-${id}` });
+  }
+}
+
+const CAMPAIGN_STUCK_MINUTES = 20; // margen generoso sobre lo que tarda normalmente una campaña grande (~10 min para 100+ destinatarios)
+
+// sendCampaign() marca la campaña SENDING + sentAt en la DB *antes* de encolar
+// el job real (ver el comentario en lib/whatsapp/campaigns.ts) — si el proceso
+// muere justo en esa ventana, o el job arranca y el proceso muere a mitad del
+// loop de destinatarios, la campaña queda marcada como "en envío" para
+// siempre sin que nada la retome. Pasó en producción: clientes_general_sla90_310726
+// quedó en SENDING con sus 72 destinatarios en PENDING y 0 mensajes enviados.
+// processCampaignJob() ya es idempotente (relee los PENDING actuales y
+// recalcula contadores desde los estados reales en vez de acumular en
+// memoria), así que reencolar una campaña atorada resume exactamente donde se
+// quedó — sea 0% o 90% procesada — sin duplicar envíos.
+export async function processStuckCampaignsTick() {
+  const threshold = new Date(Date.now() - CAMPAIGN_STUCK_MINUTES * 60_000);
+  const stuck = await prisma.wACampaign.findMany({
+    where: {
+      status: "SENDING",
+      sentAt: { lt: threshold },
+      recipients: { some: { status: "PENDING" } },
+    },
+    select: { id: true },
+    take: 20,
+  });
+
+  for (const { id } of stuck) {
+    await campaignQueue.add("send", { campaignId: id }, { jobId: `campaign-send-${id}` });
   }
 }
 
