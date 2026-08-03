@@ -12,24 +12,44 @@
 
 Everything runs in Docker. Never install dependencies or databases on the host.
 
-**This local checkout is a remote mount, not the machine that runs the stack.** The working directory is a FUSE mount of `/mnt/datos/Proyectos/WAB` on `rocky-server` (SSH host alias, passwordless) — editing files here edits them there directly, so `Read`/`Edit`/`Write` work normally. But the Docker daemon, `docker compose`, and `node_modules` only exist on `rocky-server` itself: running `docker compose` from this local path fails (bind-mounting over the FUSE layer breaks, e.g. `mkdir .../WAB: file exists` on `docker/init.sql`), and there's no local Node/Postgres/Redis to fall back to either. **Every command that compiles, type-checks, lints, builds, or touches the running containers (including reading live data) must be run over SSH**, not locally:
+**Detect which mode you're in before running anything that touches Docker/Node** — this repo is worked on in two setups, and nothing else tells you which one is active:
+
+- **Local mode**: the checkout and the Docker daemon are on the same machine.
+- **Remote-server mode**: the checkout is an SFTP mount of a separate machine that runs the actual Docker daemon/stack — `rocky-server` is one example of such a machine, not the only one; a future remote could be a different box entirely. `Read`/`Edit`/`Write` work normally either way (it's just file I/O through the mount), but `docker compose`, `node_modules`, and the running containers only exist on the remote machine — running `docker compose` from the mounted path fails locally (bind-mounts break over the network filesystem layer).
+
+Run this once per session to tell which applies:
 
 ```bash
-ssh rocky-server "cd /mnt/datos/Proyectos/WAB && docker compose exec app npx tsc --noEmit"
-ssh rocky-server "cd /mnt/datos/Proyectos/WAB && docker compose exec app npm run lint"
-ssh rocky-server "cd /mnt/datos/Proyectos/WAB && docker compose exec app npm run build"
-ssh rocky-server "cd /mnt/datos/Proyectos/WAB && docker compose logs -f app"
+findmnt -T . -no FSTYPE,SOURCE
 ```
 
-The stack on `rocky-server` (`wab-app-1`/`wab-db-1`/`wab-redis-1`, port 17100) is the one with real data — there's no separate local dev instance to spin up, don't `docker compose up` a second copy locally.
+- Local fstype (`btrfs`/`ext4`/`xfs`/`zfs`/...) → **local mode**.
+- Network/FUSE fstype (`fuse.sshfs`/`nfs`/`cifs`/...) → **remote-server mode**. The `SOURCE` field is `user@host:/remote/path` — parse the remote host and path from it directly, never hardcode a name. (If `findmnt -T .` errors because the path isn't itself a mountpoint, run it against the repo root, or fall back to `stat -f -c '%T' .` for just the fstype.)
+
+**In remote-server mode**, wrap every command that compiles, type-checks, lints, builds, or touches the running containers (including reading live data) in SSH, using the host/path you just parsed:
 
 ```bash
-docker compose up --build   # dev server + postgres + redis, hot reload, port 17100 — run via ssh rocky-server, see above
+ssh <remote-host> "cd <remote-path> && docker compose exec app npx tsc --noEmit"
+ssh <remote-host> "cd <remote-path> && docker compose exec app npm run lint"
+ssh <remote-host> "cd <remote-path> && docker compose exec app npm run build"
+ssh <remote-host> "cd <remote-path> && docker compose logs -f app"
+```
+
+Purely illustrative (do not hardcode elsewhere) — one real example seen on this repo: `<remote-host>` = `rocky-server`, `<remote-path>` = `/mnt/datos/Proyectos/WAB`. The stack (`wab-app-1`/`wab-db-1`/`wab-redis-1`, port 17100) on whatever the remote host turns out to be is the one with real data — don't `docker compose up` a second copy locally in this mode.
+
+**In local mode**, run the same commands directly, no SSH wrapping:
+
+```bash
+docker compose up --build   # dev server + postgres + redis, hot reload, port 17100
 docker compose down -v      # full teardown including volumes
 npx tsc --noEmit            # type check
-npm run build               # production build check
-npx prisma generate         # after schema changes
+npm run build                # production build check
+npx prisma generate          # after schema changes
 ```
+
+Also in local mode: when testing the app from a browser or `curl`, use this machine's own hostname (`hostname`) or its Tailscale MagicDNS name (`tailscale status --json`, read `.Self.DNSName`/`.Self.HostName` — not `tailscale status --self`, that flag doesn't exist) — never `localhost`, never a hardcoded IP. If that hostname isn't already in `next.config.ts`'s `allowedDevOrigins`, add it and `docker compose restart app` (config changes aren't hot-reloaded) — see the `allowedDevOrigins` gotcha under "Framework quirks".
+
+**Git is unaffected by either mode — never SSH-wrap it, and never skip it.** `git status`/`add`/`commit`/`push` always run directly against the checkout in place, local disk or SFTP-mounted, since git is just file I/O that the mount already handles transparently. Don't do `ssh rocky-server "cd /mnt/datos/Proyectos/WAB && git commit -m ..."` (unnecessary, and risks racing against the mount's own view of the index) — and don't reason "I'm on a remote mount, so I shouldn't commit here" and skip it. Commit exactly as you would in local mode.
 
 - **docker-compose.yml** is production (used by Coolify). **docker-compose.override.yml** adds dev overrides (volumes, hot reload, env_file). Docker Compose merges both locally.
 - `tailwindcss` and `@tailwindcss/postcss` are in `dependencies` (not devDependencies) — required at build time even with `NODE_ENV=production`.
@@ -366,7 +386,7 @@ Account creation (`whatsapp/cuentas/_form.tsx:CuentaFormModal`) follows the stan
 ## Gotchas summary
 
 - **`npm run build` inside the dev compose fails with `TypeError: Cannot read properties of null (reading 'useContext')` while prerendering** — `docker-compose.override.yml` sets `NODE_ENV=development`, which poisons the production build (dev React mixed into SSR chunks). It is NOT a code bug: run the build check as `docker compose run --rm -e NODE_ENV=production app sh -c "rm -rf .next && npm run build"`, then `docker compose run --rm -u root app sh -c "rm -rf .next"` + `docker compose up -d app` so the dev server doesn't boot on the production `.next`. **Caveat**: `docker compose run --rm` starts a brand-new container from the *image*, whose `/app/node_modules` is an anonymous volume seeded from whatever the image had at last build — if you just `npm install`ed a new package into the live running container without rebuilding the image, that `run --rm` won't see it ("Module not found"). Use `docker compose exec -e NODE_ENV=production app sh -c "rm -rf .next && npm run build"` instead (reuses the already-running container's up-to-date `node_modules`), then still restart the dev server after (it shares the same `.next` dir as the live `npm run dev` process, so a build attempt run via `exec` mid-session leaves it in a half-rebuilt state until you `docker compose restart app`).
-- **Next dev blocks cross-origin requests to dev-server internals (HMR, RSC payloads) from any hostname other than `localhost`** — accessing the dev server (`:17100`) from another machine (LAN IP, Tailscale hostname, ngrok tunnel) silently breaks navigation/HMR unless that hostname is in `next.config.ts`'s `allowedDevOrigins` array. Symptom looks like "login/navigation just doesn't complete" from the other machine, works fine from `localhost` on the host itself. Add the hostname to the array and `docker compose restart app` (config changes aren't hot-reloaded). Irrelevant in production (`next start`, not `next dev`).
+- **Next dev blocks cross-origin requests to dev-server internals (HMR, RSC payloads) from any hostname other than `localhost`** — accessing the dev server (`:17100`) from another machine (LAN IP, Tailscale hostname, ngrok tunnel) silently breaks navigation/HMR unless that hostname is in `next.config.ts`'s `allowedDevOrigins` array. Symptom looks like "login/navigation just doesn't complete" from the other machine, works fine from `localhost` on the host itself. Add the hostname to the array and `docker compose restart app` (config changes aren't hot-reloaded). Irrelevant in production (`next start`, not `next dev`). See "Development" above for how to determine this machine's own hostname/MagicDNS name in local mode.
 - **Campaign visibility is per account, not per creator** — `GET /api/whatsapp/campaigns`, the `[id]` detail/DELETE and `send` all filter by `waAccountId ∈ getUserAccountIds()`; a `WAAccountShare` grantee can create/see/send campaigns on the shared account and the owner sees them too. Don't regress these back to `userId: session.user.id`.
 - **Role guards live in the APIs too, not just `proxy.ts`** — all `/api/whatsapp/bots/**` handlers 403 for any non-admin, and `GET /api/whatsapp/contacts` (the list) 403s for role `user` (the `contacts/[id]` detail stays open — the chat's ContactDrawer needs it). `PATCH /api/usuarios` refuses to demote the first-created admin or the last remaining admin.
 - **Empty `public/` kills Docker build** — must have `.gitkeep`
