@@ -58,10 +58,39 @@ function normalizePriceDigits(raw: string): string {
   return raw.replace(/[.,]00$/, "").replace(/[^\d]/g, "");
 }
 
+// Cifras explícitamente etiquetadas con símbolo/palabra de moneda — a
+// diferencia de la extracción laxa de abajo (cualquier \d[\d.,]{2,} suelto en
+// el mensaje), esto aísla específicamente cuáles números SON un precio, sin
+// arrastrar cantidades, folios o fechas que puedan aparecer en el mismo texto.
+const TAGGED_PRICE_NUMBER = /\$\s?(\d[\d.,]*)|(\d[\d.,]{2,})\s?(?:pesos|mxn|usd|d[oó]lares)\b/gi;
+
+function extractTaggedPriceNumbers(text: string): string[] {
+  return [...text.matchAll(TAGGED_PRICE_NUMBER)].map((m) => m[1] ?? m[2]);
+}
+
+// Actualizado 2026-08-04: el chequeo original exigía que bastara con que
+// ALGUNA cifra del mensaje coincidiera con el contexto fundamentado ("some")
+// — eso deja pasar un mensaje que mezcla un precio real recién confirmado por
+// la tool con una segunda cifra fabricada por el propio modelo, ej. una
+// conversión de moneda hecha a mano ("$1,250 USD... en pesos serían $21,875
+// MXN") que nunca vino de la tool ni del RAG. Cuando el mensaje trae al menos
+// una cifra explícitamente etiquetada con moneda, ahora TODAS esas cifras
+// etiquetadas deben estar fundamentadas ("every"), no solo una — así una
+// conversión inventada bloquea el mensaje completo aunque venga acompañado de
+// un precio real y legítimo. Para el patrón laxo (precio-palabra cerca de un
+// número sin moneda pegada, ej. "cuesta 15000") no hay forma confiable de
+// aislar cuál número es el precio, así que ese caso conserva el chequeo laxo
+// original (basta una coincidencia).
 function priceIsGroundedInContext(text: string, groundedContext: string): boolean {
+  const groundedDigits = new Set((groundedContext.match(/\d[\d.,]{2,}/g) ?? []).map(normalizePriceDigits));
+
+  const tagged = extractTaggedPriceNumbers(text);
+  if (tagged.length > 0) {
+    return tagged.every((q) => groundedDigits.has(normalizePriceDigits(q)));
+  }
+
   const quoted = text.match(/\d[\d.,]{2,}/g);
   if (!quoted) return true; // sin cifra numérica que verificar (ej. solo disparó por palabra de moneda)
-  const groundedDigits = new Set((groundedContext.match(/\d[\d.,]{2,}/g) ?? []).map(normalizePriceDigits));
   return quoted.some((q) => groundedDigits.has(normalizePriceDigits(q)));
 }
 
