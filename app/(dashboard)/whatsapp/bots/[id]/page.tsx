@@ -32,6 +32,9 @@ interface BotDetail {
   memoryType: string;
   memoryLimit: number;
   ragEnabled: boolean;
+  humanizeEnabled: boolean;
+  priceLookupEnabled: boolean;
+  priceLookupSkus: string | null;
   isActive: boolean;
   status: string;
   createdAt: string;
@@ -305,6 +308,19 @@ export default function BotDetailPage() {
                   { label: "Max tokens", value: bot.maxTokens.toLocaleString("es-MX"), mono: true },
                   { label: "Memoria", value: bot.memoryType === "RECENT" ? `Reciente (${bot.memoryLimit} msgs)` : bot.memoryType === "SUMMARY" ? "Resumen acumulativo" : "Ninguna" },
                   { label: "RAG", value: bot.ragEnabled ? "Activado" : "Desactivado" },
+                  { label: "Humanización", value: bot.humanizeEnabled ? "Activada (envío fraccionado)" : "Desactivada" },
+                  {
+                    label: "Precio en vivo",
+                    value: bot.priceLookupEnabled
+                      ? bot.priceLookupSkus
+                        ? `Activado · ${bot.priceLookupSkus.split("\n").filter(Boolean).length} SKU(s)`
+                        : "Activado · cualquier SKU"
+                      : "Desactivado",
+                  },
+                  {
+                    label: "Cuentas asignadas",
+                    value: bot.accounts.length === 0 ? "Ninguna (solo pruebas)" : bot.accounts.map((a) => a.waAccount.name).join(", "),
+                  },
                   { label: "Creado", value: formatDate(bot.createdAt, { day: "2-digit", month: "long", year: "numeric" }), mono: true },
                 ]}
               />

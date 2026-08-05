@@ -3,13 +3,16 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { Plus, Target, Trash2, Pencil, Sparkles, Clock, Download, RefreshCw } from "lucide-react";
-import { Card, CardBody } from "@/app/components/ui/card";
+import { Plus, Target, Trash2, Sparkles, Clock, Download, RefreshCw } from "lucide-react";
 import { Badge } from "@/app/components/ui/badge";
 import { Switch } from "@/app/components/ui/switch";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { DropdownItem } from "@/app/components/ui/dropdown";
 import { PageHeader } from "@/app/components/ui/page-header";
+import { SectionHeader } from "@/app/components/ui/section-header";
+import { Workbench, WorkbenchMain, WorkbenchAside } from "@/app/components/ui/workbench";
+import { EntityList, EntityRow } from "@/app/components/ui/entity-list";
+import { EntityAvatar } from "@/app/components/ui/avatar";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import { Pagination } from "@/app/components/ui/pagination";
 import { Button } from "@/app/components/ui/button";
@@ -18,6 +21,7 @@ import { Modal } from "@/app/components/ui/modal";
 import { DatePicker } from "@/app/components/ui/date-picker";
 import { Checkbox } from "@/app/components/ui/checkbox";
 import { RadioGroup } from "@/app/components/ui/radio";
+import { Tabs } from "@/app/components/ui/tabs";
 import { useToast } from "@/app/components/ui/toast";
 import { toCsv, downloadCsv } from "@/lib/csv";
 import { formatDateTime } from "@/lib/timezone";
@@ -68,8 +72,7 @@ function isoDaysAgo(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-const TABS = ["calificadores", "leads"] as const;
-type Tab = (typeof TABS)[number];
+type Tab = "calificadores" | "leads";
 
 export default function CalificadoresPage() {
   const { data: session } = useSession();
@@ -86,19 +89,14 @@ export default function CalificadoresPage() {
       />
 
       {canManageScorers && (
-        <div className="flex gap-1 border-b border-border">
-          {TABS.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                tab === t ? "border-accent text-accent" : "border-transparent text-muted hover:text-foreground"
-              }`}
-            >
-              {t === "calificadores" ? "Calificadores" : "Leads calificados"}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          items={[
+            { value: "calificadores", label: "Calificadores" },
+            { value: "leads", label: "Leads calificados" },
+          ]}
+          value={tab}
+          onChange={(v) => setTab(v as Tab)}
+        />
       )}
 
       {canManageScorers && tab === "calificadores" ? <CalificadoresTab /> : <LeadsTab />}
@@ -189,52 +187,6 @@ function CalificadoresTab() {
     }
   }, [toastError]);
 
-  const columns: TableColumn<LeadScorerBot>[] = useMemo(() => [
-    {
-      key: "name",
-      header: "Nombre",
-      render: (r) => <span className="text-sm font-medium text-foreground">{r.name}</span>,
-    },
-    {
-      key: "model",
-      header: "Modelo",
-      render: (r) => (
-        <div className="flex items-center gap-2">
-          <Badge tone="info" size="sm">Gemini</Badge>
-          <span className="text-xs text-muted-darker">{r.model}</span>
-        </div>
-      ),
-    },
-    {
-      key: "prompt",
-      header: "Prompt",
-      render: (r) => <span className="text-sm text-muted-darker line-clamp-1">{r.systemPrompt}</span>,
-    },
-    {
-      key: "schedule",
-      header: "Automático",
-      render: (r) =>
-        r.scheduleEnabled && r.scheduleIntervalMinutes ? (
-          <Badge tone="accent" size="sm" icon={Clock}>
-            {INTERVAL_LABEL[r.scheduleIntervalMinutes] ?? `${r.scheduleIntervalMinutes} min`}
-          </Badge>
-        ) : (
-          <span className="text-xs text-muted-darker">—</span>
-        ),
-    },
-    {
-      key: "isActive",
-      header: "Activo",
-      render: (r) => (
-        <Switch
-          checked={r.isActive}
-          onCheckedChange={() => handleToggle(r)}
-          disabled={togglingId === r.id}
-        />
-      ),
-    },
-  ], [togglingId, handleToggle]);
-
   return (
     <>
       <div className="flex justify-end">
@@ -243,49 +195,53 @@ function CalificadoresTab() {
         </Button>
       </div>
 
-      <Card>
-        <CardBody>
-          <Table
-            columns={columns}
-            rows={items}
-            rowKey={(r) => r.id}
-            loading={loading}
-            error={fetchError}
-            onRetry={fetchItems}
-            emptyIcon={Target}
-            emptyTitle="Sin calificadores"
-            emptyDescription="Crea tu primer calificador para empezar a calificar leads desde los chats."
-            mobileCard={(r) => {
-              const provider = columns.find((c) => c.key === "model")!;
-              const schedule = columns.find((c) => c.key === "schedule")!;
-              const active = columns.find((c) => c.key === "isActive")!;
-              return (
-                <div className="space-y-1.5 min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-foreground truncate">{r.name}</span>
-                    <div onClick={(e) => e.stopPropagation()}>{active.render(r)}</div>
-                  </div>
-                  {provider.render(r)}
-                  {schedule.render(r)}
-                </div>
-              );
-            }}
-            rowActions={(r) => (
-              <>
-                <DropdownItem icon={Pencil} onClick={() => { setEditId(r.id); setModalOpen(true); }}>
-                  Editar
-                </DropdownItem>
-                <DropdownItem icon={RefreshCw} onClick={() => setRescoreTarget(r)}>
-                  Recalificar todos los leads
-                </DropdownItem>
-                <DropdownItem icon={Trash2} onClick={() => setDeleteId(r.id)}>
-                  Eliminar
-                </DropdownItem>
-              </>
-            )}
-          />
-        </CardBody>
-      </Card>
+      <EntityList
+        rows={items}
+        rowKey={(r) => r.id}
+        loading={loading}
+        error={fetchError}
+        onRetry={fetchItems}
+        emptyIcon={Target}
+        emptyTitle="Sin calificadores"
+        emptyDescription="Crea tu primer calificador para empezar a calificar leads desde los chats."
+        onRowClick={(r) => { setEditId(r.id); setModalOpen(true); }}
+        renderRow={(r) => (
+          <>
+            <EntityRow
+              leading={<EntityAvatar id={r.id} name={r.name} size="sm" />}
+              title={r.name}
+              badges={
+                <span className="flex shrink-0 items-center gap-1">
+                  <Badge tone="info" size="sm">Gemini</Badge>
+                  {r.scheduleEnabled && r.scheduleIntervalMinutes && (
+                    <Badge tone="accent" size="sm" icon={Clock}>
+                      {INTERVAL_LABEL[r.scheduleIntervalMinutes] ?? `${r.scheduleIntervalMinutes} min`}
+                    </Badge>
+                  )}
+                </span>
+              }
+              subtitle={<span className="line-clamp-1">{r.model} · {r.systemPrompt}</span>}
+            />
+            <span className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
+              <Switch
+                checked={r.isActive}
+                onCheckedChange={() => handleToggle(r)}
+                disabled={togglingId === r.id}
+              />
+            </span>
+          </>
+        )}
+        rowActions={(r) => (
+          <>
+            <DropdownItem icon={RefreshCw} onClick={() => setRescoreTarget(r)}>
+              Recalificar todos los leads
+            </DropdownItem>
+            <DropdownItem icon={Trash2} danger onClick={() => setDeleteId(r.id)}>
+              Eliminar
+            </DropdownItem>
+          </>
+        )}
+      />
 
       <LeadScorerFormModal
         open={modalOpen}
@@ -504,103 +460,106 @@ function LeadsTab() {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="w-56">
-          <Select value={scorerFilter} onChange={(e) => setScorerFilter(e.target.value)}>
-            <option value="all">Todos los calificadores</option>
-            {scorers.map(([id, name]) => (
-              <option key={id} value={id}>{name}</option>
-            ))}
-          </Select>
-        </div>
-        <div className="w-48">
-          <Select value={labelFilter} onChange={(e) => setLabelFilter(e.target.value)}>
-            <option value="all">Todas las calificaciones</option>
-            <option value="prioridad_alta">Prioridad alta</option>
-            <option value="oportunidad">Oportunidad</option>
-            <option value="interesado">Interesado</option>
-            <option value="frio">Frío</option>
-            <option value="descartado">Descartado</option>
-          </Select>
-        </div>
-        <div className="w-56">
-          <Select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)}>
-            <option value="all">Todas las cuentas</option>
-            {accounts.map(([id, name]) => (
-              <option key={id} value={id}>{name}</option>
-            ))}
-          </Select>
-        </div>
-        <div className="w-36">
-          <DatePicker value={dateFrom} onChange={setDateFrom} placeholder="Desde" max={dateTo || undefined} />
-        </div>
-        <div className="w-36">
-          <DatePicker value={dateTo} onChange={setDateTo} placeholder="Hasta" min={dateFrom || undefined} />
-        </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={Download}
-          onClick={() => setExportModalOpen(true)}
-          disabled={filtered.length === 0}
-          className="ml-auto"
-        >
-          Exportar CSV
-        </Button>
-      </div>
-
-      {selectedIds.size > 0 && (
-        <p className="text-xs text-muted-darker">{selectedIds.size} lead(s) seleccionado(s).</p>
-      )}
-
-      <Card>
-        <CardBody>
-          <Table
-            columns={columns}
-            rows={pageRows}
-            rowKey={(r) => r.id}
-            loading={loading}
-            error={fetchError}
-            onRetry={fetchRows}
-            onRowClick={(r) => setDetailId(r.id)}
-            emptyIcon={Sparkles}
-            emptyTitle="Sin leads calificados"
-            emptyDescription="Los chats que califiques manualmente o mediante ejecución automática aparecerán aquí."
-            mobileCard={(r) => {
-              const label = columns.find((c) => c.key === "label")!;
-              return (
-                <div className="flex items-start gap-3 min-w-0 w-full">
-                  <div onClick={(e) => e.stopPropagation()} className="pt-0.5 shrink-0">
-                    <Checkbox checked={selectedIds.has(r.id)} onChange={() => toggleSelected(r.id)} />
-                  </div>
-                  <div className="space-y-1 min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium text-sm truncate">{r.chat.name || r.chat.remoteJid.split("@")[0]}</span>
-                      {label.render(r)}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-darker">
-                      <span>{r.chat.remoteJid.split("@")[0]}</span>
-                      <span>·</span>
-                      <span className="truncate">{r.chat.account.name}</span>
-                      <span>·</span>
-                      <span className="truncate">{r.scorer.name}</span>
-                    </div>
-                    <p className="text-xs text-muted-darker line-clamp-2">{r.summary}</p>
-                    <p className="text-[11px] text-muted-darker">
-                      {formatDateTime(r.updatedAt)}
-                    </p>
-                  </div>
-                </div>
-              );
-            }}
+      <Workbench>
+        <WorkbenchMain>
+          <SectionHeader
+            eyebrow="Leads"
+            title="Leads calificados"
+            action={
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={Download}
+                onClick={() => setExportModalOpen(true)}
+                disabled={filtered.length === 0}
+              >
+                Exportar CSV
+              </Button>
+            }
           />
-          {totalPages > 1 && (
-            <div className="flex justify-center mt-4 pt-4 border-t border-border">
-              <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
-            </div>
+
+          {selectedIds.size > 0 && (
+            <p className="mt-2 text-xs text-muted-darker">{selectedIds.size} lead(s) seleccionado(s).</p>
           )}
-        </CardBody>
-      </Card>
+
+          <div className="mt-4">
+            <Table
+              columns={columns}
+              rows={pageRows}
+              rowKey={(r) => r.id}
+              loading={loading}
+              error={fetchError}
+              onRetry={fetchRows}
+              onRowClick={(r) => setDetailId(r.id)}
+              emptyIcon={Sparkles}
+              emptyTitle="Sin leads calificados"
+              emptyDescription="Los chats que califiques manualmente o mediante ejecución automática aparecerán aquí."
+              mobileCard={(r) => {
+                const label = columns.find((c) => c.key === "label")!;
+                return (
+                  <div className="flex items-start gap-3 min-w-0 w-full">
+                    <div onClick={(e) => e.stopPropagation()} className="pt-0.5 shrink-0">
+                      <Checkbox checked={selectedIds.has(r.id)} onChange={() => toggleSelected(r.id)} />
+                    </div>
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-sm truncate">{r.chat.name || r.chat.remoteJid.split("@")[0]}</span>
+                        {label.render(r)}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-darker">
+                        <span>{r.chat.remoteJid.split("@")[0]}</span>
+                        <span>·</span>
+                        <span className="truncate">{r.chat.account.name}</span>
+                        <span>·</span>
+                        <span className="truncate">{r.scorer.name}</span>
+                      </div>
+                      <p className="text-xs text-muted-darker line-clamp-2">{r.summary}</p>
+                      <p className="text-[11px] text-muted-darker">
+                        {formatDateTime(r.updatedAt)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              }}
+            />
+            {totalPages > 1 && (
+              <div className="flex justify-center mt-4 pt-4 border-t border-border">
+                <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+              </div>
+            )}
+          </div>
+        </WorkbenchMain>
+
+        <WorkbenchAside>
+          <SectionHeader eyebrow="Filtros" title="Refinar búsqueda" />
+          <div className="mt-4 space-y-3">
+            <Select value={scorerFilter} onChange={(e) => setScorerFilter(e.target.value)}>
+              <option value="all">Todos los calificadores</option>
+              {scorers.map(([id, name]) => (
+                <option key={id} value={id}>{name}</option>
+              ))}
+            </Select>
+            <Select value={labelFilter} onChange={(e) => setLabelFilter(e.target.value)}>
+              <option value="all">Todas las calificaciones</option>
+              <option value="prioridad_alta">Prioridad alta</option>
+              <option value="oportunidad">Oportunidad</option>
+              <option value="interesado">Interesado</option>
+              <option value="frio">Frío</option>
+              <option value="descartado">Descartado</option>
+            </Select>
+            <Select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)}>
+              <option value="all">Todas las cuentas</option>
+              {accounts.map(([id, name]) => (
+                <option key={id} value={id}>{name}</option>
+              ))}
+            </Select>
+            <div className="flex gap-2">
+              <DatePicker value={dateFrom} onChange={setDateFrom} placeholder="Desde" max={dateTo || undefined} />
+              <DatePicker value={dateTo} onChange={setDateTo} placeholder="Hasta" min={dateFrom || undefined} />
+            </div>
+          </div>
+        </WorkbenchAside>
+      </Workbench>
 
       <Modal
         open={!!detailRow}
@@ -657,6 +616,33 @@ function LeadsTab() {
                 <div>
                   <dt className="text-xs text-muted-darker">Tono de interés</dt>
                   <dd className="capitalize">{detailRow.details.tono_interes}</dd>
+                </div>
+              )}
+              {/* Estos 4 campos ya venían en el contrato JSON del calificador
+                  (lib/whatsapp/lead-scoring.ts) y en el export CSV, pero nunca
+                  se habían pintado en ningún lado del app. */}
+              {detailRow.details?.tipo_lead && (
+                <div>
+                  <dt className="text-xs text-muted-darker">Tipo de lead</dt>
+                  <dd>{detailRow.details.tipo_lead}</dd>
+                </div>
+              )}
+              {detailRow.details?.nivel_interaccion && (
+                <div>
+                  <dt className="text-xs text-muted-darker">Nivel de interacción</dt>
+                  <dd className="capitalize">{detailRow.details.nivel_interaccion}</dd>
+                </div>
+              )}
+              {detailRow.details?.necesidad_principal && (
+                <div className="col-span-2">
+                  <dt className="text-xs text-muted-darker">Necesidad principal</dt>
+                  <dd>{detailRow.details.necesidad_principal}</dd>
+                </div>
+              )}
+              {detailRow.details?.contexto_negocio && (
+                <div className="col-span-2">
+                  <dt className="text-xs text-muted-darker">Contexto de negocio</dt>
+                  <dd>{detailRow.details.contexto_negocio}</dd>
                 </div>
               )}
             </dl>

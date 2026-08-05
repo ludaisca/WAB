@@ -43,7 +43,10 @@ export default function EstadisticasLoading() {
         </div>
 
         <div className="space-y-10">
-          {Array.from({ length: 3 }).map((_, s) => (
+          {/* 5 secciones reales en el aside (Inversión en IA, Embudo de leads,
+              Chats calificados, Entregas por origen, Chats por número) — 4
+              bloques fantasma es suficiente aproximación, no hace falta 1:1. */}
+          {Array.from({ length: 4 }).map((_, s) => (
             <div key={s} className="space-y-3">
               <Skeleton className="h-6 w-36" />
               <Skeleton className="h-10 w-28" />

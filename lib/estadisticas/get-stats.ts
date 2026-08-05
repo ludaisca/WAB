@@ -9,12 +9,18 @@ import {
   countCompletedCampaigns,
   countMessages,
 } from "@/lib/estadisticas/global-counts";
+import { getAgentPerformance, type AgentPerformanceRow } from "@/lib/estadisticas/agent-performance";
 import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
 import { dateKeyInTz, startOfDayInTz, startOfMonthInTz } from "@/lib/timezone";
 
 // Mismo orden que VALID_LABELS en lib/whatsapp/lead-scoring.ts, invertido para
 // mostrar primero lo más urgente/accionable.
 const LABEL_ORDER = ["prioridad_alta", "oportunidad", "interesado", "frio", "descartado"] as const;
+
+// Pasos del funnel — LOST es una salida, no una etapa, así que no entra aquí
+// (se muestra aparte como KPI "Perdidos"; mantiene el límite de 4 colores
+// categóricos de la paleta de gráficas).
+const LEAD_FUNNEL_STAGES = ["NEW", "CONTACTED", "QUALIFIED", "CUSTOMER"] as const;
 
 const statsCache = new Map<string, { data: Estadisticas; expiresAt: number }>();
 const STATS_TTL_MS = 60_000;
@@ -52,15 +58,15 @@ export interface Estadisticas {
     phoneNumber: string | null;
     chats: number;
   }>;
-  agentPerformance: Array<{
-    userId: string;
-    userName: string | null;
-    resolvedCount: number;
-    avgFirstResponseMinutes: number | null;
-    avgResolutionMinutes: number | null;
-  }>;
+  agentPerformance: AgentPerformanceRow[];
   monthlyCost: number;
   monthlyBudgetUsd: number | null;
+  // El funnel de LeadStatus (NEW→CONTACTED→QUALIFIED→CUSTOMER) que hasta ahora
+  // no se calculaba en ningún lado pese a ser el concepto central del modelo
+  // de datos — LOST queda fuera (es una salida, no una etapa) y se cuenta
+  // aparte en `leadStatusLost`.
+  leadStatusFunnel: Array<{ status: string; count: number }>;
+  leadStatusLost: number;
   // Estado de entrega de mensajes de campaña, separado por origen — campañas
   // masivas (WACampaign, WACampaignRecipient) vs. automatizaciones de leads de
   // Facebook (LeadSheetSource, LeadSheetImportedRow). Ver lib/whatsapp/export-columns.ts
@@ -137,7 +143,8 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     chatCountsByAccount,
     monthlyCost,
     appSettings,
-    assignedChats,
+    agentPerformance,
+    leadStatusGroups,
     campaignsForMessageStats,
     leadSheetSources,
     leadSheetStatusGroups,
@@ -202,19 +209,11 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     // pausar el gasto — así el % de presupuesto mostrado nunca diverge del real.
     getMonthlyAiCost(userId, monthStart),
     prisma.appSettings.findUnique({ where: { userId }, select: { monthlyBudgetUsd: true } }),
-    prisma.wAChat.findMany({
-      where: {
-        assignedToId: { not: null },
-        accountId: { in: accountIds },
-      },
-      select: {
-        assignedToId: true,
-        assignedTo: { select: { name: true } },
-        status: true,
-        createdAt: true,
-        firstResponseAt: true,
-        resolvedAt: true,
-      },
+    getAgentPerformance(accountIds),
+    prisma.contact.groupBy({
+      by: ["leadStatus"],
+      where: { accountId: { in: accountIds } },
+      _count: { _all: true },
     }),
     // Contadores ya vienen agregados en WACampaign (sentCount/deliveredCount/...),
     // actualizados por el webhook de Meta — no hace falta un groupBy sobre
@@ -280,35 +279,9 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     }))
     .sort((a, b) => b.chats - a.chats);
 
-  const agentMap = new Map<string, {
-    userName: string | null;
-    resolvedCount: number;
-    responseTimes: number[];
-    resolutionTimes: number[];
-  }>();
-  for (const c of assignedChats) {
-    const id = c.assignedToId!;
-    if (!agentMap.has(id)) {
-      agentMap.set(id, { userName: c.assignedTo?.name ?? null, resolvedCount: 0, responseTimes: [], resolutionTimes: [] });
-    }
-    const entry = agentMap.get(id)!;
-    if (c.status === "RESOLVED") entry.resolvedCount++;
-    if (c.firstResponseAt) entry.responseTimes.push((c.firstResponseAt.getTime() - c.createdAt.getTime()) / 60000);
-    if (c.resolvedAt) entry.resolutionTimes.push((c.resolvedAt.getTime() - c.createdAt.getTime()) / 60000);
-  }
-
-  const avg = (values: number[]): number | null =>
-    values.length === 0 ? null : Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10;
-
-  const agentPerformance = Array.from(agentMap.entries())
-    .map(([userId, entry]) => ({
-      userId,
-      userName: entry.userName,
-      resolvedCount: entry.resolvedCount,
-      avgFirstResponseMinutes: avg(entry.responseTimes),
-      avgResolutionMinutes: avg(entry.resolutionTimes),
-    }))
-    .sort((a, b) => b.resolvedCount - a.resolvedCount);
+  const leadStatusCounts = new Map(leadStatusGroups.map((g) => [g.leadStatus, g._count._all]));
+  const leadStatusFunnel = LEAD_FUNNEL_STAGES.map((status) => ({ status, count: leadStatusCounts.get(status) ?? 0 }));
+  const leadStatusLost = leadStatusCounts.get("LOST") ?? 0;
 
   function rate(numerator: number, denominator: number): number | null {
     return denominator > 0 ? Math.round((numerator / denominator) * 1000) / 10 : null;
@@ -432,6 +405,8 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     agentPerformance,
     monthlyCost: Math.round(monthlyCost * 10000) / 10000,
     monthlyBudgetUsd: appSettings?.monthlyBudgetUsd ?? null,
+    leadStatusFunnel,
+    leadStatusLost,
     campaignMessagesByOrigin,
     campaignMessageBreakdown,
     qualifiedChats,

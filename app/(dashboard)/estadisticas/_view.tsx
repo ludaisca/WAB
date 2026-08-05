@@ -12,7 +12,7 @@ import { Table, type TableColumn } from "@/app/components/ui/table";
 import { TrendChart, DonutChart, FunnelBars } from "@/app/components/ui/chart";
 import { AnimatedNumber } from "@/app/components/ui/animated-number";
 import type { Estadisticas } from "@/lib/estadisticas/get-stats";
-import { CAMPAIGN_ORIGIN_LABEL, LABEL_TEXT } from "@/lib/whatsapp/export-columns";
+import { CAMPAIGN_ORIGIN_LABEL, LABEL_TEXT, LEAD_STATUS_LABEL } from "@/lib/whatsapp/export-columns";
 import { formatDate, zonedDateTimeToUtc } from "@/lib/timezone";
 import { AiSpendChart } from "./_ai-spend-chart";
 
@@ -341,6 +341,29 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
                 </div>
               )}
             </div>
+          </section>
+
+          <section className="animate-fade-in-up animation-delay-300">
+            <SectionHeader eyebrow="Leads" title="Embudo de leads" />
+            {/* Concepto central del modelo de datos (LeadStatus) que hasta ahora
+                no tenía ningún agregado ni visualización en toda la app. LOST es
+                una salida, no un paso del embudo — se muestra aparte, igual que
+                "Fallidos" en Entregas por origen. */}
+            {stats.leadStatusFunnel.every((s) => s.count === 0) && stats.leadStatusLost === 0 ? (
+              <p className="py-4 text-center text-sm text-muted">Sin contactos todavía</p>
+            ) : (
+              <div className="mt-3 space-y-3">
+                <FunnelBars
+                  steps={stats.leadStatusFunnel.map((s) => ({
+                    name: LEAD_STATUS_LABEL[s.status] ?? s.status,
+                    value: s.count,
+                  }))}
+                />
+                {stats.leadStatusLost > 0 && (
+                  <Badge tone="danger" size="sm">Perdidos: {stats.leadStatusLost}</Badge>
+                )}
+              </div>
+            )}
           </section>
 
           <section className="animate-fade-in-up animation-delay-300">

@@ -198,7 +198,7 @@ export function LeadScoreBadge({ chatId }: { chatId: string }) {
                 )}
                 {selectedScore.details && (
                   <div className="space-y-2 pt-1 border-t border-border">
-                    {(selectedScore.details.producto_interes || selectedScore.details.urgencia) && (
+                    {(selectedScore.details.producto_interes || selectedScore.details.urgencia || selectedScore.details.tipo_lead || selectedScore.details.nivel_interaccion) && (
                       <div className="flex flex-wrap gap-1.5">
                         {selectedScore.details.producto_interes && (
                           <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent/10 text-accent">
@@ -209,6 +209,34 @@ export function LeadScoreBadge({ chatId }: { chatId: string }) {
                           <span className="text-[11px] px-2 py-0.5 rounded-full bg-warning-bg text-warning">
                             Urgencia: {selectedScore.details.urgencia}
                           </span>
+                        )}
+                        {/* tipo_lead/nivel_interaccion: parte del contrato JSON desde
+                            siempre, nunca se habían pintado en este popover. */}
+                        {selectedScore.details.tipo_lead && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-light text-muted-darker">
+                            {selectedScore.details.tipo_lead}
+                          </span>
+                        )}
+                        {selectedScore.details.nivel_interaccion && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-surface-light text-muted-darker capitalize">
+                            {selectedScore.details.nivel_interaccion}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {(selectedScore.details.necesidad_principal || selectedScore.details.contexto_negocio) && (
+                      <div className="space-y-1">
+                        {selectedScore.details.necesidad_principal && (
+                          <p className="text-xs text-muted-darker">
+                            <span className="font-medium text-foreground">Necesidad: </span>
+                            {selectedScore.details.necesidad_principal}
+                          </p>
+                        )}
+                        {selectedScore.details.contexto_negocio && (
+                          <p className="text-xs text-muted-darker">
+                            <span className="font-medium text-foreground">Contexto: </span>
+                            {selectedScore.details.contexto_negocio}
+                          </p>
                         )}
                       </div>
                     )}

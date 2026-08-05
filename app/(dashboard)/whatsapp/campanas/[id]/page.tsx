@@ -10,12 +10,14 @@ import { Button } from "@/app/components/ui/button";
 import { Spinner } from "@/app/components/ui/spinner";
 import { SkeletonDetail } from "@/app/components/ui/skeleton";
 import { KpiStrip } from "@/app/components/ui/kpi-strip";
+import { DefinitionList } from "@/app/components/ui/definition-list";
 import { FunnelBars } from "@/app/components/ui/chart";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { Banner } from "@/app/components/ui/banner";
 import { Pagination } from "@/app/components/ui/pagination";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
+import { formatDateTime } from "@/lib/timezone";
 
 const STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" | "info" | "danger" | "neutral" }> = {
   DRAFT: { label: "Borrador", tone: "neutral" },
@@ -177,6 +179,7 @@ export default function CampaignDetailPage() {
               { label: "Enviados", value: String(campaign.sentCount), numeric: campaign.sentCount },
               { label: "Entregados", value: String(campaign.deliveredCount), numeric: campaign.deliveredCount },
               { label: "Leídos", value: String(campaign.readCount), numeric: campaign.readCount },
+              { label: "Fallidos", value: String(campaign.failedCount), numeric: campaign.failedCount },
             ]}
           />
         </CardBody>
@@ -225,6 +228,26 @@ export default function CampaignDetailPage() {
                 {statusBadge.label}
               </Badge>
             </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* scheduledAt/sentAt/completedAt ya venían en la interfaz CampaignDetail
+          y en la respuesta del API pero nunca se pintaban en ningún lado. */}
+      {(campaign.scheduledAt || campaign.sentAt || campaign.completedAt) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Cronología</CardTitle>
+          </CardHeader>
+          <CardBody>
+            <DefinitionList
+              rows={[
+                ...(campaign.scheduledAt ? [{ label: "Programada", value: formatDateTime(campaign.scheduledAt), mono: true }] : []),
+                ...(campaign.sentAt ? [{ label: "Enviada", value: formatDateTime(campaign.sentAt), mono: true }] : []),
+                ...(campaign.completedAt ? [{ label: "Completada", value: formatDateTime(campaign.completedAt), mono: true }] : []),
+                { label: "Creada", value: formatDateTime(campaign.createdAt), mono: true },
+              ]}
+            />
           </CardBody>
         </Card>
       )}
