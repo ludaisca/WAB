@@ -16,24 +16,14 @@ import { useToast } from "@/app/components/ui/toast";
 
 interface ModelOption { id: string; name: string; }
 
-const FALLBACK_MODELS: Record<string, ModelOption[]> = {
-  openrouter: [
-    { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash" },
-    { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro" },
-    { id: "openai/gpt-4o", name: "GPT-4o" },
-    { id: "openai/gpt-4o-mini", name: "GPT-4o Mini" },
-  ],
-  google: [
-    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
-    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
-  ],
-};
+const FALLBACK_MODELS: ModelOption[] = [
+  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+];
 
 interface AISettings {
   id: string;
-  openrouterApiKey: string | null;
   googleApiKey: string | null;
-  defaultProvider: string;
   defaultModel: string;
   monthlyBudgetUsd: number | null;
   leadRecoveryEnabled: boolean;
@@ -49,12 +39,9 @@ export default function IASettingsPage() {
   const [settings, setSettings] = useState<AISettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [openrouterKey, setOpenrouterKey] = useState("");
   const [googleKey, setGoogleKey] = useState("");
-  const [defaultProvider, setDefaultProvider] = useState("openrouter");
-  const [defaultModel, setDefaultModel] = useState("google/gemini-2.5-flash");
+  const [defaultModel, setDefaultModel] = useState("gemini-2.5-flash");
   const [monthlyBudget, setMonthlyBudget] = useState("");
-  const [showOpenrouter, setShowOpenrouter] = useState(false);
   const [showGoogle, setShowGoogle] = useState(false);
   const [recoveryEnabled, setRecoveryEnabled] = useState(false);
   const [recoveryFirstHours, setRecoveryFirstHours] = useState(2);
@@ -62,35 +49,33 @@ export default function IASettingsPage() {
   const [recoveryHourStart, setRecoveryHourStart] = useState(8);
   const [recoveryHourEnd, setRecoveryHourEnd] = useState(20);
   const [savingRecovery, setSavingRecovery] = useState(false);
-  const [models, setModels] = useState<ModelOption[]>(FALLBACK_MODELS.openrouter);
+  const [models, setModels] = useState<ModelOption[]>(FALLBACK_MODELS);
   const [loadingModels, setLoadingModels] = useState(false);
-  const [modelsProvider, setModelsProvider] = useState("openrouter");
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
-  const fetchModels = useCallback(async (p: string) => {
+  const fetchModels = useCallback(async () => {
     setLoadingModels(true);
     try {
-      const res = await fetch(`/api/configuracion/ia/models?provider=${p}`);
+      const res = await fetch("/api/configuracion/ia/models");
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
         setModels(data);
       } else {
-        setModels(FALLBACK_MODELS[p] ?? []);
-        toastError(data.error ?? "No se pudo obtener la lista de modelos del proveedor, mostrando lista de respaldo");
+        setModels(FALLBACK_MODELS);
+        toastError(data.error ?? "No se pudo obtener la lista de modelos, mostrando lista de respaldo");
       }
     } catch {
-      setModels(FALLBACK_MODELS[p] ?? []);
-      toastError("No se pudo obtener la lista de modelos del proveedor, mostrando lista de respaldo");
+      setModels(FALLBACK_MODELS);
+      toastError("No se pudo obtener la lista de modelos, mostrando lista de respaldo");
     } finally {
-      setModelsProvider(p);
       setLoadingModels(false);
     }
   }, [toastError]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/provider-change; fetchModels also used for manual refresh
-    fetchModels(defaultProvider);
-  }, [defaultProvider, fetchModels]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchModels also used for manual refresh
+    fetchModels();
+  }, [fetchModels]);
 
   useEffect(() => {
     fetch("/api/configuracion/ia")
@@ -98,8 +83,7 @@ export default function IASettingsPage() {
       .then(d => {
         if (d.id) {
           setSettings(d);
-          setDefaultProvider(d.defaultProvider || "openrouter");
-          setDefaultModel(d.defaultModel || "google/gemini-2.5-flash");
+          setDefaultModel(d.defaultModel || "gemini-2.5-flash");
           setMonthlyBudget(d.monthlyBudgetUsd != null ? String(d.monthlyBudgetUsd) : "");
           setRecoveryEnabled(!!d.leadRecoveryEnabled);
           setRecoveryFirstHours(d.leadRecoveryFirstMessageHours ?? 2);
@@ -114,20 +98,18 @@ export default function IASettingsPage() {
 
   useEffect(() => {
     if (!settingsLoaded) return;
-    if (modelsProvider !== defaultProvider) return;
     if (models.length === 0) return;
     if (!models.some((m) => m.id === defaultModel)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- snap to a valid model when the fetched list no longer contains the current one
       setDefaultModel(models[0].id);
     }
-  }, [models, modelsProvider, defaultProvider, defaultModel, settingsLoaded]);
+  }, [models, defaultModel, settingsLoaded]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     try {
-      const body: Record<string, string | number | null> = { defaultProvider, defaultModel };
-      if (openrouterKey.trim()) body.openrouterApiKey = openrouterKey.trim();
+      const body: Record<string, string | number | null> = { defaultModel };
       if (googleKey.trim()) body.googleApiKey = googleKey.trim();
       body.monthlyBudgetUsd = monthlyBudget.trim() ? Number(monthlyBudget) : null;
 
@@ -140,9 +122,7 @@ export default function IASettingsPage() {
       if (!res.ok) throw new Error(data.error);
 
       success("Configuración guardada");
-      setOpenrouterKey("");
       setGoogleKey("");
-      setShowOpenrouter(false);
       setShowGoogle(false);
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Error al guardar");
@@ -184,35 +164,14 @@ export default function IASettingsPage() {
       </Link>
       <PageHeader
         title="Configuración IA"
-        description="Administra las API keys y preferencias de los proveedores de inteligencia artificial."
+        description="Configura la API key de Google Gemini y el modelo por defecto."
       />
 
       <Card>
         <form onSubmit={handleSave}>
           <CardBody>
             <div className="space-y-5">
-              <FormField label="OpenRouter API Key" hint="Usada para acceder a modelos vía OpenRouter (Gemini, GPT-4, Claude, etc.)">
-                {(id) => (
-                  <div className="relative">
-                    <Input
-                      id={id}
-                      type={showOpenrouter ? "text" : "password"}
-                      value={openrouterKey}
-                      onChange={(e) => setOpenrouterKey(e.target.value)}
-                      placeholder={settings?.openrouterApiKey ? "•••••••• (configurada)" : "sk-or-..."}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowOpenrouter(!showOpenrouter)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-darker hover:text-foreground"
-                    >
-                      {showOpenrouter ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                )}
-              </FormField>
-
-              <FormField label="Google AI API Key" hint="Usada para acceder directamente a modelos Gemini">
+              <FormField label="Google AI API Key" hint="Usada para acceder a los modelos Gemini">
                 {(id) => (
                   <div className="relative">
                     <Input
@@ -234,15 +193,7 @@ export default function IASettingsPage() {
               </FormField>
 
               <div className="grid gap-5 sm:grid-cols-2">
-                <FormField label="Proveedor por defecto">
-                  {(id) => (
-                    <Select id={id} value={defaultProvider} onChange={(e) => setDefaultProvider(e.target.value)}>
-                      <option value="openrouter">OpenRouter</option>
-                      <option value="google">Google Gemini</option>
-                    </Select>
-                  )}
-                </FormField>
-                <FormField label="Modelo por defecto">
+                <FormField label="Modelo por defecto" hint="Usado por el Asistente IA, la transcripción de notas de voz y como fallback de los bots">
                   {(id) => (
                     <div className="space-y-1">
                       <Select id={id} value={defaultModel} onChange={(e) => setDefaultModel(e.target.value)} disabled={loadingModels}>
@@ -255,12 +206,12 @@ export default function IASettingsPage() {
                       </Select>
                       <button
                         type="button"
-                        onClick={() => fetchModels(defaultProvider)}
+                        onClick={() => fetchModels()}
                         disabled={loadingModels}
                         className="inline-flex items-center gap-1 text-xs text-accent hover:underline disabled:opacity-50"
                       >
                         <RefreshCw size={11} className={loadingModels ? "animate-spin" : ""} />
-                        Actualizar lista desde {defaultProvider === "google" ? "Google" : "OpenRouter"}
+                        Actualizar lista desde Google
                       </button>
                     </div>
                   )}

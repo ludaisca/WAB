@@ -5,7 +5,7 @@ CRM de WhatsApp Business construido sobre la API oficial de Meta (Cloud API): ba
 ## Funcionalidad principal
 
 - **Chats**: bandeja estilo inbox con filtros (cuenta, campaña, respondido/no respondido), asignación de agentes, notas por contacto, etiquetas, respuestas rápidas (`/atajo`), adjuntos multimedia (imagen/audio/video/documento/sticker) con proxy seguro de medios.
-- **Bots de IA**: respuestas automáticas multimodales (OpenRouter o Google Gemini), con RAG sobre una base de conocimiento propia (pgvector), humanización de respuestas (envío fraccionado con delay simulado) y presupuesto mensual de gasto en IA.
+- **Bots de IA**: respuestas automáticas multimodales (Google Gemini), con RAG sobre una base de conocimiento propia (pgvector), humanización de respuestas (envío fraccionado con delay simulado), transcripción de notas de voz y presupuesto mensual de gasto en IA.
 - **Calificadores de leads**: un bot de IA aparte audita cada conversación y la puntúa (0–100) en un embudo de 5 fases, con ejecución manual o programada, detección de spam/venta inversa, y exportación a CSV o a una hoja de Google sincronizada automáticamente.
 - **Recuperación de leads**: reengancha automáticamente conversaciones "en visto" dentro de la ventana de 24h de WhatsApp, respetando horario laboral configurado por el usuario.
 - **Campañas**: envío masivo por plantilla aprobada de Meta, con importación de destinatarios por CSV, variables por destinatario, programación y métricas de entrega/lectura.
@@ -20,7 +20,7 @@ CRM de WhatsApp Business construido sobre la API oficial de Meta (Cloud API): ba
 - [NextAuth v5](https://authjs.dev) (Credentials + JWT)
 - [Prisma 5](https://www.prisma.io) sobre PostgreSQL + [pgvector](https://github.com/pgvector/pgvector)
 - [Redis](https://redis.io) + [BullMQ](https://docs.bullmq.io) para colas de trabajo asíncronas
-- React 19, `openai` SDK (OpenRouter), `@google/generative-ai`, `googleapis`
+- React 19, `@google/generative-ai`, `googleapis`
 
 ## Desarrollo
 

@@ -4,6 +4,7 @@ import { processCampaignJob, processScheduledCampaignsTick, processStuckCampaign
 import { processRagJob } from "./rag-worker";
 import { processMediaDownloadJob } from "./media-worker";
 import { processMediaCleanupJob } from "./media-cleanup-worker";
+import { processAudioTranscribeJob } from "./audio-transcribe-worker";
 import { processBotSendJob } from "./bot-send-worker";
 import { processLeadScoringTick, processBulkRescoreJob } from "./lead-scoring-worker";
 import { processLeadRecoveryTick } from "./lead-recovery-worker";
@@ -62,6 +63,12 @@ export function startWorkers() {
   const mediaCleanupWorker = new Worker("media-cleanup", async () => {
     await processMediaCleanupJob();
   }, { connection, concurrency: 1 });
+
+  // Transcribe notas de voz entrantes (Google Gemini, modelo por defecto del
+  // usuario) — los jobs llegan de media-worker.ts ya con el archivo en disco.
+  const audioTranscribeWorker = new Worker("audio-transcribe", async (job) => {
+    await processAudioTranscribeJob(job.data);
+  }, { connection, concurrency: 3 });
 
   const botSendWorker = new Worker("bot-message-send", async (job) => {
     await processBotSendJob(job.data, {
@@ -123,7 +130,7 @@ export function startWorkers() {
     await processRestoreJob(job.data);
   }, { connection, concurrency: 1 });
 
-  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker, sheetsSyncWorker, leadSheetImportWorker, templateSyncWorker, agentActionExpiryWorker, systemDiagnosticsWorker, backupWorker, restoreWorker);
+  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, audioTranscribeWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker, sheetsSyncWorker, leadSheetImportWorker, templateSyncWorker, agentActionExpiryWorker, systemDiagnosticsWorker, backupWorker, restoreWorker);
 
   // 2am, antes del purge de media-cleanup (3am) — así el backup diario
   // captura los medios que esa limpieza va a purgar esa misma madrugada, no

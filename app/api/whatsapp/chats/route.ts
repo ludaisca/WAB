@@ -93,6 +93,8 @@ export async function GET(req: Request) {
       account: {
         select: { id: true, name: true, phoneNumber: true },
       },
+      // Lista negra: badge "Bloqueado" en la fila del chat.
+      contact: { select: { blockedAt: true } },
       // Most recent campaign- or lead-source-attributed message, if any —
       // powers the campaign badge in the chat list without a separate round
       // trip per row.

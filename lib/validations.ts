@@ -85,7 +85,6 @@ export const botSchema = z.object({
   // "General" atendiendo Lifemedic + Meison + Medicalbuy) — ver WABotAccount
   // en el schema. Vacío/ausente = sin cuenta, solo usable en la pestaña "Probar".
   waAccountIds: z.array(z.string().min(1)).optional(),
-  provider: z.enum(["openrouter", "google"], { message: "Proveedor inválido" }),
   model: z.string().min(1, "El modelo es requerido"),
   systemPrompt: z.string().min(1, "El prompt del sistema es requerido"),
   temperature: z.number().min(0).max(2).optional(),
@@ -107,7 +106,6 @@ export const LEAD_SCORER_SCHEDULE_INTERVALS = [15, 30, 60, 180, 360, 720, 1440] 
 
 export const leadScorerBotSchema = z.object({
   name: z.string().min(1, "El nombre es requerido").max(100),
-  provider: z.enum(["openrouter", "google"], { message: "Proveedor inválido" }),
   model: z.string().min(1, "El modelo es requerido"),
   systemPrompt: z.string().min(1, "El prompt es requerido"),
   isActive: z.boolean().optional(),
@@ -125,7 +123,6 @@ export const leadScorerBotSchema = z.object({
 
 export const leadScorerBotUpdateSchema = z.object({
   name: z.string().min(1, "El nombre es requerido").max(100).optional(),
-  provider: z.enum(["openrouter", "google"], { message: "Proveedor inválido" }).optional(),
   model: z.string().min(1, "El modelo es requerido").optional(),
   systemPrompt: z.string().min(1, "El prompt es requerido").optional(),
   isActive: z.boolean().optional(),
@@ -379,7 +376,6 @@ export type UnassignedLeadReplyInput = z.infer<typeof unassignedLeadReplySchema>
 
 export const adjustBotPromptSchema = z.object({
   prompt: z.string().min(1, "El prompt no puede estar vacío").max(30000, "Máximo 30000 caracteres"),
-  provider: z.enum(["openrouter", "google"]),
   model: z.string().min(1),
 });
 

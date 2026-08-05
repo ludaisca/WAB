@@ -52,6 +52,8 @@ async function runRecoveryForUser(settings: AppSettings, now: Date) {
       // Debe haber habido conversación real — un chat que solo recibió una
       // campaña y nunca contestó no es un lead "abandonado", nunca se enganchó.
       messages: { some: { direction: "INBOUND" } },
+      // Lista negra: no se reactivan leads bloqueados.
+      OR: [{ contact: null }, { contact: { blockedAt: null } }],
     },
     select: {
       id: true,

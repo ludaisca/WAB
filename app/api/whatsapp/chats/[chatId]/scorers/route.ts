@@ -32,7 +32,7 @@ export async function GET(
     const eligibleUserIds = await getAccountUserIds(chat.accountId);
     const scorers = await prisma.wALeadScorerBot.findMany({
       where: { userId: { in: eligibleUserIds }, isActive: true },
-      select: { id: true, name: true, provider: true, model: true },
+      select: { id: true, name: true, model: true },
       orderBy: { name: "asc" },
     });
 

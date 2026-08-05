@@ -52,6 +52,7 @@ export async function GET(req: Request) {
           remoteJid: true,
           name: true,
           leadStatus: true,
+          blockedAt: true,
           createdAt: true,
           updatedAt: true,
           tags: { select: { tag: { select: { id: true, name: true, color: true } } } },

@@ -1,43 +1,42 @@
-import { getOpenRouterModelPricing } from "./models";
 import type { ModelPricing } from "./models";
-import type { AIProvider } from "./types";
 
-// Google entries reflect the <=200k-context standard tier from
-// https://ai.google.dev/gemini-api/docs/pricing — Gemini has no pricing API
-// (unlike OpenRouter, see getOpenRouterModelPricing below), so this table has
-// to be kept in sync by hand. Verified 2026-07-15.
+// Google entries reflect the <=200k-context standard tier (text) from
+// https://ai.google.dev/gemini-api/docs/pricing — Gemini has no pricing API,
+// so this table has to be kept in sync by hand. Verified 2026-08-05.
+//
+// gemini-3.1-flash-lite was MISSING until now — production had already
+// switched bots/calificadores to it (evidence: 5327 WABotUsage/
+// WALeadScorerUsage rows since mid-July, ~17M tokens combined, every one
+// logged at estimatedCost = 0 per the fallback below) while this table still
+// only listed 2.5-series models. Silently undercounted the monthly budget
+// and every cost KPI in /estadisticas the whole time. Check this table
+// against the pricing page whenever a bot/calificador starts using a model
+// not listed here — the console.warn below is the only signal, easy to miss.
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  "google/gemini-2.5-flash":      { input: 0.30,  output: 2.50 },
-  "google/gemini-2.5-flash-lite": { input: 0.10,  output: 0.40 },
-  "google/gemini-2.5-pro":        { input: 1.25,  output: 10.00 },
-  "openai/gpt-4o":                { input: 2.50,  output: 10.00 },
-  "openai/gpt-4o-mini":           { input: 0.15,  output: 0.60 },
-  "anthropic/claude-3.5-sonnet":  { input: 3.00,  output: 15.00 },
-  "anthropic/claude-3-haiku":     { input: 0.25,  output: 1.25 },
-  "gemini-2.5-flash":             { input: 0.30,  output: 2.50 },
-  "gemini-2.5-flash-lite":        { input: 0.10,  output: 0.40 },
-  "gemini-2.5-pro":               { input: 1.25,  output: 10.00 },
-  "meta-llama/llama-4-maverick":  { input: 0.20,  output: 0.90 },
-  "meta-llama/llama-4-scout":     { input: 0.10,  output: 0.45 },
+  "google/gemini-2.5-flash":       { input: 0.30,  output: 2.50 },
+  "google/gemini-2.5-flash-lite":  { input: 0.10,  output: 0.40 },
+  "google/gemini-2.5-pro":         { input: 1.25,  output: 10.00 },
+  "gemini-2.5-flash":              { input: 0.30,  output: 2.50 },
+  "gemini-2.5-flash-lite":         { input: 0.10,  output: 0.40 },
+  "gemini-2.5-pro":                { input: 1.25,  output: 10.00 },
+  "google/gemini-3.1-flash-lite":  { input: 0.25,  output: 1.50 },
+  "google/gemini-3.1-pro-preview": { input: 2.00,  output: 12.00 },
+  "gemini-3.1-flash-lite":         { input: 0.25,  output: 1.50 },
+  "gemini-3.1-pro-preview":        { input: 2.00,  output: 12.00 },
 };
 
 export async function estimateCost(
   model: string,
   promptTokens: number,
-  completionTokens: number,
-  provider?: AIProvider
+  completionTokens: number
 ): Promise<number> {
-  let pricing: ModelPricing | undefined = MODEL_PRICING[model];
-
-  if (!pricing && provider === "openrouter") {
-    pricing = (await getOpenRouterModelPricing(model)) ?? undefined;
-  }
+  const pricing: ModelPricing | undefined = MODEL_PRICING[model];
 
   if (!pricing) {
     // Surface this instead of silently logging $0 forever — a model missing
-    // from the static table (or an OpenRouter lookup failure) should be
-    // noticeable, not indistinguishable from "this model is actually free."
-    console.warn(`[pricing] Sin precio conocido para el modelo "${model}" (provider: ${provider ?? "?"}) — costo registrado como $0`);
+    // from the static table should be noticeable, not indistinguishable from
+    // "this model is actually free."
+    console.warn(`[pricing] Sin precio conocido para el modelo "${model}" — costo registrado como $0`);
     return 0;
   }
 

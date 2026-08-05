@@ -74,7 +74,6 @@ export async function PATCH(
     const fields = parsed.data;
 
     if (fields.name) data.name = fields.name;
-    if (fields.provider) data.provider = fields.provider;
     if (fields.model) data.model = fields.model;
     if (fields.systemPrompt) data.systemPrompt = fields.systemPrompt;
     if (fields.isActive !== undefined) data.isActive = fields.isActive;

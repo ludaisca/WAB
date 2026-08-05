@@ -74,7 +74,9 @@ export function createGoogleClient(apiKey: string) {
     // startChat() instead it silently overrides the formatted value with the
     // raw, unformatted one and the REST API rejects it.
     const model = genAI.getGenerativeModel({
-      model: params.model,
+      // Quita el prefijo "google/" (convención de OpenRouter que ya no existe
+      // desde 2026-08, pero filas legacy en la BD pueden conservarlo).
+      model: params.model.replace(/^google\//, ""),
       systemInstruction: systemText,
       ...(params.tools?.length
         ? {
@@ -108,7 +110,7 @@ export function createGoogleClient(apiKey: string) {
           // thoughtSignature va SIBLING a functionCall dentro de la misma parte
           // (no anidado) — Gemini 3 rechaza con 400 una parte functionCall
           // replayada en el historial si le falta (ver AIToolCall.thoughtSignature).
-          // Ausente en Gemini 2.x/OpenRouter, así que se omite si no vino.
+          // Ausente en Gemini 2.x, así que se omite si no vino.
           parts: m.toolCalls.map((tc) => ({
             functionCall: { name: tc.name, args: tc.arguments },
             ...(tc.thoughtSignature ? { thoughtSignature: tc.thoughtSignature } : {}),
@@ -116,8 +118,7 @@ export function createGoogleClient(apiKey: string) {
         };
       }
       if (m.role === "tool" && m.toolResults?.length) {
-        // Los N resultados de un turno se agrupan en un solo Content role:"function"
-        // (a diferencia de OpenRouter, que manda un mensaje `tool` por tool_call_id).
+        // Los N resultados de un turno se agrupan en un solo Content role:"function".
         return {
           role: "function" as GoogleRole,
           parts: m.toolResults.map((tr) => ({
@@ -213,7 +214,7 @@ export function createGoogleClient(apiKey: string) {
 
   async function generateEmbeddings(params: AIEmbeddingParams): Promise<AIEmbeddingResponse> {
     const inputs = Array.isArray(params.input) ? params.input : [params.input];
-    const model = genAI.getGenerativeModel({ model: params.model });
+    const model = genAI.getGenerativeModel({ model: params.model.replace(/^google\//, "") });
 
     const embeddings: number[][] = [];
 

@@ -26,7 +26,6 @@ export async function GET(
       select: {
         id: true,
         name: true,
-        provider: true,
         model: true,
         systemPrompt: true,
         temperature: true,
@@ -139,7 +138,6 @@ export async function PATCH(
         create: fields.waAccountIds.map((waAccountId) => ({ waAccountId })),
       };
     }
-    if (fields.provider) data.provider = fields.provider;
     if (fields.model) data.model = fields.model;
     if (fields.systemPrompt) data.systemPrompt = fields.systemPrompt;
     if (fields.temperature !== undefined) data.temperature = fields.temperature;
@@ -160,7 +158,6 @@ export async function PATCH(
       select: {
         id: true,
         name: true,
-        provider: true,
         model: true,
         systemPrompt: true,
         temperature: true,

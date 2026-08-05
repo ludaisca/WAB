@@ -6,7 +6,7 @@ import { estimateCost } from "@/lib/ai/pricing";
 import { wrapUserPrompt, SCOPE_GUARDRAIL } from "@/lib/ai/prompt-sanitizer";
 import { isWithinServiceWindow } from "@/lib/whatsapp/service-window";
 import { localHourInTz } from "@/lib/timezone";
-import type { AIProvider, AIMessage } from "@/lib/ai/types";
+import type { AIMessage } from "@/lib/ai/types";
 import type { WABot, WAAccount } from "@prisma/client";
 
 const HISTORY_LIMIT = 12;
@@ -58,8 +58,7 @@ export async function sendRecoveryMessage(
     );
   }
 
-  const provider = bot.provider as AIProvider;
-  const apiKey = await getUserApiKey(bot.userId, provider);
+  const apiKey = await getUserApiKey(bot.userId);
   if (!apiKey) {
     throw new Error(`Bot "${bot.name}" sin API key configurada — no se puede generar el mensaje de reactivación`);
   }
@@ -84,7 +83,7 @@ export async function sendRecoveryMessage(
 
   messages.push({ role: "user", content: ATTEMPT_INSTRUCTION[attemptNumber] });
 
-  const client = getAIProvider(provider, apiKey);
+  const client = getAIProvider(apiKey);
   const result = await client.complete({
     model: bot.model,
     messages,
@@ -118,7 +117,7 @@ export async function sendRecoveryMessage(
   const promptTokens = result.usage?.promptTokens ?? 0;
   const completionTokens = result.usage?.completionTokens ?? 0;
   const cost = result.usage
-    ? await estimateCost(bot.model, promptTokens, completionTokens, provider)
+    ? await estimateCost(bot.model, promptTokens, completionTokens)
     : 0;
 
   await prisma.wALeadRecoveryAttempt.create({

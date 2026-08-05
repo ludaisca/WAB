@@ -1,28 +1,11 @@
-import type { AIProvider } from "./types";
-import { createOpenRouterClient } from "./providers/openrouter";
 import { createGoogleClient } from "./providers/google";
 
-export function getAIProvider(provider: AIProvider, apiKey: string) {
-  switch (provider) {
-    case "openrouter":
-      return createOpenRouterClient(apiKey);
-    case "google":
-      return createGoogleClient(apiKey);
-    default:
-      throw new Error(`Unknown AI provider: ${provider}`);
-  }
+// Desde 2026-08 solo existe un proveedor (Google/Gemini); OpenRouter fue
+// eliminado. El API key se resuelve por usuario en lib/ai/settings.ts.
+export function getAIProvider(apiKey: string) {
+  return createGoogleClient(apiKey);
 }
 
-export function getEmbeddingModel(provider: AIProvider): string {
-  switch (provider) {
-    case "openrouter":
-      return "openai/text-embedding-3-small";
-    case "google":
-      // "text-embedding-004" was retired — gemini-embedding-2 is the current
-      // model (see lib/ai/providers/google.ts for the 768-dim truncation via
-      // outputDimensionality, needed since this defaults to 3072).
-      return "gemini-embedding-2";
-    default:
-      throw new Error(`Unknown AI provider: ${provider}`);
-  }
-}
+// Modelo de embeddings fijo: gemini-embedding-2, truncado a 768 dims vía
+// outputDimensionality (ver lib/ai/providers/google.ts).
+export const EMBEDDING_MODEL = "gemini-embedding-2";

@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { generateEmbedding } from "@/lib/ai/embeddings";
 import { getUserApiKey } from "@/lib/ai/settings";
-import type { AIProvider } from "@/lib/ai/types";
 
 const CHUNK_SIZE = 800;
 const CHUNK_OVERLAP = 100;
@@ -10,7 +9,6 @@ interface RagJob {
   title: string;
   content: string;
   botIds: string[];
-  provider: AIProvider;
   userId: string;
   sourceName?: string;
 }
@@ -28,11 +26,11 @@ function chunkText(text: string): string[] {
 }
 
 export async function processRagJob(job: RagJob) {
-  const { title, content, botIds, provider, userId, sourceName } = job;
+  const { title, content, botIds, userId, sourceName } = job;
 
-  const apiKey = await getUserApiKey(userId, provider);
+  const apiKey = await getUserApiKey(userId);
   if (!apiKey) {
-    await notifyIndexFailure(userId, title, "No hay API key configurada para el proveedor de este bot.", botIds);
+    await notifyIndexFailure(userId, title, "No hay API key de Google configurada.", botIds);
     return;
   }
 
@@ -42,7 +40,7 @@ export async function processRagJob(job: RagJob) {
 
   for (let i = 0; i < chunks.length; i++) {
     try {
-      const embedding = await generateEmbedding(chunks[i], provider, apiKey);
+      const embedding = await generateEmbedding(chunks[i], apiKey);
 
       const knowledgeId = crypto.randomUUID();
 

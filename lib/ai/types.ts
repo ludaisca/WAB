@@ -1,9 +1,7 @@
 export type ContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } }
-  // Gemini-only today (see google.ts toParts) — inlineData is mime-agnostic there,
-  // but OpenRouter/OpenAI has no equivalent generic shape, so bot-worker only
-  // builds this part when the bot's provider is "google".
+  // Gemini-only (see google.ts toParts) — inlineData is mime-agnostic there.
   | { type: "audio_url"; audio_url: { url: string } };
 
 // Tool-calling — usado por el agente de IA (lib/agent/), aditivo sobre el
@@ -11,7 +9,7 @@ export type ContentPart =
 // lead-scoring, unassigned-lead-reply) construyen AIMessage sin estos campos
 // y siguen compilando igual.
 export interface AIToolCall {
-  id: string; // OpenRouter: id real del SDK. Google no da id — se sintetiza `${name}_${index}` en el provider.
+  id: string; // Google no da id real — se sintetiza `${name}_${index}` en el provider.
   name: string;
   arguments: Record<string, unknown>;
   // Solo Gemini 3+ (google.ts): firma opaca que la API adjunta a cada parte
@@ -20,7 +18,7 @@ export interface AIToolCall {
   // run-tool-loop.ts), Gemini 3 exige que esa firma viaje de vuelta tal cual
   // en esa parte — sin ella responde 400 ("Function call is missing a
   // thought_signature"). Ver https://ai.google.dev/gemini-api/docs/thought-signatures.
-  // undefined para OpenRouter y para Gemini 2.x (no lo requieren).
+  // undefined para Gemini 2.x (no lo requieren).
   thoughtSignature?: string;
 }
 
@@ -34,7 +32,7 @@ export interface AIToolResult {
 export interface AIToolDefinition {
   name: string;
   description: string;
-  parameters: Record<string, unknown>; // JSON Schema, subset compatible con OpenAI y Gemini
+  parameters: Record<string, unknown>; // JSON Schema, subset compatible con Gemini
 }
 
 export interface AIMessage {
@@ -50,7 +48,7 @@ export interface AICompletionParams {
   temperature?: number;
   maxTokens?: number;
   tools?: AIToolDefinition[];
-  toolChoice?: "auto" | "none"; // v1 nunca fuerza un tool específico
+  toolChoice?: "auto" | "none"; // nunca se fuerza un tool específico
 }
 
 export interface AICompletionResponse {
@@ -70,5 +68,3 @@ export interface AIEmbeddingParams {
 export interface AIEmbeddingResponse {
   embeddings: number[][];
 }
-
-export type AIProvider = "openrouter" | "google";

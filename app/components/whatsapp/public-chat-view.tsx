@@ -60,13 +60,29 @@ function MediaContent({
   if (msg.messageType === "audio") {
     if (!mediaSrc) {
       return (
-        <div className="flex items-center gap-2 text-xs text-muted-darker">
-          <FileAudio size={14} />
-          <span>Audio recibido</span>
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2 text-xs text-muted-darker">
+            <FileAudio size={14} />
+            <span>Audio recibido</span>
+          </div>
+          {msg.transcription && (
+            <p className="text-xs italic text-muted-darker whitespace-pre-wrap break-words leading-relaxed">
+              {msg.transcription}
+            </p>
+          )}
         </div>
       );
     }
-    return <audio controls src={mediaSrc} className="w-full max-w-xs" />;
+    return (
+      <div className="space-y-1.5">
+        <audio controls src={mediaSrc} className="w-full max-w-xs" />
+        {msg.transcription && (
+          <p className="text-xs italic text-muted-darker whitespace-pre-wrap break-words leading-relaxed">
+            {msg.transcription}
+          </p>
+        )}
+      </div>
+    );
   }
 
   if (msg.messageType === "video") {

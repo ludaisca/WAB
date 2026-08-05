@@ -6,7 +6,7 @@ import { getUserApiKey } from "@/lib/ai/settings";
 import { estimateCost } from "@/lib/ai/pricing";
 import { isMonthlyBudgetExceeded, checkBudgetAlert } from "@/lib/ai/budget";
 import { generateBotReply } from "@/lib/whatsapp/bot-tools/generate-reply";
-import type { AIProvider, AIMessage } from "@/lib/ai/types";
+import type { AIMessage } from "@/lib/ai/types";
 
 const TITLE_MAX_LEN = 60;
 
@@ -40,8 +40,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
   }
 
-  const provider = bot.provider as AIProvider;
-  const apiKey = await getUserApiKey(bot.userId, provider);
+  const apiKey = await getUserApiKey(bot.userId);
   if (!apiKey) {
     return NextResponse.json(
       { error: "No hay API key configurada. Configúrala en Ajustes > IA." },
@@ -69,7 +68,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const replyResult = await generateBotReply({
       bot,
-      provider,
       apiKey,
       ragQuery: text,
       history,
@@ -83,7 +81,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     if (replyResult.usage) {
       const { promptTokens, completionTokens } = replyResult.usage;
-      const cost = await estimateCost(bot.model, promptTokens, completionTokens, provider);
+      const cost = await estimateCost(bot.model, promptTokens, completionTokens);
       await prisma.wABotUsage.create({
         data: {
           botId: bot.id,

@@ -217,7 +217,10 @@ export async function importNewLeadsForSource(
     const contact = await prisma.contact.findUnique({
       where: { accountId_remoteJid: { accountId: source.waAccountId, remoteJid: phone } },
     });
-    if (contact?.optedOutMarketing) {
+    if (contact?.optedOutMarketing || contact?.blockedAt) {
+      const errorMessage = contact?.optedOutMarketing
+        ? "El contacto optó por no recibir mensajes de marketing"
+        : "El contacto está bloqueado";
       await prisma.leadSheetImportedRow.upsert({
         where: { sourceId_phoneNumber: { sourceId: source.id, phoneNumber: phone } },
         create: {
@@ -225,10 +228,10 @@ export async function importNewLeadsForSource(
           phoneNumber: phone,
           contactName,
           status: "skipped",
-          errorMessage: "El contacto optó por no recibir mensajes de marketing",
+          errorMessage,
           ...leadDateFields,
         },
-        update: { contactName, status: "skipped", errorMessage: "El contacto optó por no recibir mensajes de marketing", ...leadDateFields },
+        update: { contactName, status: "skipped", errorMessage, ...leadDateFields },
       });
       result.skipped++;
       continue;

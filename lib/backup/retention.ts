@@ -37,7 +37,7 @@ export async function purgeOldBackups(): Promise<void> {
 
 // Después de CUALQUIER restauración, system_backups queda con solo 2 filas
 // (el backup de seguridad + el propio restoreLog re-insertados — ver
-// dropAuditTables() en restore-backup.ts) aunque el resto del historial
+// dropTablesNotInDump() en restore-backup.ts) aunque el resto del historial
 // previo siga viviendo como archivos .tar sueltos en BACKUP_ROOT, ahora sin
 // ninguna fila que los referencie ni que la rotación de arriba pueda purgar.
 // Se reconcilia disco↔DB aquí: cualquier .tar en la raíz de BACKUP_ROOT

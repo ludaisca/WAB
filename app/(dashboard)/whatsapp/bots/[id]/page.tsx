@@ -22,7 +22,6 @@ import { formatDate, zonedDateTimeToUtc, dateKeyInTz } from "@/lib/timezone";
 interface BotDetail {
   id: string;
   name: string;
-  provider: string;
   model: string;
   systemPrompt: string;
   temperature: number;
@@ -249,7 +248,7 @@ export default function BotDetailPage() {
             {bot.accounts.length === 0
               ? "Sin cuenta (solo pruebas)"
               : bot.accounts.map((a) => a.waAccount.name).join(", ")}{" "}
-            · {bot.provider === "openrouter" ? "OpenRouter" : "Gemini"} · {bot.model}
+            · Gemini · {bot.model}
           </p>
         </div>
         <div className="flex gap-2">

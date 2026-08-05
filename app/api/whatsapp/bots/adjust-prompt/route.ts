@@ -4,7 +4,6 @@ import { adjustBotPromptSchema } from "@/lib/validations";
 import { getAIProvider } from "@/lib/ai/factory";
 import { getUserApiKey } from "@/lib/ai/settings";
 import { isMonthlyBudgetExceeded } from "@/lib/ai/budget";
-import type { AIProvider } from "@/lib/ai/types";
 
 // Prompts pegados por el usuario suelen venir de otro sistema (n8n, Make, un
 // asistente distinto) y asumen capacidades que este bot no tiene: salida JSON,
@@ -91,7 +90,7 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
-    const { prompt, provider, model } = parsed.data;
+    const { prompt, model } = parsed.data;
 
     if (await isMonthlyBudgetExceeded(session.user.id, new Date())) {
       return NextResponse.json(
@@ -100,15 +99,15 @@ export async function POST(req: Request) {
       );
     }
 
-    const apiKey = await getUserApiKey(session.user.id, provider as AIProvider);
+    const apiKey = await getUserApiKey(session.user.id);
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Configura tu clave de API para ese proveedor en Configuración" },
+        { error: "Configura tu clave de Google IA en Configuración" },
         { status: 400 }
       );
     }
 
-    const client = getAIProvider(provider as AIProvider, apiKey);
+    const client = getAIProvider(apiKey);
     const result = await client.complete({
       model,
       temperature: 0.3,

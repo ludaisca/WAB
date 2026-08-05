@@ -50,6 +50,7 @@ export async function GET(
         mimeType: true,
         filename: true,
         bytesSize: true,
+        transcription: true,
         status: true,
         timestamp: true,
       },

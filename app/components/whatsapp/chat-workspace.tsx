@@ -66,6 +66,7 @@ interface ChatItem {
   assignedTo: { id: string; name: string | null } | null;
   account: { id: string; name: string; phoneNumber: string | null };
   campaign: { id: string; name: string } | null;
+  contact: { blockedAt: string | null } | null;
 }
 
 interface CannedResponseItem {
@@ -96,6 +97,7 @@ interface Message {
   mimeType: string | null;
   filename: string | null;
   bytesSize: number | null;
+  transcription: string | null;
   status: string | null;
   timestamp: string;
 }
@@ -176,23 +178,37 @@ function MediaContent({ msg, onPreview }: { msg: Message; onPreview: (media: Pre
   if (msg.messageType === "audio") {
     if (!mediaSrc) {
       return (
-        <div className="flex items-center gap-2 text-xs text-muted-darker">
-          <FileAudio size={14} />
-          <span>Audio recibido</span>
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2 text-xs text-muted-darker">
+            <FileAudio size={14} />
+            <span>Audio recibido</span>
+          </div>
+          {msg.transcription && (
+            <p className="text-xs italic text-muted-darker whitespace-pre-wrap break-words leading-relaxed">
+              {msg.transcription}
+            </p>
+          )}
         </div>
       );
     }
     return (
-      <div className="flex items-center gap-1.5">
-        <audio controls src={mediaSrc} className="w-full max-w-xs" />
-        <a
-          href={mediaSrc}
-          download={msg.filename ?? undefined}
-          className="text-muted-darker hover:text-foreground shrink-0"
-          title="Descargar audio"
-        >
-          <Download size={14} />
-        </a>
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-1.5">
+          <audio controls src={mediaSrc} className="w-full max-w-xs" />
+          <a
+            href={mediaSrc}
+            download={msg.filename ?? undefined}
+            className="text-muted-darker hover:text-foreground shrink-0"
+            title="Descargar audio"
+          >
+            <Download size={14} />
+          </a>
+        </div>
+        {msg.transcription && (
+          <p className="text-xs italic text-muted-darker whitespace-pre-wrap break-words leading-relaxed">
+            {msg.transcription}
+          </p>
+        )}
       </div>
     );
   }
@@ -627,7 +643,7 @@ export function ChatWorkspace({
             let changed = false;
             const merged = prev.map((m) => {
               const fresh = byId.get(m.id);
-              if (fresh && (fresh.status !== m.status || fresh.mediaUrl !== m.mediaUrl)) {
+              if (fresh && (fresh.status !== m.status || fresh.mediaUrl !== m.mediaUrl || fresh.transcription !== m.transcription)) {
                 changed = true;
                 return fresh;
               }
@@ -908,8 +924,11 @@ export function ChatWorkspace({
                           <p className="text-xs text-muted-darker truncate mt-0.5">
                             {chat.lastMessage ?? "Sin mensajes"}
                           </p>
-                          {(chat.assignedTo || chat.campaign) && (
+                          {(chat.assignedTo || chat.campaign || chat.contact?.blockedAt) && (
                             <div className="flex flex-wrap items-center gap-1 mt-1">
+                              {chat.contact?.blockedAt && (
+                                <Badge tone="danger" size="sm">Bloqueado</Badge>
+                              )}
                               {chat.assignedTo && (
                                 <Badge tone="info" size="sm">
                                   {chat.assignedTo.name ?? "Asignado"}

@@ -27,7 +27,6 @@ import { LeadScorerFormModal } from "./_form";
 interface LeadScorerBot {
   id: string;
   name: string;
-  provider: string;
   model: string;
   systemPrompt: string;
   isActive: boolean;
@@ -35,11 +34,6 @@ interface LeadScorerBot {
   scheduleIntervalMinutes: number | null;
   updatedAt: string;
 }
-
-const PROVIDER_BADGE: Record<string, { label: string; tone: "accent" | "info" }> = {
-  openrouter: { label: "OpenRouter", tone: "accent" },
-  google: { label: "Gemini", tone: "info" },
-};
 
 const INTERVAL_LABEL: Record<number, string> = {
   15: "15 min",
@@ -202,17 +196,14 @@ function CalificadoresTab() {
       render: (r) => <span className="text-sm font-medium text-foreground">{r.name}</span>,
     },
     {
-      key: "provider",
-      header: "Proveedor / Modelo",
-      render: (r) => {
-        const provider = PROVIDER_BADGE[r.provider] ?? { label: r.provider, tone: "info" as const };
-        return (
-          <div className="flex items-center gap-2">
-            <Badge tone={provider.tone} size="sm">{provider.label}</Badge>
-            <span className="text-xs text-muted-darker">{r.model}</span>
-          </div>
-        );
-      },
+      key: "model",
+      header: "Modelo",
+      render: (r) => (
+        <div className="flex items-center gap-2">
+          <Badge tone="info" size="sm">Gemini</Badge>
+          <span className="text-xs text-muted-darker">{r.model}</span>
+        </div>
+      ),
     },
     {
       key: "prompt",
@@ -265,7 +256,7 @@ function CalificadoresTab() {
             emptyTitle="Sin calificadores"
             emptyDescription="Crea tu primer calificador para empezar a calificar leads desde los chats."
             mobileCard={(r) => {
-              const provider = columns.find((c) => c.key === "provider")!;
+              const provider = columns.find((c) => c.key === "model")!;
               const schedule = columns.find((c) => c.key === "schedule")!;
               const active = columns.find((c) => c.key === "isActive")!;
               return (

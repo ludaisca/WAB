@@ -16,18 +16,10 @@ import { useToast } from "@/app/components/ui/toast";
 
 interface ModelOption { id: string; name: string; }
 
-const FALLBACK_MODELS: Record<string, ModelOption[]> = {
-  openrouter: [
-    { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash" },
-    { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro" },
-    { id: "openai/gpt-4o", name: "GPT-4o" },
-    { id: "openai/gpt-4o-mini", name: "GPT-4o Mini" },
-  ],
-  google: [
-    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
-    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
-  ],
-};
+const FALLBACK_MODELS: ModelOption[] = [
+  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+];
 
 interface Props {
   open: boolean;
@@ -42,8 +34,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
 
   const [name, setName] = useState("");
   const [waAccountIds, setWaAccountIds] = useState<string[]>([]);
-  const [provider, setProvider] = useState("openrouter");
-  const [model, setModel] = useState("google/gemini-2.5-flash");
+  const [model, setModel] = useState("gemini-2.5-flash");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [temperature, setTemperature] = useState("0.7");
   const [maxTokens, setMaxTokens] = useState("1024");
@@ -62,15 +53,13 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
   const [adjusting, setAdjusting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string }>>([]);
-  const [models, setModels] = useState<ModelOption[]>(FALLBACK_MODELS.openrouter);
+  const [models, setModels] = useState<ModelOption[]>(FALLBACK_MODELS);
   const [loadingModels, setLoadingModels] = useState(false);
-  const [modelsProvider, setModelsProvider] = useState("openrouter");
 
   const resetForm = useCallback(() => {
     setName("");
     setWaAccountIds([]);
-    setProvider("openrouter");
-    setModel("google/gemini-2.5-flash");
+    setModel("gemini-2.5-flash");
     setSystemPrompt("");
     setTemperature("0.7");
     setMaxTokens("1024");
@@ -97,40 +86,38 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
       .catch(() => toastError("Error al cargar cuentas"));
   }, [open, toastError]);
 
-  const fetchModels = useCallback(async (p: string) => {
+  const fetchModels = useCallback(async () => {
     setLoadingModels(true);
     try {
-      const res = await fetch(`/api/configuracion/ia/models?provider=${p}`);
+      const res = await fetch("/api/configuracion/ia/models");
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
         setModels(data);
       } else {
-        setModels(FALLBACK_MODELS[p] ?? []);
-        toastError(data.error ?? "No se pudo obtener la lista de modelos del proveedor, mostrando lista de respaldo");
+        setModels(FALLBACK_MODELS);
+        toastError(data.error ?? "No se pudo obtener la lista de modelos, mostrando lista de respaldo");
       }
     } catch {
-      setModels(FALLBACK_MODELS[p] ?? []);
-      toastError("No se pudo obtener la lista de modelos del proveedor, mostrando lista de respaldo");
+      setModels(FALLBACK_MODELS);
+      toastError("No se pudo obtener la lista de modelos, mostrando lista de respaldo");
     } finally {
-      setModelsProvider(p);
       setLoadingModels(false);
     }
   }, [toastError]);
 
   useEffect(() => {
     if (!open) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-open/provider-change; fetchModels also used for manual refresh
-    fetchModels(provider);
-  }, [open, provider, fetchModels]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-open; fetchModels also used for manual refresh
+    fetchModels();
+  }, [open, fetchModels]);
 
   useEffect(() => {
-    if (modelsProvider !== provider) return;
     if (models.length === 0) return;
     if (!models.some((m) => m.id === model)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- snap to a valid model when the fetched list no longer contains the current one
       setModel(models[0].id);
     }
-  }, [models, model, provider, modelsProvider]);
+  }, [models, model]);
 
   useEffect(() => {
     if (!open || !editId) return;
@@ -142,7 +129,6 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
         if (d.name) {
           setName(d.name);
           setWaAccountIds((d.accounts ?? []).map((a: { waAccount: { id: string } }) => a.waAccount.id));
-          setProvider(d.provider);
           setModel(d.model);
           setSystemPrompt(d.systemPrompt);
           setTemperature(String(d.temperature ?? 0.7));
@@ -169,7 +155,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
       const res = await fetch("/api/whatsapp/bots/adjust-prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: systemPrompt.trim(), provider, model }),
+        body: JSON.stringify({ prompt: systemPrompt.trim(), model }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al ajustar el prompt");
@@ -204,7 +190,6 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
       const body = {
         name: name.trim(),
         waAccountIds,
-        provider,
         model,
         systemPrompt: systemPrompt.trim(),
         temperature: Number(temperature),
@@ -281,15 +266,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
           </div>
 
           <div className="grid gap-5 sm:grid-cols-2">
-            <FormField label="Proveedor IA" required>
-              {(id) => (
-                <Select id={id} value={provider} onChange={(e) => setProvider(e.target.value)}>
-                  <option value="openrouter">OpenRouter</option>
-                  <option value="google">Google Gemini</option>
-                </Select>
-              )}
-            </FormField>
-            <FormField label="Modelo" required>
+            <FormField label="Modelo" required hint="Google Gemini — los modelos se obtienen en vivo desde Google">
               {(id) => (
                 <div className="space-y-1">
                   <Select id={id} value={model} onChange={(e) => setModel(e.target.value)} disabled={loadingModels}>
@@ -299,12 +276,12 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
                   </Select>
                   <button
                     type="button"
-                    onClick={() => fetchModels(provider)}
+                    onClick={() => fetchModels()}
                     disabled={loadingModels}
                     className="inline-flex items-center gap-1 text-xs text-accent hover:underline disabled:opacity-50"
                   >
                     <RefreshCw size={11} className={loadingModels ? "animate-spin" : ""} />
-                    Actualizar lista desde {provider === "google" ? "Google" : "OpenRouter"}
+                    Actualizar lista desde Google
                   </button>
                 </div>
               )}

@@ -61,6 +61,8 @@ async function runScheduledScorer(scorer: WALeadScorerBot, now: Date) {
       // real candidates from the batch. scoreChatWithScorer enforces this same rule for
       // the manual "Calificar" button; this mirrors it here purely for efficiency.
       messages: { some: { direction: "INBOUND" } },
+      // Lista negra: los chats con contacto bloqueado no se recalifican.
+      OR: [{ contact: null }, { contact: { blockedAt: null } }],
     },
     select: {
       id: true,
@@ -139,7 +141,11 @@ export async function countBulkRescoreEligibleChats(scorer: WALeadScorerBot): Pr
   const accountIds = await getUserAccountIds(scorer.userId);
   if (accountIds.length === 0) return 0;
   return prisma.wAChat.count({
-    where: { accountId: { in: accountIds }, messages: { some: { direction: "INBOUND" } } },
+    where: {
+      accountId: { in: accountIds },
+      messages: { some: { direction: "INBOUND" } },
+      OR: [{ contact: null }, { contact: { blockedAt: null } }],
+    },
   });
 }
 
@@ -147,10 +153,9 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Cubre la forma de error de ambos proveedores: el SDK de Google adjunta el
-// código HTTP dentro del mensaje (ej. "[429 Too Many Requests]" o
-// "RESOURCE_EXHAUSTED"), mientras que el SDK de OpenRouter (OpenAI-compatible)
-// expone `status`/`statusCode` como propiedad del error además del mensaje.
+// El SDK de Google adjunta el código HTTP dentro del mensaje del error
+// (ej. "[429 Too Many Requests]" o "RESOURCE_EXHAUSTED"); además tolera
+// `status`/`statusCode` como propiedad del error por compatibilidad.
 function isRateLimitError(err: unknown): boolean {
   const status = (err as { status?: number; statusCode?: number })?.status
     ?? (err as { status?: number; statusCode?: number })?.statusCode;
@@ -182,7 +187,11 @@ export async function processBulkRescoreJob(scorerId: string) {
   if (accountIds.length === 0) return;
 
   const chats = await prisma.wAChat.findMany({
-    where: { accountId: { in: accountIds }, messages: { some: { direction: "INBOUND" } } },
+    where: {
+      accountId: { in: accountIds },
+      messages: { some: { direction: "INBOUND" } },
+      OR: [{ contact: null }, { contact: { blockedAt: null } }],
+    },
     select: { id: true },
     orderBy: { lastMessageAt: "desc" },
   });

@@ -57,9 +57,11 @@ interface ChartTooltipProps {
   payload?: TooltipEntry[];
   label?: string | number;
   valueSuffix?: string;
+  /** Formateador completo del valor (ej. formatCost para $) — si se pasa, gana sobre valueSuffix. */
+  valueFormatter?: (value: number) => string;
 }
 
-function ChartTooltipContent({ active, payload, label, valueSuffix }: ChartTooltipProps) {
+function ChartTooltipContent({ active, payload, label, valueSuffix, valueFormatter }: ChartTooltipProps) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-lg border border-border bg-surface px-3 py-2 shadow-lg">
@@ -76,8 +78,11 @@ function ChartTooltipContent({ active, payload, label, valueSuffix }: ChartToolt
             />
             <span className="text-muted">{entry.name}</span>
             <span className="ml-3 font-mono text-foreground">
-              {typeof entry.value === "number" ? formatNumber(entry.value) : entry.value}
-              {valueSuffix}
+              {typeof entry.value === "number"
+                ? valueFormatter
+                  ? valueFormatter(entry.value)
+                  : `${formatNumber(entry.value)}${valueSuffix ?? ""}`
+                : entry.value}
             </span>
           </p>
         ))}
@@ -113,6 +118,8 @@ interface TrendChartProps {
   series: TrendSeries[];
   height?: number;
   valueSuffix?: string;
+  /** Formateador completo del valor del tooltip (ej. formatCost para $) — gana sobre valueSuffix. */
+  valueFormatter?: (value: number) => string;
   className?: string;
 }
 
@@ -121,6 +128,7 @@ export function TrendChart({
   series,
   height = 240,
   valueSuffix,
+  valueFormatter,
   className,
 }: TrendChartProps) {
   const reduce = useReducedMotion();
@@ -174,7 +182,7 @@ export function TrendChart({
               allowDecimals={false}
             />
             <Tooltip
-              content={<ChartTooltipContent valueSuffix={valueSuffix} />}
+              content={<ChartTooltipContent valueSuffix={valueSuffix} valueFormatter={valueFormatter} />}
               cursor={{ stroke: "var(--muted-darker)", strokeDasharray: "3 3" }}
             />
             {visible.map((s, i) => (

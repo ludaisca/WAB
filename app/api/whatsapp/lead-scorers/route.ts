@@ -24,7 +24,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const { name, provider, model, systemPrompt, isActive, scheduleEnabled, scheduleIntervalMinutes, scheduleAccountIds } = parsed.data;
+    const { name, model, systemPrompt, isActive, scheduleEnabled, scheduleIntervalMinutes, scheduleAccountIds } = parsed.data;
 
     let validAccountIds: string[] = [];
     if (scheduleAccountIds && scheduleAccountIds.length > 0) {
@@ -46,7 +46,6 @@ export async function POST(req: Request) {
       data: {
         userId: session.user.id,
         name,
-        provider,
         model,
         systemPrompt,
         isActive: isActive ?? true,

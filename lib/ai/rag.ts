@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
 import { generateEmbedding } from "./embeddings";
-import type { AIProvider } from "./types";
 
 const SIMILARITY_THRESHOLD = 0.5;
 const MAX_CHUNKS = 5;
@@ -8,10 +7,9 @@ const MAX_CHUNKS = 5;
 export async function searchKnowledge(
   botId: string,
   query: string,
-  provider: AIProvider,
   apiKey: string
 ): Promise<string | null> {
-  const queryEmbedding = await generateEmbedding(query, provider, apiKey);
+  const queryEmbedding = await generateEmbedding(query, apiKey);
   const vectorStr = `[${queryEmbedding.join(",")}]`;
 
   const results = await prisma.$queryRawUnsafe<

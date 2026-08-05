@@ -3,7 +3,7 @@ import { getAIProvider } from "@/lib/ai/factory";
 import { getUserApiKey } from "@/lib/ai/settings";
 import { estimateCost } from "@/lib/ai/pricing";
 import { isMonthlyBudgetExceeded, checkBudgetAlert } from "@/lib/ai/budget";
-import type { AIMessage, AIProvider, AIToolResult } from "@/lib/ai/types";
+import type { AIMessage, AIToolResult } from "@/lib/ai/types";
 import { getTool, listToolDefinitions } from "./tools/registry";
 import type { ToolContext } from "./tools/types";
 import { validateAgainstJsonSchema } from "./validate";
@@ -67,16 +67,15 @@ export async function handleUserMessage(conversationId: string, userId: string, 
   }
 
   const settings = await prisma.appSettings.findUnique({ where: { userId } });
-  const provider = (settings?.defaultProvider ?? "openrouter") as AIProvider;
-  const model = settings?.defaultModel ?? "google/gemini-2.5-flash";
-  const apiKey = await getUserApiKey(userId, provider);
+  const model = settings?.defaultModel ?? "gemini-2.5-flash";
+  const apiKey = await getUserApiKey(userId);
   if (!apiKey) {
-    const msg = "Falta configurar la clave del proveedor de IA en Configuración antes de poder usar el asistente.";
+    const msg = "Falta configurar la clave de Google IA en Configuración antes de poder usar el asistente.";
     await appendUserMessage(conversationId, userText);
     await appendAssistantMessage(conversationId, msg);
     return msg;
   }
-  const client = getAIProvider(provider, apiKey);
+  const client = getAIProvider(apiKey);
 
   await appendUserMessage(conversationId, userText);
   const messages = await buildTranscript(conversationId);
@@ -92,7 +91,7 @@ export async function handleUserMessage(conversationId: string, userId: string, 
     });
 
     if (res.usage) {
-      const cost = await estimateCost(model, res.usage.promptTokens, res.usage.completionTokens, provider);
+      const cost = await estimateCost(model, res.usage.promptTokens, res.usage.completionTokens);
       await prisma.agentUsage.create({
         data: {
           conversationId,

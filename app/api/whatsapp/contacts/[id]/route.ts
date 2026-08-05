@@ -27,6 +27,8 @@ export async function GET(
         leadStatus: true,
         optedOutMarketing: true,
         optedOutAt: true,
+        blockedAt: true,
+        blockedNote: true,
         createdAt: true,
         updatedAt: true,
         tags: { select: { tag: { select: { id: true, name: true, color: true } } } },

@@ -5,7 +5,7 @@ import { wrapUserPrompt, SCOPE_GUARDRAIL } from "@/lib/ai/prompt-sanitizer";
 import { buildPriceLookupTool, PRICE_LOOKUP_TOOL_NAME } from "./price-lookup";
 import { buildQualifiedDataTool } from "./qualified-data";
 import { completeWithBotTools, type BotTool } from "./run-tool-loop";
-import type { AIProvider, AIMessage, ContentPart } from "@/lib/ai/types";
+import type { AIMessage, ContentPart } from "@/lib/ai/types";
 
 // Backstop contra alucinación de precios: ningún bot puede enviar un precio en
 // un turno sin ningún dato real que lo respalde (RAG apagado/sin resultados, y
@@ -155,7 +155,6 @@ function containsUnfilledPlaceholder(text: string): boolean {
 
 export interface GenerateBotReplyParams {
   bot: WABot;
-  provider: AIProvider;
   apiKey: string;
   // Texto usado para buscar en la base de conocimiento cuando bot.ragEnabled.
   ragQuery: string;
@@ -196,7 +195,7 @@ export interface GenerateBotReplyResult {
 // mismo código para los dos, para que "probar" el bot refleje fielmente cómo
 // va a responder de verdad a un lead.
 export async function generateBotReply(params: GenerateBotReplyParams): Promise<GenerateBotReplyResult> {
-  const { bot, provider, apiKey, ragQuery, extraSystemNotes = [], history, userContent } = params;
+  const { bot, apiKey, ragQuery, extraSystemNotes = [], history, userContent } = params;
 
   // Copia local mutable — la tool de sondeo escribe acá directo durante el
   // loop (ver qualified-data.ts); al final del turno esta misma referencia,
@@ -261,7 +260,7 @@ export async function generateBotReply(params: GenerateBotReplyParams): Promise<
       .join("\n");
     const contextualRagQuery = recentContext ? `${recentContext}\n${ragQuery}` : ragQuery;
 
-    const knowledge = await searchKnowledge(bot.id, contextualRagQuery, provider, apiKey);
+    const knowledge = await searchKnowledge(bot.id, contextualRagQuery, apiKey);
     if (knowledge) {
       messages.push({
         role: "system",
@@ -279,7 +278,7 @@ export async function generateBotReply(params: GenerateBotReplyParams): Promise<
   messages.push(...history);
   messages.push({ role: "user", content: userContent });
 
-  const client = getAIProvider(provider, apiKey);
+  const client = getAIProvider(apiKey);
   const tools: BotTool[] = [buildPriceLookupTool(bot), buildQualifiedDataTool(qualifiedData)].filter(
     (t): t is BotTool => t !== null
   );

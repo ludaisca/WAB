@@ -19,6 +19,8 @@ interface ContactDetail {
   remoteJid: string;
   leadStatus: string;
   optedOutMarketing: boolean;
+  blockedAt: string | null;
+  blockedNote: string | null;
   tags: Array<{ tag: { id: string; name: string; color: string } }>;
 }
 
@@ -61,6 +63,8 @@ export function ContactDrawer({
   const [savingNote, setSavingNote] = useState(false);
   const [newTagName, setNewTagName] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [blocking, setBlocking] = useState(false);
+  const [blockNote, setBlockNote] = useState("");
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -139,6 +143,39 @@ export function ContactDrawer({
     }
   }
 
+  async function handleBlockToggle() {
+    if (!contact) return;
+    setBlocking(true);
+    try {
+      const isBlocked = !!contact.blockedAt;
+      const res = await fetch(`/api/whatsapp/contacts/${contactId}/block`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: isBlocked ? "unblock" : "block",
+          note: isBlocked ? null : blockNote.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Error al actualizar el bloqueo");
+      setContact((prev) =>
+        prev
+          ? {
+              ...prev,
+              blockedAt: data.blockedAt ?? null,
+              blockedNote: data.blockedNote ?? null,
+            }
+          : prev
+      );
+      setBlockNote("");
+      onUpdated();
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al actualizar el bloqueo");
+    } finally {
+      setBlocking(false);
+    }
+  }
+
   async function handleCreateTag() {
     if (!newTagName.trim()) return;
     try {
@@ -207,6 +244,39 @@ export function ContactDrawer({
               Este contacto se dio de baja de mensajes de marketing por WhatsApp — no recibirá futuras campañas.
             </Banner>
           )}
+
+          {contact.blockedAt && (
+            <Banner tone="danger">
+              Contacto bloqueado — el bot no responde y no recibe campañas, reactivaciones ni calificaciones.
+              Sus mensajes siguen llegando aquí y puedes responderlos manualmente.
+              {contact.blockedNote && <span className="block mt-1 opacity-90">Motivo: {contact.blockedNote}</span>}
+            </Banner>
+          )}
+
+          <div className="rounded-lg border border-border bg-surface-light p-3 space-y-2">
+            {!contact.blockedAt ? (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-muted-darker mb-1.5">Motivo del bloqueo (opcional)</label>
+                  <Input
+                    value={blockNote}
+                    onChange={(e) => setBlockNote(e.target.value)}
+                    placeholder="Ej: spam, número equivocado..."
+                  />
+                </div>
+                <Button variant="danger" size="sm" className="w-full" onClick={handleBlockToggle} disabled={blocking}>
+                  {blocking ? "Bloqueando..." : "Bloquear contacto"}
+                </Button>
+                <p className="text-[11px] text-muted-darker">
+                  El bot dejará de responderle y no recibirá campañas ni seguimientos automáticos.
+                </p>
+              </>
+            ) : (
+              <Button variant="secondary" size="sm" className="w-full" onClick={handleBlockToggle} disabled={blocking}>
+                {blocking ? "Desbloqueando..." : "Desbloquear contacto"}
+              </Button>
+            )}
+          </div>
 
           <div>
             <label className="block text-xs font-medium text-muted-darker mb-1.5">Estado de lead</label>

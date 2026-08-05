@@ -27,7 +27,6 @@ export async function POST(req: Request) {
     const {
       name,
       waAccountIds,
-      provider,
       model,
       systemPrompt,
       temperature,
@@ -67,7 +66,6 @@ export async function POST(req: Request) {
           ? { create: waAccountIds.map((waAccountId) => ({ waAccountId })) }
           : undefined,
         name,
-        provider,
         model,
         systemPrompt,
         temperature: temperature ?? 0.7,
@@ -85,7 +83,6 @@ export async function POST(req: Request) {
       select: {
         id: true,
         name: true,
-        provider: true,
         model: true,
         systemPrompt: true,
         temperature: true,
@@ -135,7 +132,6 @@ export async function GET(req: Request) {
       select: {
         id: true,
         name: true,
-        provider: true,
         model: true,
         systemPrompt: true,
         temperature: true,

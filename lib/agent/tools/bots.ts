@@ -12,7 +12,7 @@ export const botsList: ToolDefinition<Record<string, never>> = {
     const bots = await prisma.wABot.findMany({
       where: { userId: ctx.userId },
       select: {
-        id: true, name: true, provider: true, model: true, isActive: true, status: true,
+        id: true, name: true, model: true, isActive: true, status: true,
         accounts: { select: { waAccount: { select: { name: true } } } },
         _count: { select: { conversations: true } },
       },

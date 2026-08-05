@@ -143,20 +143,39 @@ export async function processCampaignJob(job: CampaignJob) {
     }
   }
 
-  // Contactos que se dieron de baja de mensajes de marketing vía el mecanismo
-  // nativo de WhatsApp (webhook user_preferences) — se excluyen de esta y toda
-  // campaña futura, sin importar que el CSV/lista manual los incluya.
-  const optedOutContacts = await prisma.contact.findMany({
-    where: { accountId: campaign.waAccountId, optedOutMarketing: true },
-    select: { remoteJid: true },
+  // Contactos excluidos de envíos de campaña: los que se dieron de baja de
+  // mensajes de marketing vía el mecanismo nativo de WhatsApp (webhook
+  // user_preferences) y los bloqueados (lista negra, Contact.blockedAt).
+  // Ambos se comparan por dígitos del teléfono: el remoteJid de un contacto
+  // creado por el webhook trae sufijo "@s.whatsapp.net" mientras que el
+  // recipient llega como número pelón — antes este Set se comparaba crudo y
+  // el opt-out nunca matcheaba a esos contactos.
+  const excludedContacts = await prisma.contact.findMany({
+    where: {
+      accountId: campaign.waAccountId,
+      OR: [{ optedOutMarketing: true }, { blockedAt: { not: null } }],
+    },
+    select: { remoteJid: true, optedOutMarketing: true },
   });
-  const optedOutSet = new Set(optedOutContacts.map((c) => c.remoteJid));
+  const normalizePhone = (p: string) => p.replace(/@.*$/, "").replace(/\D/g, "");
+  const optedOutPhones = new Set(
+    excludedContacts.filter((c) => c.optedOutMarketing).map((c) => normalizePhone(c.remoteJid))
+  );
+  const blockedPhones = new Set(
+    excludedContacts.filter((c) => !c.optedOutMarketing).map((c) => normalizePhone(c.remoteJid))
+  );
 
   for (const recipient of campaign.recipients) {
-    if (optedOutSet.has(recipient.phoneNumber)) {
+    const phoneKey = normalizePhone(recipient.phoneNumber);
+    if (optedOutPhones.has(phoneKey) || blockedPhones.has(phoneKey)) {
       await prisma.wACampaignRecipient.update({
         where: { id: recipient.id },
-        data: { status: "FAILED", errorMessage: "El contacto optó por no recibir mensajes de marketing" },
+        data: {
+          status: "FAILED",
+          errorMessage: optedOutPhones.has(phoneKey)
+            ? "El contacto optó por no recibir mensajes de marketing"
+            : "El contacto está bloqueado",
+        },
       });
       continue;
     }

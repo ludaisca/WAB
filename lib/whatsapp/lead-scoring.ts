@@ -3,7 +3,6 @@ import { getAIProvider } from "@/lib/ai/factory";
 import { getUserApiKey } from "@/lib/ai/settings";
 import { wrapUserPrompt } from "@/lib/ai/prompt-sanitizer";
 import { estimateCost } from "@/lib/ai/pricing";
-import type { AIProvider } from "@/lib/ai/types";
 import type { ScoreDetails } from "@/lib/whatsapp/export-columns";
 import type { WALeadScorerBot } from "@prisma/client";
 
@@ -55,6 +54,16 @@ export class LeadScoringError extends Error {}
 // log usage the same way — usage logging matters here because the scheduled
 // path runs unattended and its cost needs to show up in budget checks.
 export async function scoreChatWithScorer(chatId: string, scorer: WALeadScorerBot) {
+  // Lista negra: un contacto bloqueado no se califica (ni manual ni
+  // automáticamente) — no aporta señal al funnel.
+  const blocked = await prisma.wAChat.findUnique({
+    where: { id: chatId },
+    select: { contact: { select: { blockedAt: true } } },
+  });
+  if (blocked?.contact?.blockedAt) {
+    throw new LeadScoringError("El contacto está bloqueado — no se califica");
+  }
+
   // Los ÚLTIMOS 200 mensajes (desc + reverse), no los primeros: el contrato
   // JSON pide priorizar lo más reciente, y en chats largos los mensajes nuevos
   // son justo los que traen las señales de compra.
@@ -78,10 +87,9 @@ export async function scoreChatWithScorer(chatId: string, scorer: WALeadScorerBo
     throw new LeadScoringError("El lead todavía no ha respondido — no se puede calificar todavía");
   }
 
-  const provider = scorer.provider as AIProvider;
-  const apiKey = await getUserApiKey(scorer.userId, provider);
+  const apiKey = await getUserApiKey(scorer.userId);
   if (!apiKey) {
-    throw new LeadScoringError("Falta configurar la clave del proveedor de IA");
+    throw new LeadScoringError("Falta configurar la clave de Google IA");
   }
 
   const transcript = messages
@@ -91,7 +99,7 @@ export async function scoreChatWithScorer(chatId: string, scorer: WALeadScorerBo
     })
     .join("\n");
 
-  const client = getAIProvider(provider, apiKey);
+  const client = getAIProvider(apiKey);
   const result = await client.complete({
     model: scorer.model,
     temperature: 0.2,
@@ -150,7 +158,7 @@ export async function scoreChatWithScorer(chatId: string, scorer: WALeadScorerBo
     const promptTokens = result.usage.promptTokens;
     const completionTokens = result.usage.completionTokens;
     const totalTokens = promptTokens + completionTokens;
-    const cost = await estimateCost(scorer.model, promptTokens, completionTokens, provider);
+    const cost = await estimateCost(scorer.model, promptTokens, completionTokens);
 
     await prisma.wALeadScorerUsage.create({
       data: {

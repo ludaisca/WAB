@@ -3,10 +3,11 @@ import { startOfMonthInTz, monthKeyInTz } from "@/lib/timezone";
 
 // Combines WABotUsage (chat-reply bots), WALeadScorerUsage (lead scorer
 // runs, including scheduled ones), WALeadRecoveryAttempt (reactivation
-// messages) and AgentUsage (asistente IA admin) so the monthly budget
-// reflects total AI spend for the user, not just some of the sources.
+// messages), AgentUsage (asistente IA admin) and AudioTranscriptionUsage
+// (voice-note transcriptions) so the monthly budget reflects total AI spend
+// for the user, not just some of the sources.
 export async function getMonthlyAiCost(userId: string, monthStart: Date): Promise<number> {
-  const [botUsage, scorerUsage, recoveryUsage, agentUsage] = await Promise.all([
+  const [botUsage, scorerUsage, recoveryUsage, agentUsage, transcriptionUsage] = await Promise.all([
     prisma.wABotUsage.aggregate({
       where: { bot: { userId }, createdAt: { gte: monthStart } },
       _sum: { estimatedCost: true },
@@ -23,13 +24,18 @@ export async function getMonthlyAiCost(userId: string, monthStart: Date): Promis
       where: { conversation: { userId }, createdAt: { gte: monthStart } },
       _sum: { estimatedCost: true },
     }),
+    prisma.audioTranscriptionUsage.aggregate({
+      where: { userId, createdAt: { gte: monthStart } },
+      _sum: { estimatedCost: true },
+    }),
   ]);
 
   return (
     (botUsage._sum.estimatedCost ?? 0) +
     (scorerUsage._sum.estimatedCost ?? 0) +
     (recoveryUsage._sum.estimatedCost ?? 0) +
-    (agentUsage._sum.estimatedCost ?? 0)
+    (agentUsage._sum.estimatedCost ?? 0) +
+    (transcriptionUsage._sum.estimatedCost ?? 0)
   );
 }
 

@@ -28,18 +28,10 @@ const INTERVAL_LABEL: Record<number, string> = {
   1440: "Cada 24 horas",
 };
 
-const FALLBACK_MODELS: Record<string, ModelOption[]> = {
-  openrouter: [
-    { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash" },
-    { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro" },
-    { id: "openai/gpt-4o", name: "GPT-4o" },
-    { id: "openai/gpt-4o-mini", name: "GPT-4o Mini" },
-  ],
-  google: [
-    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
-    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
-  ],
-};
+const FALLBACK_MODELS: ModelOption[] = [
+  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+];
 
 interface Props {
   open: boolean;
@@ -53,8 +45,7 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
   const { success, error: toastError } = useToast();
 
   const [name, setName] = useState("");
-  const [provider, setProvider] = useState("openrouter");
-  const [model, setModel] = useState("google/gemini-2.5-flash");
+  const [model, setModel] = useState("gemini-2.5-flash");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
@@ -64,15 +55,13 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [models, setModels] = useState<ModelOption[]>(FALLBACK_MODELS.openrouter);
+  const [models, setModels] = useState<ModelOption[]>(FALLBACK_MODELS);
   const [loadingModels, setLoadingModels] = useState(false);
-  const [modelsProvider, setModelsProvider] = useState("openrouter");
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
 
   const resetForm = useCallback(() => {
     setName("");
-    setProvider("openrouter");
-    setModel("google/gemini-2.5-flash");
+    setModel("gemini-2.5-flash");
     setSystemPrompt("");
     setIsActive(true);
     setScheduleEnabled(false);
@@ -82,31 +71,30 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
     setError("");
   }, []);
 
-  const fetchModels = useCallback(async (p: string) => {
+  const fetchModels = useCallback(async () => {
     setLoadingModels(true);
     try {
-      const res = await fetch(`/api/configuracion/ia/models?provider=${p}`);
+      const res = await fetch("/api/configuracion/ia/models");
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
         setModels(data);
       } else {
-        setModels(FALLBACK_MODELS[p] ?? []);
-        toastError(data.error ?? "No se pudo obtener la lista de modelos del proveedor, mostrando lista de respaldo");
+        setModels(FALLBACK_MODELS);
+        toastError(data.error ?? "No se pudo obtener la lista de modelos, mostrando lista de respaldo");
       }
     } catch {
-      setModels(FALLBACK_MODELS[p] ?? []);
-      toastError("No se pudo obtener la lista de modelos del proveedor, mostrando lista de respaldo");
+      setModels(FALLBACK_MODELS);
+      toastError("No se pudo obtener la lista de modelos, mostrando lista de respaldo");
     } finally {
-      setModelsProvider(p);
       setLoadingModels(false);
     }
   }, [toastError]);
 
   useEffect(() => {
     if (!open) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-open/provider-change; fetchModels also used for manual refresh
-    fetchModels(provider);
-  }, [open, provider, fetchModels]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-open; fetchModels also used for manual refresh
+    fetchModels();
+  }, [open, fetchModels]);
 
   useEffect(() => {
     if (!open) return;
@@ -119,13 +107,12 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
   }, [open]);
 
   useEffect(() => {
-    if (modelsProvider !== provider) return;
     if (models.length === 0) return;
     if (!models.some((m) => m.id === model)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- snap to a valid model when the fetched list no longer contains the current one
       setModel(models[0].id);
     }
-  }, [models, model, provider, modelsProvider]);
+  }, [models, model]);
 
   useEffect(() => {
     if (!open || !editId) return;
@@ -136,7 +123,6 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
       .then((d) => {
         if (d.name) {
           setName(d.name);
-          setProvider(d.provider);
           setModel(d.model);
           setSystemPrompt(d.systemPrompt);
           setIsActive(d.isActive);
@@ -166,7 +152,6 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
     try {
       const body = {
         name: name.trim(),
-        provider,
         model,
         systemPrompt: systemPrompt.trim(),
         isActive,
@@ -223,15 +208,7 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
           </FormField>
 
           <div className="grid gap-5 sm:grid-cols-2">
-            <FormField label="Proveedor IA" required>
-              {(id) => (
-                <Select id={id} value={provider} onChange={(e) => setProvider(e.target.value)}>
-                  <option value="openrouter">OpenRouter</option>
-                  <option value="google">Google Gemini</option>
-                </Select>
-              )}
-            </FormField>
-            <FormField label="Modelo" required>
+            <FormField label="Modelo" required hint="Google Gemini — los modelos se obtienen en vivo desde Google">
               {(id) => (
                 <div className="space-y-1">
                   <Select id={id} value={model} onChange={(e) => setModel(e.target.value)} disabled={loadingModels}>
@@ -241,12 +218,12 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
                   </Select>
                   <button
                     type="button"
-                    onClick={() => fetchModels(provider)}
+                    onClick={() => fetchModels()}
                     disabled={loadingModels}
                     className="inline-flex items-center gap-1 text-xs text-accent hover:underline disabled:opacity-50"
                   >
                     <RefreshCw size={11} className={loadingModels ? "animate-spin" : ""} />
-                    Actualizar lista desde {provider === "google" ? "Google" : "OpenRouter"}
+                    Actualizar lista desde Google
                   </button>
                 </div>
               )}

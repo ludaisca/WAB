@@ -127,6 +127,7 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     scorerUsage,
     recoveryUsage,
     agentUsage,
+    transcriptionUsage,
     recentMessages,
     activeBots,
     campaignsCompleted,
@@ -161,6 +162,10 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     }),
     prisma.agentUsage.aggregate({
       where: { conversation: { userId } },
+      _sum: { totalTokens: true, estimatedCost: true },
+    }),
+    prisma.audioTranscriptionUsage.aggregate({
+      where: { userId },
       _sum: { totalTokens: true, estimatedCost: true },
     }),
     prisma.wAMessage.findMany({
@@ -410,13 +415,15 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
       (usage._sum.totalTokens ?? 0) +
       (scorerUsage._sum.totalTokens ?? 0) +
       (recoveryUsage._sum.totalTokens ?? 0) +
-      (agentUsage._sum.totalTokens ?? 0),
+      (agentUsage._sum.totalTokens ?? 0) +
+      (transcriptionUsage._sum.totalTokens ?? 0),
     totalCost:
       Math.round(
         ((usage._sum.estimatedCost ?? 0) +
           (scorerUsage._sum.estimatedCost ?? 0) +
           (recoveryUsage._sum.estimatedCost ?? 0) +
-          (agentUsage._sum.estimatedCost ?? 0)) *
+          (agentUsage._sum.estimatedCost ?? 0) +
+          (transcriptionUsage._sum.estimatedCost ?? 0)) *
           10000
       ) / 10000,
     dailyMessages,

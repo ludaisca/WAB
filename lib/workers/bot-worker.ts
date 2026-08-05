@@ -10,7 +10,7 @@ import { splitReply, computeTypingDelay } from "@/lib/whatsapp/humanize";
 import { summarizeText } from "@/lib/ai/summarize";
 import { botSendQueue } from "@/lib/queue";
 import { generateBotReply } from "@/lib/whatsapp/bot-tools/generate-reply";
-import type { AIProvider, AIMessage, ContentPart } from "@/lib/ai/types";
+import type { AIMessage, ContentPart } from "@/lib/ai/types";
 
 interface BotMessageJob {
   botId: string;
@@ -179,6 +179,16 @@ async function handleBotMessage(job: BotMessageJob) {
 
   if (!bot || !bot.isActive || bot.status !== "ACTIVE" || !account) return;
 
+  // Segunda línea de defensa de la lista negra (la primera está en
+  // ingest-message.ts): si el contacto fue bloqueado entre el enqueue y la
+  // ejecución del job, el bot no responde. Los mensajes de prueba
+  // (test/conversations) ignoran esto deliberadamente — probar no es enviar.
+  const blockedChat = await prisma.wAChat.findUnique({
+    where: { id: waChatId },
+    select: { contact: { select: { blockedAt: true } } },
+  });
+  if (blockedChat?.contact?.blockedAt) return;
+
   const pendingMessages = await getPendingInboundMessages(waChatId);
   // Nada pendiente que responder — ej. un humano ya contestó manualmente
   // durante la ventana de debounce. No es un error, simplemente no hay nada
@@ -196,11 +206,10 @@ async function handleBotMessage(job: BotMessageJob) {
     return;
   }
 
-  const provider = bot.provider as AIProvider;
-  const apiKey = await getUserApiKey(bot.userId, provider);
+  const apiKey = await getUserApiKey(bot.userId);
 
   if (!apiKey) {
-    await failBotAndNotify(botId, accountId, waChatId, "Configura la clave del proveedor de IA en Configuración.");
+    await failBotAndNotify(botId, accountId, waChatId, "Configura la clave de Google IA en Configuración.");
     return;
   }
 
@@ -282,14 +291,13 @@ async function handleBotMessage(job: BotMessageJob) {
   }
 
   // Build the user turn — embed the latest image/audio inline, or the extracted text of a
-  // document, if present and the provider/media type combination supports it.
-  const userContent = await buildUserContent(pendingMessages, provider);
+  // document, if present and the media type combination supports it.
+  const userContent = await buildUserContent(pendingMessages);
 
   const ragQuery = incomingMessage || pendingMessages[pendingMessages.length - 1]?.messageType || "";
 
   const replyResult = await generateBotReply({
     bot,
-    provider,
     apiKey,
     ragQuery,
     extraSystemNotes,
@@ -404,7 +412,7 @@ async function handleBotMessage(job: BotMessageJob) {
       const promptTokens = result.usage.promptTokens;
       const completionTokens = result.usage.completionTokens;
       const totalTokens = promptTokens + completionTokens;
-      const cost = await estimateCost(bot.model, promptTokens, completionTokens, provider);
+      const cost = await estimateCost(bot.model, promptTokens, completionTokens);
 
       await prisma.wABotUsage.create({
         data: {
@@ -428,16 +436,16 @@ async function handleBotMessage(job: BotMessageJob) {
 // varias imágenes/audios en un solo turno no está soportado hoy y encarece
 // el turno sin necesidad real. El texto de TODOS los pendientes (incluidas
 // captions de mensajes con media anteriores) sí se combina siempre.
-async function buildUserContent(pending: PendingMessage[], provider: AIProvider): Promise<string | ContentPart[]> {
+async function buildUserContent(pending: PendingMessage[]): Promise<string | ContentPart[]> {
   const textBlock = combinedPendingText(pending);
   const mediaMsg = [...pending].reverse().find(
     (m) =>
       m.messageType === "image" ||
       m.messageType === "sticker" ||
       m.messageType === "document" ||
-      // Audio understanding only works through Gemini's native inlineData —
-      // OpenRouter has no generic audio content shape (see ContentPart["audio_url"]).
-      (m.messageType === "audio" && provider === "google")
+      // Audio understanding only works through Gemini's native inlineData
+      // (see ContentPart["audio_url"]).
+      m.messageType === "audio"
   );
 
   if (!mediaMsg) {

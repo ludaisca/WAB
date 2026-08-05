@@ -18,7 +18,6 @@ import { UnassignedLeadsModal } from "./_responder-pendientes";
 interface WaBot {
   id: string;
   name: string;
-  provider: string;
   model: string;
   isActive: boolean;
   status: string;
@@ -29,11 +28,6 @@ interface WaBot {
   accounts: { waAccount: { id: string; name: string; phoneNumber: string | null } }[];
   _count: { conversations: number; knowledgeBots: number };
 }
-
-const PROVIDER_BADGE: Record<string, { label: string; tone: "accent" | "info" }> = {
-  openrouter: { label: "OpenRouter", tone: "accent" },
-  google: { label: "Gemini", tone: "info" },
-};
 
 export default function BotsPage() {
   const router = useRouter();
@@ -122,7 +116,7 @@ export default function BotsPage() {
         emptyDescription="Crea tu primer bot de IA para automatizar conversaciones de WhatsApp."
         onRowClick={(bot) => router.push(`/whatsapp/bots/${bot.id}`)}
         renderRow={(bot) => {
-          const provider = PROVIDER_BADGE[bot.provider] ?? { label: bot.provider, tone: "info" as const };
+          const provider = { label: "Gemini", tone: "info" as const };
           const accountNames = bot.accounts.map((a) => a.waAccount.name);
           const accountLabel =
             accountNames.length === 0

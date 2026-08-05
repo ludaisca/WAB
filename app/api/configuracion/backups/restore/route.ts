@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import path from "path";
 import { promises as fs } from "fs";
+import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
@@ -17,17 +18,27 @@ export async function GET() {
   if (!session?.user?.id) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   if (session.user.role !== "admin") return NextResponse.json({ error: "No autorizado" }, { status: 403 });
 
-  const logs = await prisma.systemRestoreLog.findMany({
-    orderBy: { startedAt: "desc" },
-    take: 50,
-    include: {
-      requestedBy: { select: { id: true, name: true, email: true } },
-      sourceBackup: { select: { id: true, type: true } },
-      safetyBackup: { select: { id: true, filename: true } },
-    },
-  });
+  try {
+    const logs = await prisma.systemRestoreLog.findMany({
+      orderBy: { startedAt: "desc" },
+      take: 50,
+      include: {
+        requestedBy: { select: { id: true, name: true, email: true } },
+        sourceBackup: { select: { id: true, type: true } },
+        safetyBackup: { select: { id: true, filename: true } },
+      },
+    });
 
-  return NextResponse.json({ logs: logs.map(serializeRestoreLog) });
+    return NextResponse.json({ logs: logs.map(serializeRestoreLog) });
+  } catch (error) {
+    // Misma ventana transitoria que en GET /api/configuracion/backups — ver
+    // el comentario ahí. system_restore_logs pasa por el mismo drop-y-recrea.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2021") {
+      return NextResponse.json({ logs: [] });
+    }
+    const message = error instanceof Error ? error.message : "Error interno";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 interface RestoreTriggerBody {

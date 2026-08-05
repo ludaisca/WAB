@@ -3,7 +3,7 @@ import { statfs } from "fs/promises";
 import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import type { Prisma } from "@prisma/client";
+import type { Prisma, SystemBackup } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/crypto";
 import { parseDatabaseUrl } from "./pg-connection";
@@ -87,23 +87,61 @@ async function assertDiskSpace(dir: string, requiredBytes: number, label: string
   }
 }
 
-// system_backups/system_restore_logs quedan fuera del dump (ver el comentario
-// en create-backup.ts:runPgDump) porque son metadata operativa de ESTA
-// instancia (qué archivos existen en BACKUP_ROOT de este servidor), no datos
-// de negocio portables. Pero sus FKs hacia `users` (y la auto-referencia de
-// system_restore_logs hacia system_backups) le impiden a `pg_restore --clean`
-// soltar users_pkey y los tipos BackupType/BackupStatus/RestoreStatus/
-// RestoreSourceType — Postgres se niega a dropear un objeto con dependientes
-// vivos, aunque esas dos tablas no estén en el dump (pg_dump igual redefine
-// los enums a nivel de schema sin importar que la tabla que los usa esté
-// excluida). Se dropean aquí por completo (CASCADE arrastra constraints y
-// dependencias de tipo de una sola vez) y `prisma db push --accept-data-loss`
-// (paso 6) las vuelve a crear vacías — luego se re-inserta el resultado de
-// ESTA operación (ver runRestorePipeline: safetyBackup + el propio
-// restoreLog), no el resto del historial de la instancia origen.
-async function dropAuditTables(): Promise<void> {
-  await prisma.$executeRawUnsafe('DROP TABLE IF EXISTS "system_backups" CASCADE');
-  await prisma.$executeRawUnsafe('DROP TABLE IF EXISTS "system_restore_logs" CASCADE');
+// `pg_restore --clean --if-exists` solo sabe generar DROP para lo que el
+// propio dump declara — un objeto vivo en la BD destino que el dump desconoce
+// (una tabla añadida al schema DESPUÉS de que se tomó este backup, ej.
+// audio_transcription_usage) puede dejar una FK colgando hacia algo que sí
+// está en el dump (ej. users_pkey) y tronar el --clean con "cannot drop
+// constraint ... because other objects depend on it". Antes esto solo se
+// resolvía a mano para system_backups/system_restore_logs (metadata operativa
+// de ESTA instancia — qué archivos existen en BACKUP_ROOT de este servidor —
+// deliberadamente excluida del dump, ver create-backup.ts:runPgDump); se
+// generaliza aquí comparando las tablas que el dump SÍ trae (`pg_restore -l`)
+// contra las que la BD actual tiene, y soltando (CASCADE) solo las que sobran
+// — cubre esas dos tablas de siempre y cualquier tabla nueva del schema
+// actual que un backup más viejo no conozca. `prisma db push --accept-data-loss`
+// (paso 6, o el catch en un fallo) las recrea vacías después.
+async function dropTablesNotInDump(dumpPath: string): Promise<void> {
+  const { stdout } = await execFileAsync("pg_restore", ["-l", dumpPath], { maxBuffer: 10 * 1024 * 1024 });
+  const dumpedTables = new Set<string>();
+  for (const line of stdout.split("\n")) {
+    const match = line.match(/^\d+;\s+\d+\s+\d+\s+TABLE\s+public\s+(\S+)\s/);
+    if (match) dumpedTables.add(match[1]);
+  }
+
+  const currentTables = await prisma.$queryRaw<Array<{ tablename: string }>>`
+    SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+  `;
+  const extraTables = currentTables.map((t) => t.tablename).filter((t) => !dumpedTables.has(t));
+  if (extraTables.length === 0) return;
+
+  const identifiers = extraTables.map((t) => `"${t}"`).join(", ");
+  await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS ${identifiers} CASCADE`);
+}
+
+// Reinserta la fila del backup de seguridad (PRE_RESTORE) tras el
+// DROP TABLE ... CASCADE de dropTablesNotInDump(), que se la lleva junto con
+// el resto del schema. Necesario tanto si la restauración termina bien (paso
+// 6) como si falla DESPUÉS de ese drop (catch de runRestorePipeline) —
+// SystemRestoreLog.safetyBackupId es una FK hacia esta fila, así que sin
+// reinsertarla antes, el propio upsert que registra el fallo también truena
+// (antes esto quedaba silenciado dentro de un `.catch(() => {})`, dejando la
+// restauración fallida sin NINGÚN rastro en `/configuracion/backups` pese a
+// que el .tar de seguridad sí sigue en disco).
+async function reinsertSafetyBackup(final: SystemBackup): Promise<void> {
+  await prisma.systemBackup.create({
+    data: {
+      id: final.id,
+      type: final.type,
+      status: final.status,
+      filename: final.filename,
+      sizeBytes: final.sizeBytes,
+      manifest: (final.manifest ?? undefined) as Prisma.InputJsonValue | undefined,
+      errorMessage: final.errorMessage,
+      startedAt: final.startedAt,
+      completedAt: final.completedAt,
+    },
+  });
 }
 
 async function runPgRestore(dumpPath: string): Promise<void> {
@@ -164,11 +202,11 @@ async function checkEncryptionWarnings(): Promise<EncryptionWarnings> {
   }
 
   const settings = await prisma.appSettings.findMany({
-    where: { OR: [{ openrouterApiKey: { not: null } }, { googleApiKey: { not: null } }] },
-    select: { userId: true, openrouterApiKey: true, googleApiKey: true },
+    where: { OR: [{ googleApiKey: { not: null } }] },
+    select: { userId: true, googleApiKey: true },
   });
   for (const s of settings) {
-    if (isBroken(s.openrouterApiKey) || isBroken(s.googleApiKey)) {
+    if (isBroken(s.googleApiKey)) {
       warnings.appSettingsUserIds.push(s.userId);
     }
   }
@@ -220,6 +258,7 @@ export async function runRestorePipeline(restoreLogId: string): Promise<void> {
 
   let enteredMaintenance = false;
   let safetyBackupId: string | null = null;
+  let safetyBackupFinal: SystemBackup | null = null;
 
   try {
     // 1. Validar sin tocar nada.
@@ -249,17 +288,26 @@ export async function runRestorePipeline(restoreLogId: string): Promise<void> {
     // Snapshot en memoria del resultado final ANTES del wipe de las tablas de
     // auditoría (paso 5) — se re-inserta después de que prisma db push las
     // recree vacías.
-    const safetyBackupFinal = await prisma.systemBackup.findUniqueOrThrow({ where: { id: safetyBackup.id } });
+    safetyBackupFinal = await prisma.systemBackup.findUniqueOrThrow({ where: { id: safetyBackup.id } });
     await prisma.systemRestoreLog.update({ where: { id: restoreLogId }, data: { safetyBackupId: safetyBackup.id } });
 
     // Extraer el paquete completo para el resto del proceso.
     await fs.mkdir(workDir, { recursive: true });
     await execFileAsync("tar", ["xf", tarPath, "-C", workDir], { maxBuffer: 10 * 1024 * 1024 });
 
-    // 5. pg_restore atómico. Antes, dropear por completo las tablas de
-    // auditoría que bloquean el --clean — ver el comentario de dropAuditTables().
-    await dropAuditTables();
+    // 5. pg_restore atómico. Antes, soltar cualquier tabla del schema actual
+    // que el dump no conozca — ver el comentario de dropTablesNotInDump().
+    await dropTablesNotInDump(path.join(workDir, "db.dump"));
     await runPgRestore(path.join(workDir, "db.dump"));
+
+    // Backfill previo a db push: si el backup es de una versión antigua con
+    // columnas provider/openrouterApiKey, remapa modelos OpenRouter → Gemini
+    // antes de que el push las elimine (no-op si ya migrado).
+    await execFileAsync(
+      "npx",
+      ["prisma", "db", "execute", "--file", "prisma/sql/migrate-off-openrouter.sql", "--schema", "prisma/schema.prisma"],
+      { cwd: process.cwd(), timeout: BACKUP_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 }
+    ).catch(() => {});
 
     // 6. Reconciliar esquema — recrea system_backups/system_restore_logs
     // (vacías, dropeadas en el paso anterior) además de cubrir el caso de
@@ -278,21 +326,11 @@ export async function runRestorePipeline(restoreLogId: string): Promise<void> {
     // Re-insertar el backup de seguridad de ESTA operación (la fila original
     // se perdió en el wipe del paso 5) — createdById siempre null para
     // PRE_RESTORE, así que no hay riesgo de FK colgante ahí.
-    await prisma.systemBackup
-      .create({
-        data: {
-          id: safetyBackupFinal.id,
-          type: safetyBackupFinal.type,
-          status: safetyBackupFinal.status,
-          filename: safetyBackupFinal.filename,
-          sizeBytes: safetyBackupFinal.sizeBytes,
-          manifest: (safetyBackupFinal.manifest ?? undefined) as Prisma.InputJsonValue | undefined,
-          errorMessage: safetyBackupFinal.errorMessage,
-          startedAt: safetyBackupFinal.startedAt,
-          completedAt: safetyBackupFinal.completedAt,
-        },
-      })
-      .catch((e) => console.error("[restore] No se pudo re-insertar el backup de seguridad tras el wipe:", e));
+    if (safetyBackupFinal) {
+      await reinsertSafetyBackup(safetyBackupFinal).catch((e) =>
+        console.error("[restore] No se pudo re-insertar el backup de seguridad tras el wipe:", e)
+      );
+    }
 
     // 7. Medios: extraer a staging, verificar conteo, y solo entonces mover
     // (rename atómico dentro del mismo volumen) — si algo falla antes de mover,
@@ -377,15 +415,25 @@ export async function runRestorePipeline(restoreLogId: string): Promise<void> {
     if (enteredMaintenance) {
       await exitMaintenanceMode().catch(() => {});
     }
-    // Si dropAuditTables() ya corrió pero pg_restore (u otro paso) falló
-    // después, esas dos tablas quedaron dropeadas sin recrear — reconcilia el
+    // Si dropTablesNotInDump() ya corrió pero pg_restore (u otro paso) falló
+    // después, esas tablas quedaron dropeadas sin recrear — reconcilia el
     // schema para no dejarlas faltantes permanentemente tras un intento
-    // fallido. No-op seguro si nunca se llegó a dropAuditTables().
+    // fallido. No-op seguro si nunca se llegó a dropTablesNotInDump().
     await execFileAsync("npx", ["prisma", "db", "push", "--skip-generate", "--accept-data-loss"], {
       cwd: process.cwd(),
       timeout: BACKUP_TIMEOUT_MS,
       maxBuffer: 10 * 1024 * 1024,
     }).catch(() => {});
+    // Reinsertar el backup de seguridad ANTES del upsert de abajo — si el
+    // fallo ocurrió después del drop del paso 5, system_backups ya se
+    // recreó vacía por el db push de arriba, así que la fila de
+    // safetyBackupId todavía no existe y el upsert (que la referencia por FK)
+    // truena en silencio sin esto (ver el comentario de reinsertSafetyBackup).
+    if (safetyBackupFinal) {
+      await reinsertSafetyBackup(safetyBackupFinal).catch((e) =>
+        console.error("[restore] No se pudo re-insertar el backup de seguridad en el camino de fallo:", e)
+      );
+    }
     // upsert por la misma razón que en el camino feliz: la fila puede haberse
     // perdido en el wipe si el fallo ocurrió después del paso 5.
     const requesterStillExistsOnFail = restoreLog.requestedById
@@ -426,7 +474,7 @@ export async function runRestorePipeline(restoreLogId: string): Promise<void> {
     await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
     await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => {});
     // El historial previo de system_backups se pierde en el wipe (ver
-    // dropAuditTables()) — sus archivos .tar quedan huérfanos en disco, ahora
+    // dropTablesNotInDump()) — sus archivos .tar quedan huérfanos en disco, ahora
     // sin fila que los referencie. Se reconcilian aquí, no solo en la
     // rotación diaria, para no esperar hasta el próximo backup automático.
     await purgeOrphanedBackupFiles().catch(() => {});

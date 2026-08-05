@@ -307,7 +307,7 @@ export default function SettingsPage() {
               <CardTitle>Inteligencia Artificial</CardTitle>
             </div>
             <p className="text-sm text-muted-darker mb-4">
-              Configura las API keys de OpenRouter y Google Gemini para usar los bots IA, RAG y embeddings.
+              Configura la API key de Google Gemini y el modelo por defecto de los bots IA, RAG y embeddings.
             </p>
             <Button href="/configuracion/ia" variant="secondary" size="sm" icon={Brain}>
               Configurar IA

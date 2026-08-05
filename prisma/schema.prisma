@@ -35,6 +35,7 @@ model User {
   agentActionsResolved   AgentAction[]        @relation("AgentActionResolver")
   systemBackups          SystemBackup[]
   systemRestoreLogs      SystemRestoreLog[]
+  audioTranscriptions    AudioTranscriptionUsage[]
 
   @@map("users")
 }
@@ -52,7 +53,7 @@ model SystemConfig {
 
   // Almacenamiento externo S3/R2 para respaldos — copia durable fuera del
   // volumen Docker. s3SecretAccessKey va cifrado con lib/crypto.ts (mismo
-  // patrón que WAAccount.accessToken / AppSettings.openrouterApiKey).
+  // patrón que WAAccount.accessToken / AppSettings.googleApiKey).
   s3Enabled         Boolean  @default(false)
   s3Endpoint        String?
   s3Region          String?
@@ -70,10 +71,8 @@ model AppSettings {
   id               String   @id @default(cuid())
   userId           String   @unique
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  openrouterApiKey String?
   googleApiKey     String?
-  defaultProvider  String   @default("openrouter")
-  defaultModel     String   @default("google/gemini-2.5-flash")
+  defaultModel     String   @default("gemini-2.5-flash")
   monthlyBudgetUsd Float?
   budgetAlertMonth String?
 
@@ -318,7 +317,6 @@ model WALeadScorerBot {
   userId                  String
   user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   name                    String
-  provider                String
   model                   String
   systemPrompt            String    @db.Text
   isActive                Boolean   @default(true)
@@ -390,6 +388,11 @@ model WAMessage {
   mimeType    String?
   filename    String?
   bytesSize   Int?
+  // Transcripción del audio entrante (nota de voz), generada por Gemini con el
+  // modelo por defecto del usuario y persistida en BD (no derivada del archivo
+  // de disco, que media-cleanup purga tras MEDIA_RETENTION_DAYS). Null hasta
+  // que la cola audio-transcribe la termine.
+  transcription String?
   status      String?
   senderId    String?
   sender      User?            @relation(fields: [senderId], references: [id], onDelete: SetNull)
@@ -620,7 +623,6 @@ model WABot {
   userId       String
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   name         String
-  provider     String
   model        String
   systemPrompt String        @db.Text
   temperature  Float         @default(0.7)
@@ -800,6 +802,25 @@ model WABotUsage {
   @@map("wa_bot_usage")
 }
 
+// Costo de las transcripciones de notas de voz (cola audio-transcribe). No
+// cuelga de ningún bot — se cuenta en el mismo presupuesto mensual de IA que
+// WABotUsage/WALeadScorerUsage (lib/ai/budget.ts).
+model AudioTranscriptionUsage {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messageId        String   @unique
+  model            String
+  promptTokens     Int
+  completionTokens Int
+  totalTokens      Int
+  estimatedCost    Float
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("audio_transcription_usage")
+}
+
 enum LeadStatus {
   NEW
   CONTACTED
@@ -827,6 +848,12 @@ model Contact {
   // respuestas manuales/bot en un chat ya iniciado por el lead.
   optedOutMarketing Boolean   @default(false)
   optedOutAt        DateTime?
+  // Lista negra ("solo automatización"): cuando blockedAt != null el bot no
+  // responde, y no hay campañas/lead-recovery/lead-scoring/sheets para este
+  // contacto. Sus mensajes SÍ se guardan, notifican y pueden responderse
+  // manualmente — ver lib/whatsapp/ingest-message.ts y campaign-worker.ts.
+  blockedAt  DateTime?
+  blockedNote String?
   // ID de lead legible/exportable, distinto del cuid interno — 12 dígitos
   // aleatorios generados por Postgres (no en código de app: hay 3 sitios que
   // crean Contact vía upsert y un default a nivel de columna cubre los tres

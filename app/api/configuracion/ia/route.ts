@@ -25,9 +25,7 @@ export async function GET() {
 
     return NextResponse.json({
       id: settings.id,
-      openrouterApiKey: settings.openrouterApiKey ? "••••••••" : null,
       googleApiKey: settings.googleApiKey ? "••••••••" : null,
-      defaultProvider: settings.defaultProvider,
       defaultModel: settings.defaultModel,
       monthlyBudgetUsd: settings.monthlyBudgetUsd,
       leadRecoveryEnabled: settings.leadRecoveryEnabled,
@@ -54,9 +52,7 @@ export async function PATCH(req: Request) {
     }
 
     const body = (await req.json()) as {
-      openrouterApiKey?: string;
       googleApiKey?: string;
-      defaultProvider?: string;
       defaultModel?: string;
       monthlyBudgetUsd?: number | null;
       leadRecoveryEnabled?: boolean;
@@ -69,14 +65,6 @@ export async function PATCH(req: Request) {
 
     const data: Record<string, unknown> = {};
 
-    if (body.openrouterApiKey !== undefined) {
-      if (body.openrouterApiKey) {
-        data.openrouterApiKey = encrypt(body.openrouterApiKey);
-      } else {
-        data.openrouterApiKey = null;
-      }
-    }
-
     if (body.googleApiKey !== undefined) {
       if (body.googleApiKey) {
         data.googleApiKey = encrypt(body.googleApiKey);
@@ -85,7 +73,6 @@ export async function PATCH(req: Request) {
       }
     }
 
-    if (body.defaultProvider) data.defaultProvider = body.defaultProvider;
     if (body.defaultModel) data.defaultModel = body.defaultModel;
     if (body.monthlyBudgetUsd !== undefined) {
       data.monthlyBudgetUsd = body.monthlyBudgetUsd === null || Number.isNaN(body.monthlyBudgetUsd)
@@ -120,9 +107,7 @@ export async function PATCH(req: Request) {
 
     return NextResponse.json({
       id: settings.id,
-      openrouterApiKey: settings.openrouterApiKey ? "••••••••" : null,
       googleApiKey: settings.googleApiKey ? "••••••••" : null,
-      defaultProvider: settings.defaultProvider,
       defaultModel: settings.defaultModel,
       monthlyBudgetUsd: settings.monthlyBudgetUsd,
       leadRecoveryEnabled: settings.leadRecoveryEnabled,

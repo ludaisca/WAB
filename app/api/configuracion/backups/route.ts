@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
@@ -10,13 +11,28 @@ export async function GET() {
   if (!session?.user?.id) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   if (session.user.role !== "admin") return NextResponse.json({ error: "No autorizado" }, { status: 403 });
 
-  const backups = await prisma.systemBackup.findMany({
-    orderBy: { startedAt: "desc" },
-    take: 50,
-    include: { createdBy: { select: { id: true, name: true, email: true } } },
-  });
+  try {
+    const backups = await prisma.systemBackup.findMany({
+      orderBy: { startedAt: "desc" },
+      take: 50,
+      include: { createdBy: { select: { id: true, name: true, email: true } } },
+    });
 
-  return NextResponse.json({ backups: backups.map(serializeBackup) });
+    return NextResponse.json({ backups: backups.map(serializeBackup) });
+  } catch (error) {
+    // Ventana transitoria de unos segundos durante una restauración en curso:
+    // dropTablesNotInDump() (restore-backup.ts) dropea esta tabla antes de que
+    // `prisma db push` la recree. El polling del frontend puede caer justo
+    // ahí — P2021 "the table does not exist" respondía sin cuerpo (500 crudo
+    // sin catch) y el cliente tronaba con "Unexpected end of JSON input" al
+    // parsearlo. Responder vacío es seguro: el próximo poll (8s) ya la ve
+    // poblada de nuevo.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2021") {
+      return NextResponse.json({ backups: [] });
+    }
+    const message = error instanceof Error ? error.message : "Error interno";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 export async function POST() {

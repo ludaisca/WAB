@@ -54,7 +54,7 @@ export async function ingestInboundMessage(
   const [existingContact, existingChat] = await Promise.all([
     prisma.contact.findUnique({
       where: { accountId_remoteJid: { accountId, remoteJid: msg.remoteJid } },
-      select: { name: true },
+      select: { name: true, blockedAt: true },
     }),
     prisma.wAChat.findUnique({
       where: { accountId_remoteJid: { accountId, remoteJid: msg.remoteJid } },
@@ -155,6 +155,13 @@ export async function ingestInboundMessage(
     where: { id: accountId },
     data: { lastActivity: new Date() },
   });
+
+  // Lista negra ("solo automatización"): el mensaje ya quedó guardado y
+  // notificado arriba (el humano puede verlo y responder), pero el bot no
+  // responde a contactos bloqueados.
+  if (contactRecord.blockedAt) {
+    return { messageId: createdMessage.id, chatId: chat.id };
+  }
 
   const activeBots = await prisma.wABot.findMany({
     where: { accounts: { some: { waAccountId: accountId } }, isActive: true, status: "ACTIVE" },

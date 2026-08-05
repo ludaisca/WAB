@@ -14,6 +14,7 @@ import { AnimatedNumber } from "@/app/components/ui/animated-number";
 import type { Estadisticas } from "@/lib/estadisticas/get-stats";
 import { CAMPAIGN_ORIGIN_LABEL, LABEL_TEXT } from "@/lib/whatsapp/export-columns";
 import { formatDate, zonedDateTimeToUtc } from "@/lib/timezone";
+import { AiSpendChart } from "./_ai-spend-chart";
 
 function botStatusBadge(b: { status: string; isActive: boolean }): { label: string; tone: "success" | "danger" | "neutral" } {
   if (b.status === "ERROR") return { label: "Error", tone: "danger" };
@@ -42,7 +43,7 @@ type BotBreakdownRow = Estadisticas["botBreakdown"][number];
 type AgentPerformanceRow = Estadisticas["agentPerformance"][number];
 type CampaignBreakdownRow = Estadisticas["campaignMessageBreakdown"][number];
 
-function formatCost(value: number): string {
+export function formatCost(value: number): string {
   if (value === 0) return "$0";
   if (value < 0.01) return `$${value.toFixed(4)}`;
   if (value < 1) return `$${value.toFixed(3)}`;
@@ -209,6 +210,10 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
                 height={260}
               />
             </div>
+          </section>
+
+          <section className="animate-fade-in-up animation-delay-300">
+            <AiSpendChart />
           </section>
 
           <section className="animate-fade-in-up animation-delay-300">

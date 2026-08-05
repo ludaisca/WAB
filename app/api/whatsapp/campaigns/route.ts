@@ -81,6 +81,18 @@ export async function POST(req: Request) {
       );
     }
 
+    // Pre-filtro de la lista negra: los contactos bloqueados se descartan antes
+    // de crear el recipient (el worker los volvería a marcar FAILED en el envío
+    // igualmente — esto solo evita filas muertas en la campaña). Normalización
+    // por dígitos, misma lógica que campaign-worker.ts.
+    const blockedContacts = await prisma.contact.findMany({
+      where: { accountId: waAccountId, blockedAt: { not: null } },
+      select: { remoteJid: true },
+    });
+    const normalizePhone = (p: string) => p.replace(/@.*$/, "").replace(/\D/g, "");
+    const blockedPhones = new Set(blockedContacts.map((c) => normalizePhone(c.remoteJid)));
+    const eligibleRecipients = recipients.filter((r) => !blockedPhones.has(normalizePhone(r.phoneNumber)));
+
     const campaign = await prisma.$transaction(async (tx) => {
       const created = await tx.wACampaign.create({
         data: {
@@ -92,7 +104,7 @@ export async function POST(req: Request) {
           scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
           headerParam: headerParam || null,
           buttonParam: buttonParam || null,
-          recipientCount: recipients.length,
+          recipientCount: eligibleRecipients.length,
         },
         include: {
           waAccount: { select: { id: true, name: true, phoneNumber: true } },
@@ -101,7 +113,7 @@ export async function POST(req: Request) {
       });
 
       await tx.wACampaignRecipient.createMany({
-        data: recipients.map((r) => ({
+        data: eligibleRecipients.map((r) => ({
           campaignId: created.id,
           phoneNumber: r.phoneNumber,
           contactName: r.contactName ?? undefined,

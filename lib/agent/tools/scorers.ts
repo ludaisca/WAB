@@ -13,7 +13,7 @@ export const scorersList: ToolDefinition<Record<string, never>> = {
   handler: async (_params, ctx) => {
     const scorers = await prisma.wALeadScorerBot.findMany({
       where: { userId: ctx.userId },
-      select: { id: true, name: true, provider: true, model: true, isActive: true, scheduleEnabled: true, scheduleIntervalMinutes: true, lastRunAt: true },
+      select: { id: true, name: true, model: true, isActive: true, scheduleEnabled: true, scheduleIntervalMinutes: true, lastRunAt: true },
       orderBy: { createdAt: "desc" },
     });
     return { scorers };

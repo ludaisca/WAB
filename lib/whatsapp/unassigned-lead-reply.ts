@@ -11,7 +11,7 @@ import { wrapUserPrompt, SCOPE_GUARDRAIL } from "@/lib/ai/prompt-sanitizer";
 import { summarizeText } from "@/lib/ai/summarize";
 import { splitReply, computeTypingDelay } from "@/lib/whatsapp/humanize";
 import { botSendQueue } from "@/lib/queue";
-import type { AIProvider, AIMessage } from "@/lib/ai/types";
+import type { AIMessage } from "@/lib/ai/types";
 import type { WABot, WAAccount } from "@prisma/client";
 
 const CANDIDATE_POOL = 100;
@@ -104,6 +104,7 @@ export async function findUnassignedLeadChats(userId: string, now: Date): Promis
     JOIN wa_messages m ON m."chatId" = c.id
     WHERE c."accountId" IN (${Prisma.join(accountIds)})
       AND c.status IN ('OPEN', 'PENDING')
+      AND ct."blockedAt" IS NULL
     ORDER BY c.id, m.timestamp DESC
   `;
 
@@ -148,6 +149,16 @@ export interface ManualReplyChat {
 // definición termina en un turno del lead, así que el modelo ya queda en la
 // posición natural de responder.
 export async function sendManualBotReply(chat: ManualReplyChat, bot: WABot, now: Date): Promise<void> {
+  // Lista negra: un contacto bloqueado no recibe respuestas automáticas, ni
+  // siquiera por este flujo manual.
+  const blocked = await prisma.wAChat.findUnique({
+    where: { id: chat.id },
+    select: { contact: { select: { blockedAt: true } } },
+  });
+  if (blocked?.contact?.blockedAt) {
+    throw new Error("El contacto está bloqueado — no se envían respuestas automáticas");
+  }
+
   const lastInbound = await prisma.wAMessage.findFirst({
     where: { chatId: chat.id, direction: "INBOUND" },
     orderBy: { timestamp: "desc" },
@@ -160,8 +171,7 @@ export async function sendManualBotReply(chat: ManualReplyChat, bot: WABot, now:
     throw new Error("Ventana de 24h de Meta ya cerrada — no se puede mandar texto libre sin una plantilla aprobada");
   }
 
-  const provider = bot.provider as AIProvider;
-  const apiKey = await getUserApiKey(bot.userId, provider);
+  const apiKey = await getUserApiKey(bot.userId);
   if (!apiKey) {
     throw new Error(`Bot "${bot.name}" sin API key configurada — no se puede generar la respuesta`);
   }
@@ -182,7 +192,7 @@ export async function sendManualBotReply(chat: ManualReplyChat, bot: WABot, now:
 
   if (bot.ragEnabled) {
     const ragQuery = lastInbound.caption ?? lastInbound.body ?? "";
-    const knowledge = await searchKnowledge(bot.id, ragQuery, provider, apiKey);
+    const knowledge = await searchKnowledge(bot.id, ragQuery, apiKey);
     if (knowledge) {
       messages.push({
         role: "system",
@@ -241,7 +251,7 @@ export async function sendManualBotReply(chat: ManualReplyChat, bot: WABot, now:
   const userText = lastInbound.caption ?? lastInbound.body ?? "";
   messages.push({ role: "user", content: userText || "[mensaje sin texto]" });
 
-  const client = getAIProvider(provider, apiKey);
+  const client = getAIProvider(apiKey);
   const result = await client.complete({
     model: bot.model,
     messages,
@@ -314,7 +324,7 @@ export async function sendManualBotReply(chat: ManualReplyChat, bot: WABot, now:
 
   const promptTokens = result.usage?.promptTokens ?? 0;
   const completionTokens = result.usage?.completionTokens ?? 0;
-  const cost = result.usage ? await estimateCost(bot.model, promptTokens, completionTokens, provider) : 0;
+  const cost = result.usage ? await estimateCost(bot.model, promptTokens, completionTokens) : 0;
 
   await prisma.wABotUsage.create({
     data: {

@@ -29,6 +29,7 @@ interface ContactRow {
   remoteJid: string;
   name: string | null;
   leadStatus: string;
+  blockedAt: string | null;
   updatedAt: string;
   tags: Array<{ tag: { id: string; name: string; color: string } }>;
   chat: { id: string; unreadCount: number; lastMessageAt: string | null } | null;
@@ -182,6 +183,7 @@ export default function ContactosPage() {
                 title={name}
                 badges={
                   <span className="flex shrink-0 items-center gap-1">
+                    {contact.blockedAt && <Badge tone="danger" size="sm">Bloqueado</Badge>}
                     <Badge tone={badge.tone} size="sm">{badge.label}</Badge>
                     {contact.tags.map(({ tag }) => (
                       <Badge key={tag.id} tone="accent" size="sm" className="hidden md:inline-flex">{tag.name}</Badge>

@@ -6,6 +6,12 @@ echo "=== WAB Production Startup ==="
 echo "1. Generating Prisma client..."
 npx prisma generate
 
+echo "1b. Backfilling data off OpenRouter (no-op if already migrated)..."
+# Debe correr ANTES de `db push` (migra modelos/data fuera de las columnas
+# provider/openrouterApiKey que el push va a eliminar) — los guards IF EXISTS
+# lo hacen inofensivo en entornos ya migrados.
+npx prisma db execute --file prisma/sql/migrate-off-openrouter.sql --schema prisma/schema.prisma || echo "backfill skipped (columns already dropped)"
+
 echo "2. Running database migrations..."
 if [ -d "prisma/migrations" ]; then
   npx prisma migrate deploy
