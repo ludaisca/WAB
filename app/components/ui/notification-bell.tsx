@@ -31,6 +31,33 @@ const TYPE_ICON: Record<NotificationItem["type"], React.ElementType> = {
   RESTORE_FAILED: RotateCcw,
 };
 
+// Antes los 12 tipos pintaban el mismo gris — los pares éxito/fallo
+// (CAMPAIGN_*, BACKUP_*, RESTORE_*) compartían además el mismo ícono, así que
+// solo se distinguían leyendo el texto. Tono semántico por severidad, no por
+// categoría — dos tipos con el mismo ícono ahora sí se ven distintos.
+const TYPE_TONE: Record<NotificationItem["type"], "success" | "danger" | "warning" | "info" | "accent"> = {
+  CHAT_MESSAGE: "accent",
+  CAMPAIGN_COMPLETED: "success",
+  CAMPAIGN_FAILED: "danger",
+  BOT_ERROR: "danger",
+  BUDGET_EXCEEDED: "warning",
+  ACCOUNT_STATUS: "warning",
+  SCORER_ERROR: "danger",
+  SYSTEM_ISSUE: "warning",
+  BACKUP_COMPLETED: "success",
+  BACKUP_FAILED: "danger",
+  RESTORE_COMPLETED: "success",
+  RESTORE_FAILED: "danger",
+};
+
+const TONE_TEXT: Record<"success" | "danger" | "warning" | "info" | "accent", string> = {
+  success: "text-success",
+  danger: "text-danger",
+  warning: "text-warning",
+  info: "text-info",
+  accent: "text-accent",
+};
+
 function formatRelative(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diffMs / 60000);
@@ -155,7 +182,7 @@ export function NotificationBell() {
                     !item.read && "bg-accent/5"
                   )}
                 >
-                  <Icon size={16} className="text-muted-darker shrink-0 mt-0.5" />
+                  <Icon size={16} className={cn(TONE_TEXT[TYPE_TONE[item.type]], "shrink-0 mt-0.5")} />
                   <div className="min-w-0 flex-1">
                     <p className={cn("truncate", !item.read && "font-semibold text-foreground")}>
                       {item.title}

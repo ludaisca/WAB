@@ -237,7 +237,7 @@ export function AppShell({
             el header (y sus dropdowns z-50) en una capa atómica — sin elevar el
             header completo, el contenido de <main> (posterior en el DOM) pinta
             encima de los menús de usuario/notificaciones y les roba los clicks. */}
-        <header className="relative z-40 flex items-center gap-3 px-4 py-3 md:px-6 shrink-0 bg-background/80 backdrop-blur-sm">
+        <header className="glass relative z-40 flex items-center gap-3 px-4 py-3 md:px-6 shrink-0">
           <button
             onClick={() => setDrawerOpen(true)}
             className="md:hidden text-foreground hover:text-muted transition-colors"

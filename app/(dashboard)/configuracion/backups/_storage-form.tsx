@@ -8,6 +8,7 @@ import { Input } from "@/app/components/ui/input";
 import { FormField } from "@/app/components/ui/form-field";
 import { Switch } from "@/app/components/ui/switch";
 import { Spinner } from "@/app/components/ui/spinner";
+import { SkeletonText } from "@/app/components/ui/skeleton";
 import { SectionHeader } from "@/app/components/ui/section-header";
 import { useToast } from "@/app/components/ui/toast";
 
@@ -115,7 +116,7 @@ export function StorageSettingsForm() {
     return (
       <section className="space-y-4">
         <SectionHeader eyebrow="Durabilidad" title="Almacenamiento externo (S3/R2)" />
-        <Card><CardBody><Spinner /></CardBody></Card>
+        <Card><CardBody><SkeletonText lines={4} /></CardBody></Card>
       </section>
     );
   }

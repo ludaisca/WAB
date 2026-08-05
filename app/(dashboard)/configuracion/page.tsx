@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import { User, Lock, Shield, CalendarDays, Brain, Users, FileSpreadsheet, ExternalLink, RefreshCw, Unlink, DatabaseBackup } from "lucide-react";
+import { User, Lock, CalendarDays, Brain, Users, FileSpreadsheet, ExternalLink, RefreshCw, Unlink, DatabaseBackup } from "lucide-react";
 import { Card, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -13,6 +13,7 @@ import { Banner } from "@/app/components/ui/banner";
 import { Badge } from "@/app/components/ui/badge";
 import { Switch } from "@/app/components/ui/switch";
 import { PageHeader } from "@/app/components/ui/page-header";
+import { SectionHeader } from "@/app/components/ui/section-header";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { useToast } from "@/app/components/ui/toast";
 import { RespuestasRapidasSection } from "./_respuestas-rapidas";
@@ -44,8 +45,6 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
 
   const [savingName, setSavingName] = useState(false);
-  const [notifications, setNotifications] = useState(true);
-  const [twoFactor, setTwoFactor] = useState(false);
   const [allowRegistration, setAllowRegistration] = useState(true);
   const [systemLoading, setSystemLoading] = useState(false);
 
@@ -199,248 +198,211 @@ export default function SettingsPage() {
     <div className="space-y-6 max-w-2xl mx-auto">
       <PageHeader title="Configuración" description="Administra tu cuenta y preferencias." />
 
-      <Card>
-        <div className="flex items-center gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-accent text-on-accent font-bold text-xl shrink-0 select-none">
-            {initials}
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold">{name}</h2>
-            <p className="text-sm text-muted-darker">{email}</p>
-            <div className="flex items-center gap-2 mt-1.5">
-              <Badge tone="info" size="sm">{user?.role === "user" ? "Usuario" : user?.role}</Badge>
-              <span className="text-xs text-muted-darker flex items-center gap-1">
-                <CalendarDays size={11} />
-                Miembro desde {formatDate(createdAt ?? new Date(), { year: "numeric", month: "long" })}
-              </span>
+      <div className="space-y-4">
+        <SectionHeader eyebrow="Tu cuenta" title="Perfil" />
+
+        <Card>
+          <div className="flex items-center gap-4">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-accent text-on-accent font-bold text-xl shrink-0 select-none">
+              {initials}
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold">{name}</h2>
+              <p className="text-sm text-muted-darker">{email}</p>
+              <div className="flex items-center gap-2 mt-1.5">
+                <Badge tone="info" size="sm">{user?.role === "user" ? "Usuario" : user?.role}</Badge>
+                <span className="text-xs text-muted-darker flex items-center gap-1">
+                  <CalendarDays size={11} />
+                  Miembro desde {formatDate(createdAt ?? new Date(), { year: "numeric", month: "long" })}
+                </span>
+              </div>
             </div>
           </div>
-        </div>
-      </Card>
+        </Card>
 
-      <Card>
-        <CardBody>
-          <div className="flex items-center gap-2 mb-6">
-            <User size={16} className="text-accent" />
-            <CardTitle>Cuenta</CardTitle>
-          </div>
+        <Card>
+          <CardBody>
+            <div className="flex items-center gap-2 mb-6">
+              <User size={16} className="text-accent" />
+              <CardTitle>Cuenta</CardTitle>
+            </div>
 
-          <div className="space-y-4">
-            <FormField label="Nombre">
-              {(id) => (
-                <Input
-                  id={id}
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                />
-              )}
-            </FormField>
+            <div className="space-y-4">
+              <FormField label="Nombre">
+                {(id) => (
+                  <Input
+                    id={id}
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                  />
+                )}
+              </FormField>
 
-            <Button size="sm" icon={User} onClick={handleSaveName} loading={savingName}>Guardar nombre</Button>
-          </div>
-        </CardBody>
-      </Card>
+              <Button size="sm" icon={User} onClick={handleSaveName} loading={savingName}>Guardar nombre</Button>
+            </div>
+          </CardBody>
+        </Card>
 
-      <Card>
-        <CardBody>
-          <div className="flex items-center gap-2 mb-6">
-            <Lock size={16} className="text-accent" />
-            <CardTitle>Cambiar contraseña</CardTitle>
-          </div>
+        <Card>
+          <CardBody>
+            <div className="flex items-center gap-2 mb-6">
+              <Lock size={16} className="text-accent" />
+              <CardTitle>Cambiar contraseña</CardTitle>
+            </div>
 
-          {passwordError && (
-            <Banner tone="danger" className="mb-4">{passwordError}</Banner>
-          )}
+            {passwordError && (
+              <Banner tone="danger" className="mb-4">{passwordError}</Banner>
+            )}
 
-          <div className="space-y-4">
-            <FormField label="Contraseña actual" required>
-              {(id) => (
-                <PasswordInput
-                  id={id}
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                />
-              )}
-            </FormField>
-
-            <FormField label="Nueva contraseña" required>
-              {(id) => (
-                <>
+            <div className="space-y-4">
+              <FormField label="Contraseña actual" required>
+                {(id) => (
                   <PasswordInput
                     id={id}
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Mínimo 8 caracteres"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                  />
+                )}
+              </FormField>
+
+              <FormField label="Nueva contraseña" required>
+                {(id) => (
+                  <>
+                    <PasswordInput
+                      id={id}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Mínimo 8 caracteres"
+                      autoComplete="new-password"
+                    />
+                    <PasswordStrength password={newPassword} />
+                  </>
+                )}
+              </FormField>
+
+              <FormField label="Confirmar nueva contraseña" required>
+                {(id) => (
+                  <PasswordInput
+                    id={id}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Repite la contraseña"
                     autoComplete="new-password"
                   />
-                  <PasswordStrength password={newPassword} />
-                </>
-              )}
-            </FormField>
-
-            <FormField label="Confirmar nueva contraseña" required>
-              {(id) => (
-                <PasswordInput
-                  id={id}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Repite la contraseña"
-                  autoComplete="new-password"
-                />
-              )}
-            </FormField>
-
-            <Button size="sm" icon={Lock} onClick={handleSavePassword} loading={saving}>
-              Cambiar contraseña
-            </Button>
-          </div>
-        </CardBody>
-      </Card>
-
-      {isAdmin && (
-        <Card>
-          <CardBody>
-            <div className="flex items-center gap-2 mb-4">
-              <Brain size={16} className="text-accent" />
-              <CardTitle>Inteligencia Artificial</CardTitle>
-            </div>
-            <p className="text-sm text-muted-darker mb-4">
-              Configura la API key de Google Gemini y el modelo por defecto de los bots IA, RAG y embeddings.
-            </p>
-            <Button href="/configuracion/ia" variant="secondary" size="sm" icon={Brain}>
-              Configurar IA
-            </Button>
-          </CardBody>
-        </Card>
-      )}
-
-      {isAdmin && (
-        <Card>
-          <CardBody>
-            <div className="flex items-center gap-2 mb-4">
-              <DatabaseBackup size={16} className="text-accent" />
-              <CardTitle>Backups y restauración</CardTitle>
-            </div>
-            <p className="text-sm text-muted-darker mb-4">
-              Respalda toda la información del sistema (base de datos + medios) o restaura un respaldo para migrar
-              entre servidores.
-            </p>
-            <Button href="/configuracion/backups" variant="secondary" size="sm" icon={DatabaseBackup}>
-              Administrar backups
-            </Button>
-          </CardBody>
-        </Card>
-      )}
-
-      <RespuestasRapidasSection />
-
-      {isAdmin && (
-        <Card>
-          <CardBody>
-            <div className="flex items-center gap-2 mb-4">
-              <Users size={16} className="text-accent" />
-              <CardTitle>Sistema</CardTitle>
-            </div>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between py-1">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Registro libre</p>
-                  <p className="text-xs text-muted-darker">Permitir que cualquier persona se registre desde /register</p>
-                </div>
-                <Switch
-                  checked={allowRegistration}
-                  disabled={systemLoading}
-                  onCheckedChange={async (v) => {
-                    setAllowRegistration(v);
-                    setSystemLoading(true);
-                    try {
-                      const res = await fetch("/api/configuracion/sistema", {
-                        method: "PATCH",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ allowRegistration: v }),
-                      });
-                      if (!res.ok) {
-                        setAllowRegistration(!v);
-                        toastError("Error al actualizar");
-                      } else {
-                        success(v ? "Registro libre activado" : "Registro libre desactivado");
-                      }
-                    } catch {
-                      setAllowRegistration(!v);
-                      toastError("Error al actualizar");
-                    } finally {
-                      setSystemLoading(false);
-                    }
-                  }}
-                />
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-      )}
-
-      <Card>
-        <CardBody>
-          <div className="flex items-center gap-2 mb-4">
-            <FileSpreadsheet size={16} className="text-accent" />
-            <CardTitle>Google Sheets</CardTitle>
-          </div>
-          <p className="text-sm text-muted-darker mb-4">
-            Sincroniza automáticamente los reportes que configures a tus hojas de Google, cada 15 minutos.
-          </p>
-
-          {!loadingGoogleStatus && !googleStatus.connected && (
-            <Button
-              size="sm"
-              icon={FileSpreadsheet}
-              onClick={() => { window.location.href = "/api/integrations/google-sheets/connect"; }}
-            >
-              Conectar con Google
-            </Button>
-          )}
-
-          {!loadingGoogleStatus && googleStatus.connected && (
-            <div className="space-y-3">
-              {googleStatus.lastSyncError && (
-                <Banner tone="danger">{googleStatus.lastSyncError}</Banner>
-              )}
-              <p className="text-sm text-foreground">
-                Conectado como <span className="font-medium">{googleStatus.googleEmail}</span>
-              </p>
-              <p className="text-xs text-muted-darker">
-                Última sincronización:{" "}
-                {googleStatus.lastSyncedAt
-                  ? formatDateTime(googleStatus.lastSyncedAt)
-                  : "Nunca"}
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" icon={FileSpreadsheet} href="/configuracion/exportaciones">
-                  Administrar exportaciones
-                </Button>
-                {googleStatus.spreadsheetId && (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    icon={ExternalLink}
-                    href={`https://docs.google.com/spreadsheets/d/${googleStatus.spreadsheetId}`}
-                    external
-                  >
-                    Abrir hoja
-                  </Button>
                 )}
-                <Button size="sm" variant="secondary" icon={RefreshCw} onClick={handleSyncNow} loading={syncingNow}>
-                  Sincronizar ahora
-                </Button>
-                <Button size="sm" variant="danger" icon={Unlink} onClick={() => setDisconnectConfirmOpen(true)}>
-                  Desconectar
-                </Button>
-              </div>
+              </FormField>
+
+              <Button size="sm" icon={Lock} onClick={handleSavePassword} loading={saving}>
+                Cambiar contraseña
+              </Button>
             </div>
+          </CardBody>
+        </Card>
+      </div>
+
+      <div className="space-y-4">
+        <SectionHeader eyebrow="Conectores" title="Integraciones y automatización" />
+
+          {isAdmin && (
+            <Card>
+              <CardBody>
+                <div className="flex items-center gap-2 mb-4">
+                  <Brain size={16} className="text-accent" />
+                  <CardTitle>Inteligencia Artificial</CardTitle>
+                </div>
+                <p className="text-sm text-muted-darker mb-4">
+                  Configura la API key de Google Gemini y el modelo por defecto de los bots IA, RAG y embeddings.
+                </p>
+                <Button href="/configuracion/ia" variant="secondary" size="sm" icon={Brain}>
+                  Configurar IA
+                </Button>
+              </CardBody>
+            </Card>
           )}
-        </CardBody>
-      </Card>
+
+          {isAdmin && (
+            <Card>
+              <CardBody>
+                <div className="flex items-center gap-2 mb-4">
+                  <DatabaseBackup size={16} className="text-accent" />
+                  <CardTitle>Backups y restauración</CardTitle>
+                </div>
+                <p className="text-sm text-muted-darker mb-4">
+                  Respalda toda la información del sistema (base de datos + medios) o restaura un respaldo para migrar
+                  entre servidores.
+                </p>
+                <Button href="/configuracion/backups" variant="secondary" size="sm" icon={DatabaseBackup}>
+                  Administrar backups
+                </Button>
+              </CardBody>
+            </Card>
+          )}
+
+          <RespuestasRapidasSection />
+
+          <Card>
+            <CardBody>
+              <div className="flex items-center gap-2 mb-4">
+                <FileSpreadsheet size={16} className="text-accent" />
+                <CardTitle>Google Sheets</CardTitle>
+              </div>
+              <p className="text-sm text-muted-darker mb-4">
+                Sincroniza automáticamente los reportes que configures a tus hojas de Google, cada 15 minutos.
+              </p>
+
+              {!loadingGoogleStatus && !googleStatus.connected && (
+                <Button
+                  size="sm"
+                  icon={FileSpreadsheet}
+                  onClick={() => { window.location.href = "/api/integrations/google-sheets/connect"; }}
+                >
+                  Conectar con Google
+                </Button>
+              )}
+
+              {!loadingGoogleStatus && googleStatus.connected && (
+                <div className="space-y-3">
+                  {googleStatus.lastSyncError && (
+                    <Banner tone="danger">{googleStatus.lastSyncError}</Banner>
+                  )}
+                  <p className="text-sm text-foreground">
+                    Conectado como <span className="font-medium">{googleStatus.googleEmail}</span>
+                  </p>
+                  <p className="text-xs text-muted-darker">
+                    Última sincronización:{" "}
+                    {googleStatus.lastSyncedAt
+                      ? formatDateTime(googleStatus.lastSyncedAt)
+                      : "Nunca"}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button size="sm" icon={FileSpreadsheet} href="/configuracion/exportaciones">
+                      Administrar exportaciones
+                    </Button>
+                    {googleStatus.spreadsheetId && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon={ExternalLink}
+                        href={`https://docs.google.com/spreadsheets/d/${googleStatus.spreadsheetId}`}
+                        external
+                      >
+                        Abrir hoja
+                      </Button>
+                    )}
+                    <Button size="sm" variant="secondary" icon={RefreshCw} onClick={handleSyncNow} loading={syncingNow}>
+                      Sincronizar ahora
+                    </Button>
+                    <Button size="sm" variant="danger" icon={Unlink} onClick={() => setDisconnectConfirmOpen(true)}>
+                      Desconectar
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardBody>
+          </Card>
+      </div>
 
       <ConfirmDialog
         open={disconnectConfirmOpen}
@@ -453,32 +415,54 @@ export default function SettingsPage() {
         loading={disconnecting}
       />
 
-      <Card>
-        <CardBody>
-          <div className="flex items-center gap-2 mb-6">
-            <Shield size={16} className="text-accent" />
-            <CardTitle>Preferencias</CardTitle>
-          </div>
+      {isAdmin && (
+        <div className="space-y-4">
+          <SectionHeader eyebrow="Administración" title="Sistema" />
 
-          <div className="space-y-4">
-            <div className="flex items-center justify-between py-1">
-              <div>
-                <p className="text-sm font-medium text-foreground">Notificaciones por email</p>
-                <p className="text-xs text-muted-darker">Recibir actualizaciones y alertas por correo</p>
+          <Card>
+            <CardBody>
+              <div className="flex items-center gap-2 mb-4">
+                <Users size={16} className="text-accent" />
+                <CardTitle>Acceso</CardTitle>
               </div>
-              <Switch checked={notifications} onCheckedChange={setNotifications} />
-            </div>
-
-            <div className="flex items-center justify-between py-1">
-              <div>
-                <p className="text-sm font-medium text-foreground">Autenticación en dos pasos</p>
-                <p className="text-xs text-muted-darker">Agrega una capa extra de seguridad</p>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between py-1">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Registro libre</p>
+                    <p className="text-xs text-muted-darker">Permitir que cualquier persona se registre desde /register</p>
+                  </div>
+                  <Switch
+                    checked={allowRegistration}
+                    disabled={systemLoading}
+                    onCheckedChange={async (v) => {
+                      setAllowRegistration(v);
+                      setSystemLoading(true);
+                      try {
+                        const res = await fetch("/api/configuracion/sistema", {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ allowRegistration: v }),
+                        });
+                        if (!res.ok) {
+                          setAllowRegistration(!v);
+                          toastError("Error al actualizar");
+                        } else {
+                          success(v ? "Registro libre activado" : "Registro libre desactivado");
+                        }
+                      } catch {
+                        setAllowRegistration(!v);
+                        toastError("Error al actualizar");
+                      } finally {
+                        setSystemLoading(false);
+                      }
+                    }}
+                  />
+                </div>
               </div>
-              <Switch checked={twoFactor} onCheckedChange={setTwoFactor} />
-            </div>
-          </div>
-        </CardBody>
-      </Card>
+            </CardBody>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

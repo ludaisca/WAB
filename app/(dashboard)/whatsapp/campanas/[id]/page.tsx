@@ -9,7 +9,7 @@ import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Spinner } from "@/app/components/ui/spinner";
 import { SkeletonDetail } from "@/app/components/ui/skeleton";
-import { AnimatedNumber } from "@/app/components/ui/animated-number";
+import { KpiStrip } from "@/app/components/ui/kpi-strip";
 import { FunnelBars } from "@/app/components/ui/chart";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { Banner } from "@/app/components/ui/banner";
@@ -166,26 +166,21 @@ export default function CampaignDetailPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {(["recipientCount", "sentCount", "deliveredCount", "readCount"] as const).map(k => {
-          const labels: Record<string, string> = {
-            recipientCount: "Destinatarios",
-            sentCount: "Enviados",
-            deliveredCount: "Entregados",
-            readCount: "Leídos",
-          };
-          return (
-            <Card key={k}>
-              <CardBody>
-                <p className="text-xs text-muted-darker">{labels[k]}</p>
-                <p className="mt-1 font-mono text-2xl font-bold">
-                  <AnimatedNumber value={campaign[k]} />
-                </p>
-              </CardBody>
-            </Card>
-          );
-        })}
-      </div>
+      {/* KpiStrip sustituye la grilla de 4 Card con cajas — misma cifra,
+          franja densa sin bordes en vez de 4 tarjetas repetidas. */}
+      <Card>
+        <CardBody>
+          <KpiStrip
+            size="compact"
+            items={[
+              { label: "Destinatarios", value: String(campaign.recipientCount), numeric: campaign.recipientCount },
+              { label: "Enviados", value: String(campaign.sentCount), numeric: campaign.sentCount },
+              { label: "Entregados", value: String(campaign.deliveredCount), numeric: campaign.deliveredCount },
+              { label: "Leídos", value: String(campaign.readCount), numeric: campaign.readCount },
+            ]}
+          />
+        </CardBody>
+      </Card>
 
       {/* Embudo: las 4 cifras de arriba no muestran la relación entre ellas —
           aquí se ve la caída enviados → entregados → leídos de un vistazo. */}

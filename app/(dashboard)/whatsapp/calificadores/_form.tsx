@@ -11,6 +11,7 @@ import { FormField } from "@/app/components/ui/form-field";
 import { Switch } from "@/app/components/ui/switch";
 import { Banner } from "@/app/components/ui/banner";
 import { Spinner } from "@/app/components/ui/spinner";
+import { SkeletonText } from "@/app/components/ui/skeleton";
 import { MultiSelect } from "@/app/components/ui/multi-select";
 import { useToast } from "@/app/components/ui/toast";
 import { LEAD_SCORER_SCHEDULE_INTERVALS } from "@/lib/validations";
@@ -196,7 +197,7 @@ export function LeadScorerFormModal({ open, onClose, editId = null, onSaved }: P
       }
     >
       {loading ? (
-        <div className="flex items-center justify-center py-16"><Spinner /></div>
+        <SkeletonText lines={6} className="py-2" />
       ) : (
         <div className="space-y-5">
           {error && <Banner tone="danger">{error}</Banner>}

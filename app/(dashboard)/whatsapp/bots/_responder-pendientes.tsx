@@ -10,6 +10,7 @@ import { Checkbox } from "@/app/components/ui/checkbox";
 import { Badge } from "@/app/components/ui/badge";
 import { Banner } from "@/app/components/ui/banner";
 import { Spinner } from "@/app/components/ui/spinner";
+import { SkeletonRow } from "@/app/components/ui/skeleton";
 import { EmptyState } from "@/app/components/ui/empty-state";
 import { useToast } from "@/app/components/ui/toast";
 
@@ -214,7 +215,9 @@ export function UnassignedLeadsModal({ open, onClose, bots }: Props) {
         )}
 
         {loading ? (
-          <div className="flex justify-center py-10"><Spinner /></div>
+          <div className="space-y-1">
+            {Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={3} />)}
+          </div>
         ) : chats.length === 0 ? (
           <EmptyState
             icon={MessageCircleOff}

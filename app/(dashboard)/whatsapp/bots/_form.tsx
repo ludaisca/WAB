@@ -12,6 +12,7 @@ import { FormField } from "@/app/components/ui/form-field";
 import { Switch } from "@/app/components/ui/switch";
 import { Banner } from "@/app/components/ui/banner";
 import { Spinner } from "@/app/components/ui/spinner";
+import { SkeletonText } from "@/app/components/ui/skeleton";
 import { useToast } from "@/app/components/ui/toast";
 
 interface ModelOption { id: string; name: string; }
@@ -241,7 +242,7 @@ export function BotFormModal({ open, onClose, editId = null, onSaved }: Props) {
       }
     >
       {loading ? (
-        <div className="flex items-center justify-center py-16"><Spinner /></div>
+        <SkeletonText lines={6} className="py-2" />
       ) : (
         <div className="space-y-5">
           {error && <Banner tone="danger">{error}</Banner>}

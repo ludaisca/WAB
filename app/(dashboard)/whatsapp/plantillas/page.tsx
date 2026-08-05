@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Plus, RefreshCw, MessageSquareText } from "lucide-react";
+import { Plus, RefreshCw, MessageSquareText, Search } from "lucide-react";
 import { Card, CardBody } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
+import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
 import { Badge } from "@/app/components/ui/badge";
 import { Spinner } from "@/app/components/ui/spinner";
@@ -53,6 +54,8 @@ function TemplatesContent() {
   const [syncing, setSyncing] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [metricsTemplateId, setMetricsTemplateId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
 
   useEffect(() => {
     fetch("/api/whatsapp/accounts")
@@ -115,6 +118,13 @@ function TemplatesContent() {
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
   const missingWabaId = selectedAccount && !selectedAccount.wabaId;
 
+  const filtered = useMemo(() => templates.filter((t) => {
+    const q = search.trim().toLowerCase();
+    if (q && !t.name.toLowerCase().includes(q)) return false;
+    if (statusFilter && t.status !== statusFilter) return false;
+    return true;
+  }), [templates, search, statusFilter]);
+
   return (
     <div className="space-y-6 animate-fade-in-up">
       <PageHeader
@@ -172,15 +182,41 @@ function TemplatesContent() {
           </CardBody>
         </Card>
       ) : (
-        <EntityList
-          rows={templates}
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Input
+              icon={Search}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por nombre..."
+              className="sm:max-w-xs flex-1"
+            />
+            <Select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              placeholder="Todos los estados"
+              className="sm:max-w-[180px]"
+            >
+              <option value="">Todos los estados</option>
+              {Object.entries(STATUS_BADGE).map(([value, { label }]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </Select>
+          </div>
+
+          <EntityList
+          rows={filtered}
           rowKey={(t) => t.id}
           loading={loading}
           error={fetchError}
           onRetry={fetchTemplates}
           emptyIcon={MessageSquareText}
           emptyTitle="Sin plantillas"
-          emptyDescription="No hay plantillas en esta cuenta. Sincroniza desde Meta o crea una nueva."
+          emptyDescription={
+            templates.length === 0
+              ? "No hay plantillas en esta cuenta. Sincroniza desde Meta o crea una nueva."
+              : "No se encontraron plantillas con los filtros actuales."
+          }
           onRowClick={(t) => setMetricsTemplateId(t.id)}
           renderRow={(t) => {
             const badge = STATUS_BADGE[t.status] ?? { label: t.status, tone: "neutral" as const };
@@ -201,7 +237,8 @@ function TemplatesContent() {
               />
             );
           }}
-        />
+          />
+        </div>
       )}
 
       <TemplateFormModal

@@ -3,9 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import Link from "next/link";
-import { Search, Plus, RefreshCw, Phone, Trash2, Settings2 } from "lucide-react";
-import { Card } from "@/app/components/ui/card";
+import { Search, Plus, RefreshCw, Phone, Trash2 } from "lucide-react";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
 import { Badge } from "@/app/components/ui/badge";
@@ -13,7 +11,8 @@ import { Button } from "@/app/components/ui/button";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { DropdownItem } from "@/app/components/ui/dropdown";
 import { PageHeader } from "@/app/components/ui/page-header";
-import { Table, type TableColumn } from "@/app/components/ui/table";
+import { EntityList, EntityRow } from "@/app/components/ui/entity-list";
+import { EntityAvatar } from "@/app/components/ui/avatar";
 import { useToast } from "@/app/components/ui/toast";
 import { CuentaFormModal } from "./_form";
 import { formatDate } from "@/lib/timezone";
@@ -109,61 +108,6 @@ function CuentasView() {
     return true;
   }), [accounts, search, statusFilter]);
 
-  const columns: TableColumn<WaAccount>[] = useMemo(() => [
-    {
-      key: "name",
-      header: "Nombre",
-      render: (a) => (
-        <Link href={`/whatsapp/cuentas/${a.id}`} className="font-medium text-accent hover:underline">
-          {a.name}
-        </Link>
-      ),
-    },
-    {
-      key: "phoneNumber",
-      header: "Número",
-      render: (a) => <span className="font-mono text-xs">{a.phoneNumber ?? "—"}</span>,
-      hideBelow: "sm",
-    },
-    {
-      key: "status",
-      header: "Estado",
-      render: (a) => {
-        const badge = STATUS_BADGE[a.status] ?? { label: a.status, tone: "neutral" as const };
-        return (
-          <div>
-            <div className="flex flex-wrap items-center gap-1">
-              <Badge tone={badge.tone} size="sm">{badge.label}</Badge>
-            </div>
-            {a.status === "ERROR" && a.errorMessage && (
-              <p className="text-xs text-danger mt-1 max-w-[160px] truncate" title={a.errorMessage}>
-                {a.errorMessage}
-              </p>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      key: "chats",
-      header: "Chats",
-      render: (a) => <span className="text-sm">{a._count.chats}</span>,
-      hideBelow: "md",
-    },
-    {
-      key: "lastActivity",
-      header: "Última actividad",
-      render: (a) => (
-        <span className="text-xs text-muted-darker">
-          {a.lastActivity
-            ? formatDate(a.lastActivity, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
-            : "—"}
-        </span>
-      ),
-      hideBelow: "md",
-    },
-  ], []);
-
   return (
     <div className="space-y-6 animate-fade-in-up">
       <PageHeader
@@ -181,8 +125,8 @@ function CuentasView() {
         }
       />
 
-      <Card>
-        <div className="flex flex-col sm:flex-row gap-3 mb-4">
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row gap-3">
           <Input
             icon={Search}
             value={search}
@@ -204,13 +148,13 @@ function CuentasView() {
           </Select>
         </div>
 
-        <Table
-          columns={columns}
+        <EntityList
           rows={filtered}
           rowKey={(a) => a.id}
           loading={loading}
           error={fetchError}
           onRetry={fetchAccounts}
+          onRowClick={(a) => router.push(`/whatsapp/cuentas/${a.id}`)}
           emptyIcon={Phone}
           emptyTitle={accounts.length === 0 ? "Sin cuentas" : "Sin resultados"}
           emptyDescription={
@@ -218,42 +162,45 @@ function CuentasView() {
               ? "No has agregado ninguna cuenta de WhatsApp. Conecta tu primer número para empezar."
               : "No se encontraron cuentas con los filtros actuales."
           }
-          rowActions={(a) => (
-            <>
-              <DropdownItem icon={Settings2} onClick={() => router.push(`/whatsapp/cuentas/${a.id}`)}>
-                Detalles
-              </DropdownItem>
-              {isAdmin && (
-                <DropdownItem icon={Trash2} onClick={() => setDeleteId(a.id)}>
-                  Eliminar
-                </DropdownItem>
-              )}
-            </>
-          )}
-          mobileCard={(a) => {
+          renderRow={(a) => {
             const badge = STATUS_BADGE[a.status] ?? { label: a.status, tone: "neutral" as const };
             return (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Link href={`/whatsapp/cuentas/${a.id}`} className="font-medium text-sm text-accent hover:underline">
-                    {a.name}
-                  </Link>
-                  <Badge tone={badge.tone} size="sm">{badge.label}</Badge>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-muted-darker">
-                  <span className="font-mono">{a.phoneNumber ?? "—"}</span>
-                  <span>{a._count.chats} chats</span>
-                  {a.lastActivity && (
-                    <span className="ml-auto">
-                      {formatDate(a.lastActivity, { day: "2-digit", month: "short" })}
+              <EntityRow
+                leading={<EntityAvatar id={a.id} name={a.name} size="sm" />}
+                title={a.name}
+                badges={<Badge tone={badge.tone} size="sm">{badge.label}</Badge>}
+                subtitle={
+                  <>
+                    <span className="font-mono">{a.phoneNumber ?? "—"}</span>
+                    {a.status === "ERROR" && a.errorMessage && (
+                      <span className="text-danger"> · {a.errorMessage}</span>
+                    )}
+                  </>
+                }
+                meta={
+                  <>
+                    <span>{a._count.chats} chats</span>
+                    <span className="font-mono">
+                      {a.lastActivity
+                        ? formatDate(a.lastActivity, { day: "2-digit", month: "short" })
+                        : "—"}
                     </span>
-                  )}
-                </div>
-              </div>
+                  </>
+                }
+              />
             );
           }}
+          rowActions={
+            isAdmin
+              ? (a) => (
+                  <DropdownItem icon={Trash2} onClick={() => setDeleteId(a.id)}>
+                    Eliminar
+                  </DropdownItem>
+                )
+              : undefined
+          }
         />
-      </Card>
+      </div>
 
       <ConfirmDialog
         open={!!deleteId}

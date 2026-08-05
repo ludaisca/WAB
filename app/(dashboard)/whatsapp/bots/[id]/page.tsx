@@ -9,8 +9,11 @@ import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { FormField } from "@/app/components/ui/form-field";
 import { Spinner } from "@/app/components/ui/spinner";
-import { SkeletonDetail } from "@/app/components/ui/skeleton";
+import { SkeletonDetail, SkeletonRow } from "@/app/components/ui/skeleton";
 import { TrendChart } from "@/app/components/ui/chart";
+import { Tabs } from "@/app/components/ui/tabs";
+import { KpiStrip } from "@/app/components/ui/kpi-strip";
+import { DefinitionList } from "@/app/components/ui/definition-list";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { Banner } from "@/app/components/ui/banner";
 import { Table, type TableColumn } from "@/app/components/ui/table";
@@ -52,7 +55,7 @@ interface UsageData {
   recent: Array<{ totalTokens: number; estimatedCost: number; createdAt: string }>;
 }
 
-const TABS = ["config", "knowledge", "test", "uso"] as const;
+type BotTab = "config" | "knowledge" | "test" | "uso";
 
 export default function BotDetailPage() {
   const params = useParams();
@@ -60,7 +63,7 @@ export default function BotDetailPage() {
   const { success, error: toastError } = useToast();
   const id = params.id as string;
 
-  const [tab, setTab] = useState<(typeof TABS)[number]>("config");
+  const [tab, setTab] = useState<BotTab>("config");
   const [bot, setBot] = useState<BotDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -266,27 +269,16 @@ export default function BotDetailPage() {
         </div>
       </div>
 
-      <div className="flex gap-1 border-b border-border">
-        {TABS.map((t) => {
-          const labels: Record<string, string> = {
-            config: "Configuración",
-            knowledge: "Conocimiento",
-            test: "Probar",
-            uso: "Uso",
-          };
-          return (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                tab === t ? "border-accent text-accent" : "border-transparent text-muted hover:text-foreground"
-              }`}
-            >
-              {labels[t]}
-            </button>
-          );
-        })}
-      </div>
+      <Tabs
+        items={[
+          { value: "config", label: "Configuración" },
+          { value: "knowledge", label: "Conocimiento" },
+          { value: "test", label: "Probar" },
+          { value: "uso", label: "Uso" },
+        ]}
+        value={tab}
+        onChange={(v) => setTab(v as BotTab)}
+      />
 
       {tab === "config" && (
         <div className="space-y-4">
@@ -307,13 +299,15 @@ export default function BotDetailPage() {
           <Card>
             <CardHeader><CardTitle>Parámetros</CardTitle></CardHeader>
             <CardBody>
-              <dl className="divide-y divide-border">
-                <Row label="Temperatura" value={String(bot.temperature)} mono />
-                <Row label="Max tokens" value={bot.maxTokens.toLocaleString("es-MX")} mono />
-                <Row label="Memoria" value={bot.memoryType === "RECENT" ? `Reciente (${bot.memoryLimit} msgs)` : bot.memoryType === "SUMMARY" ? "Resumen acumulativo" : "Ninguna"} />
-                <Row label="RAG" value={bot.ragEnabled ? "Activado" : "Desactivado"} />
-                <Row label="Creado" value={formatDate(bot.createdAt, { day: "2-digit", month: "long", year: "numeric" })} mono />
-              </dl>
+              <DefinitionList
+                rows={[
+                  { label: "Temperatura", value: String(bot.temperature), mono: true },
+                  { label: "Max tokens", value: bot.maxTokens.toLocaleString("es-MX"), mono: true },
+                  { label: "Memoria", value: bot.memoryType === "RECENT" ? `Reciente (${bot.memoryLimit} msgs)` : bot.memoryType === "SUMMARY" ? "Resumen acumulativo" : "Ninguna" },
+                  { label: "RAG", value: bot.ragEnabled ? "Activado" : "Desactivado" },
+                  { label: "Creado", value: formatDate(bot.createdAt, { day: "2-digit", month: "long", year: "numeric" }), mono: true },
+                ]}
+              />
             </CardBody>
           </Card>
         </div>
@@ -350,7 +344,11 @@ export default function BotDetailPage() {
           <Card>
             <CardHeader><CardTitle>Documentos indexados ({knowledge.length})</CardTitle></CardHeader>
             <CardBody>
-              {knowledgeLoading ? <Spinner /> : knowledge.length === 0 ? (
+              {knowledgeLoading ? (
+                <div className="-mx-5 space-y-1 px-5">
+                  {Array.from({ length: 3 }).map((_, i) => <SkeletonRow key={i} cols={2} />)}
+                </div>
+              ) : knowledge.length === 0 ? (
                 <p className="text-sm text-muted py-4 text-center">Sin documentos. Sube archivos para la base de conocimiento.</p>
               ) : (
                 <div className="divide-y divide-border -mx-5">
@@ -380,29 +378,30 @@ export default function BotDetailPage() {
 
       {tab === "uso" && (
         <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Card>
-              <CardBody>
-                <p className="text-xs text-muted-darker">Hoy</p>
-                <p className="text-xl font-bold">{usageData?.today.totalTokens?.toLocaleString() ?? "—"}</p>
-                <p className="text-xs text-muted-darker">tokens · ${(usageData?.today?.estimatedCost ?? 0).toFixed(4)}</p>
-              </CardBody>
-            </Card>
-            <Card>
-              <CardBody>
-                <p className="text-xs text-muted-darker">Este mes</p>
-                <p className="text-xl font-bold">{usageData?.month.totalTokens?.toLocaleString() ?? "—"}</p>
-                <p className="text-xs text-muted-darker">tokens · ${(usageData?.month?.estimatedCost ?? 0).toFixed(4)}</p>
-              </CardBody>
-            </Card>
-            <Card>
-              <CardBody>
-                <p className="text-xs text-muted-darker">Total</p>
-                <p className="text-xl font-bold">{usageData?.total.totalTokens?.toLocaleString() ?? "—"}</p>
-                <p className="text-xs text-muted-darker">tokens · ${(usageData?.total?.estimatedCost ?? 0).toFixed(4)}</p>
-              </CardBody>
-            </Card>
-          </div>
+          <Card>
+            <CardBody>
+              <KpiStrip
+                size="compact"
+                items={[
+                  {
+                    label: "Hoy",
+                    value: usageData?.today.totalTokens?.toLocaleString() ?? "—",
+                    hint: `$${(usageData?.today?.estimatedCost ?? 0).toFixed(4)}`,
+                  },
+                  {
+                    label: "Este mes",
+                    value: usageData?.month.totalTokens?.toLocaleString() ?? "—",
+                    hint: `$${(usageData?.month?.estimatedCost ?? 0).toFixed(4)}`,
+                  },
+                  {
+                    label: "Total",
+                    value: usageData?.total.totalTokens?.toLocaleString() ?? "—",
+                    hint: `$${(usageData?.total?.estimatedCost ?? 0).toFixed(4)}`,
+                  },
+                ]}
+              />
+            </CardBody>
+          </Card>
 
           {usageTrend.length > 1 && (
             <Card>
@@ -453,24 +452,6 @@ export default function BotDetailPage() {
         editId={bot.id}
         onSaved={fetchBot}
       />
-    </div>
-  );
-}
-
-// Jerarquía: la etiqueta recede (xs, muted) y el valor manda (foreground). Sin
-// esto las dos columnas pesaban igual y el bloque se leía como un muro plano.
-// Las separaciones las pone el divide-y del <dl> padre.
-function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
-      <dt className="shrink-0 text-xs text-muted-darker">{label}</dt>
-      <dd
-        className={`max-w-[60%] truncate text-right text-foreground ${
-          mono ? "font-mono text-xs" : "text-sm font-medium"
-        }`}
-      >
-        {value}
-      </dd>
     </div>
   );
 }
