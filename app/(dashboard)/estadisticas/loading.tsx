@@ -16,9 +16,19 @@ export default function EstadisticasLoading() {
         ))}
       </div>
 
+      {/* Barra de pestañas (Resumen / IA y costos / Campañas / Equipo y leads) */}
+      <div className="flex gap-4 border-b border-border pb-2.5">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-5 w-24" />
+        ))}
+      </div>
+
+      {/* Aproxima la pestaña "Resumen" (la que se ve por default al cargar):
+          1 sección principal (mensajes diarios) + 1 sección en el aside
+          (chats por número) — el resto de pestañas (IA, Campañas, Equipo)
+          solo se montan tras elegirlas, no necesitan esqueleto propio. */}
       <div className="grid gap-10 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-10">
-          {/* Mensajes diarios */}
           <div className="space-y-3">
             <Skeleton className="h-6 w-44" />
             {Array.from({ length: 7 }).map((_, i) => (
@@ -28,32 +38,15 @@ export default function EstadisticasLoading() {
               </div>
             ))}
           </div>
-
-          {/* Tablas */}
-          {Array.from({ length: 2 }).map((_, t) => (
-            <div key={t} className="space-y-3">
-              <Skeleton className="h-6 w-52" />
-              <div className="divide-y divide-border">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <SkeletonRow key={i} cols={4} />
-                ))}
-              </div>
-            </div>
-          ))}
         </div>
 
         <div className="space-y-10">
-          {/* 5 secciones reales en el aside (Inversión en IA, Embudo de leads,
-              Chats calificados, Entregas por origen, Chats por número) — 4
-              bloques fantasma es suficiente aproximación, no hace falta 1:1. */}
-          {Array.from({ length: 4 }).map((_, s) => (
-            <div key={s} className="space-y-3">
-              <Skeleton className="h-6 w-36" />
-              <Skeleton className="h-10 w-28" />
-              <Skeleton className="h-3 w-40" />
-              <Skeleton className="h-2 w-full rounded-full" />
-            </div>
-          ))}
+          <div className="space-y-3">
+            <Skeleton className="h-6 w-36" />
+            {Array.from({ length: 4 }).map((_, i) => (
+              <SkeletonRow key={i} cols={2} />
+            ))}
+          </div>
         </div>
       </div>
     </div>
