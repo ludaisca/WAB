@@ -12,7 +12,16 @@ const nextConfig: NextConfig = {
   // Meta webhook, and also for LAN/Tailscale hostnames used to reach this dev
   // server from another machine — without this, HMR/RSC navigation silently
   // fails (e.g. login/onboarding never completes) for any non-localhost host.
-  allowedDevOrigins: ["*.ngrok-free.dev", "*.ngrok-free.app", "*.ngrok.io", "rocky-server", "ghia-cachyos"],
+  allowedDevOrigins: [
+    "*.ngrok-free.dev",
+    "*.ngrok-free.app",
+    "*.ngrok.io",
+    "rocky-server",
+    "ghia-cachyos",
+    "asus-fedora",
+    "fedora",
+    "192.168.100.101",
+  ],
   async headers() {
     // `unsafe-eval` solo se necesita en desarrollo (HMR / React Refresh de
     // Turbopack). En producción el bundle no lo requiere, así que se omite para
