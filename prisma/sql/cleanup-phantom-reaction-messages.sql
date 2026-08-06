@@ -1,0 +1,16 @@
+-- Limpieza puntual (2026-08-06): antes del soporte de reacciones (ver
+-- prisma/schema.prisma: WAMessage.reaction), un webhook de Meta type:
+-- "reaction" caía al flujo genérico de mensajes y quedaba grabado como un
+-- WAMessage fantasma con messageType = 'reaction' y body = '[reaction]' —
+-- literalmente ese texto se veía en el chat como si el lead lo hubiera
+-- escrito. El emoji real y el mensaje al que reaccionaba nunca se
+-- guardaron (el webhook viejo no los leía), así que no hay forma de
+-- convertir estas filas en reacciones reales retroactivamente — la única
+-- limpieza posible es borrarlas.
+--
+-- Verificado antes de escribir este script: ninguna fila con
+-- messageType='reaction' tiene un WALeadRecoveryAttempt (onDelete: Cascade)
+-- apuntándole, así que borrarlas no arrastra nada más.
+--
+-- Idempotente: una vez borradas, el WHERE no vuelve a matchear nada.
+DELETE FROM "wa_messages" WHERE "messageType" = 'reaction';
