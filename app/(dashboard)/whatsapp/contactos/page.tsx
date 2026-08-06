@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Search, RefreshCw, Contact as ContactIcon } from "lucide-react";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
@@ -14,6 +15,7 @@ import { Pagination } from "@/app/components/ui/pagination";
 import { useToast } from "@/app/components/ui/toast";
 import { ContactDrawer } from "@/app/components/whatsapp/contact-drawer";
 import { formatDate } from "@/lib/timezone";
+import { formatLeadId } from "@/lib/whatsapp/lead-id";
 
 const PAGE_SIZE = 25;
 
@@ -30,9 +32,11 @@ interface ContactRow {
   name: string | null;
   leadStatus: string;
   blockedAt: string | null;
+  leadNumber: string | null;
   updatedAt: string;
   tags: Array<{ tag: { id: string; name: string; color: string } }>;
   chat: { id: string; unreadCount: number; lastMessageAt: string | null } | null;
+  account: { name: string; leadIdPrefix: string | null };
   _count: { notes: number };
 }
 
@@ -49,6 +53,16 @@ const LEAD_STATUS_BADGE: Record<string, { label: string; tone: "success" | "warn
 };
 
 export default function ContactosPage() {
+  return (
+    <Suspense fallback={null}>
+      <ContactosView />
+    </Suspense>
+  );
+}
+
+function ContactosView() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { error: toastError } = useToast();
   const [contacts, setContacts] = useState<ContactRow[]>([]);
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
@@ -58,7 +72,8 @@ export default function ContactosPage() {
   const [search, setSearch] = useState("");
   const [leadStatusFilter, setLeadStatusFilter] = useState("");
   const [accountFilter, setAccountFilter] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Deep-link ?contact=<id> — mismo patrón que ?nueva=1 en cuentas/page.tsx.
+  const [selectedId, setSelectedId] = useState<string | null>(() => searchParams.get("contact"));
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
 
@@ -193,6 +208,11 @@ export default function ContactosPage() {
                 subtitle={
                   <>
                     <span className="font-mono">{phoneFromJid(contact.remoteJid)}</span>
+                    {/* leadNumber existía en la BD desde hace tiempo pero solo
+                        aparecía en el export CSV/Sheets — ver lib/whatsapp/lead-id.ts. */}
+                    {contact.leadNumber && (
+                      <> · <span className="font-mono">{formatLeadId(contact.account.leadIdPrefix, contact.account.name, contact.leadNumber)}</span></>
+                    )}
                     {accounts.length > 1 && account && <> · {account.name}</>}
                     {contact._count.notes > 0 && <> · {contact._count.notes} nota(s)</>}
                   </>
@@ -233,7 +253,10 @@ export default function ContactosPage() {
       {selectedId && (
         <ContactDrawer
           contactId={selectedId}
-          onClose={() => setSelectedId(null)}
+          onClose={() => {
+            setSelectedId(null);
+            if (searchParams.get("contact")) router.replace("/whatsapp/contactos");
+          }}
           onUpdated={fetchContacts}
         />
       )}

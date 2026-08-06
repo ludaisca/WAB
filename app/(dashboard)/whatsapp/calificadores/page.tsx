@@ -25,7 +25,7 @@ import { Tabs } from "@/app/components/ui/tabs";
 import { useToast } from "@/app/components/ui/toast";
 import { toCsv, downloadCsv } from "@/lib/csv";
 import { formatDateTime } from "@/lib/timezone";
-import { EXPORT_COLUMNS, labelText, type LeadScoreRow } from "@/lib/whatsapp/export-columns";
+import { EXPORT_COLUMNS, labelText, labelTone, type LeadScoreRow } from "@/lib/whatsapp/export-columns";
 import { LeadScorerFormModal } from "./_form";
 
 interface LeadScorerBot {
@@ -48,21 +48,6 @@ const INTERVAL_LABEL: Record<number, string> = {
   720: "12 h",
   1440: "24 h",
 };
-
-const LABEL_TONE: Record<string, "neutral" | "info" | "warning" | "accent" | "danger"> = {
-  descartado: "neutral",
-  frio: "info",
-  interesado: "warning",
-  oportunidad: "accent",
-  prioridad_alta: "danger",
-  // Legacy 3-tier labels, kept until every existing score gets re-run.
-  tibio: "warning",
-  caliente: "danger",
-};
-
-function labelTone(label: string) {
-  return LABEL_TONE[label] ?? "neutral";
-}
 
 const LEADS_PAGE_SIZE = 25;
 

@@ -86,6 +86,24 @@ export function labelText(label: string) {
   return LABEL_TEXT[label] ?? label;
 }
 
+// Antes vivía duplicado en calificadores/page.tsx y lead-score-badge.tsx —
+// un solo lugar para que el color de cada label de calificación no diverja
+// entre las 3 pantallas que lo muestran (esas dos + el panel de contacto).
+export const LABEL_TONE: Record<string, "neutral" | "info" | "warning" | "accent" | "danger"> = {
+  descartado: "neutral",
+  frio: "info",
+  interesado: "warning",
+  oportunidad: "accent",
+  prioridad_alta: "danger",
+  // Legacy 3-tier labels, kept until every existing score gets re-run.
+  tibio: "warning",
+  caliente: "danger",
+};
+
+export function labelTone(label: string) {
+  return LABEL_TONE[label] ?? "neutral";
+}
+
 export function reasonsList(reasons: string): string[] {
   try {
     return JSON.parse(reasons);

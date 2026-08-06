@@ -8,7 +8,7 @@ import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Select } from "@/app/components/ui/select";
 import { useToast } from "@/app/components/ui/toast";
-import type { ScoreDetails } from "@/lib/whatsapp/export-columns";
+import { labelText, labelTone, type ScoreDetails } from "@/lib/whatsapp/export-columns";
 import { formatDateTime } from "@/lib/timezone";
 
 interface LeadScore {
@@ -29,35 +29,6 @@ interface LeadScore {
 interface ScorerOption {
   id: string;
   name: string;
-}
-
-const LABEL_TONE: Record<string, "neutral" | "info" | "warning" | "accent" | "danger"> = {
-  descartado: "neutral",
-  frio: "info",
-  interesado: "warning",
-  oportunidad: "accent",
-  prioridad_alta: "danger",
-  // Legacy 3-tier labels, kept until every existing score gets re-run.
-  tibio: "warning",
-  caliente: "danger",
-};
-
-const LABEL_TEXT: Record<string, string> = {
-  descartado: "Descartado",
-  frio: "Frío",
-  interesado: "Interesado",
-  oportunidad: "Oportunidad",
-  prioridad_alta: "Prioridad alta",
-  tibio: "Tibio",
-  caliente: "Caliente",
-};
-
-function labelTone(label: string) {
-  return LABEL_TONE[label] ?? "neutral";
-}
-
-function labelText(label: string) {
-  return LABEL_TEXT[label] ?? label;
 }
 
 export function LeadScoreBadge({ chatId }: { chatId: string }) {

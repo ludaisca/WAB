@@ -24,6 +24,11 @@ export async function GET(
         accountId: true,
         remoteJid: true,
         name: true,
+        // realName (aprendido por IA) y leadNumber (ID de lead legible)
+        // existían desde hace tiempo pero la respuesta nunca los incluía —
+        // ver AGENTS.md sobre lead-id.ts y Contact.realName.
+        realName: true,
+        leadNumber: true,
         leadStatus: true,
         optedOutMarketing: true,
         optedOutAt: true,
@@ -32,7 +37,16 @@ export async function GET(
         createdAt: true,
         updatedAt: true,
         tags: { select: { tag: { select: { id: true, name: true, color: true } } } },
-        chat: { select: { id: true } },
+        account: { select: { name: true, leadIdPrefix: true } },
+        chat: {
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
+            firstResponseAt: true,
+            resolvedAt: true,
+          },
+        },
       },
     });
 
@@ -40,7 +54,9 @@ export async function GET(
       return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 });
     }
 
-    return NextResponse.json(contact);
+    // leadNumber es BigInt — truena en NextResponse.json() si no se convierte
+    // antes (ver los dos LeadScoreRow builders, mismo caso documentado en AGENTS.md).
+    return NextResponse.json({ ...contact, leadNumber: contact.leadNumber?.toString() ?? null });
   } catch (error) {
     console.error("[api] Error interno:", error);
     const message = "Error interno del servidor";

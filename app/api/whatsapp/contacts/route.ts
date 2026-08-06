@@ -53,10 +53,14 @@ export async function GET(req: Request) {
           name: true,
           leadStatus: true,
           blockedAt: true,
+          // leadNumber ya existía pero nunca se exponía en la lista, solo en
+          // el export CSV/Sheets — ver lib/whatsapp/lead-id.ts.
+          leadNumber: true,
           createdAt: true,
           updatedAt: true,
           tags: { select: { tag: { select: { id: true, name: true, color: true } } } },
           chat: { select: { id: true, unreadCount: true, lastMessageAt: true } },
+          account: { select: { name: true, leadIdPrefix: true } },
           _count: { select: { notes: true } },
         },
         orderBy: { updatedAt: "desc" },
@@ -66,7 +70,10 @@ export async function GET(req: Request) {
       prisma.contact.count({ where }),
     ]);
 
-    return NextResponse.json({ items: contacts, total, page, pageSize });
+    // leadNumber es BigInt — truena en NextResponse.json() si no se convierte.
+    const items = contacts.map((c) => ({ ...c, leadNumber: c.leadNumber?.toString() ?? null }));
+
+    return NextResponse.json({ items, total, page, pageSize });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Error interno del servidor";
