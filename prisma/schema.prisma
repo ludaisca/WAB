@@ -393,6 +393,14 @@ model WAMessage {
   // de disco, que media-cleanup purga tras MEDIA_RETENTION_DAYS). Null hasta
   // que la cola audio-transcribe la termine.
   transcription String?
+  // Emoji con el que el lead reaccionó a ESTE mensaje (WhatsApp solo permite
+  // una reacción activa por persona/mensaje, así que un valor nuevo sobrescribe
+  // al anterior). Null = sin reacción. Se aplica directo sobre el mensaje
+  // reaccionado vía el webhook `type: "reaction"` — ver applyReaction() en
+  // app/api/whatsapp/webhook/route.ts; ese evento NUNCA pasa por
+  // ingestInboundMessage (no es un mensaje nuevo, no debe generar burbuja,
+  // notificación ni disparar al bot).
+  reaction    String?
   status      String?
   senderId    String?
   sender      User?            @relation(fields: [senderId], references: [id], onDelete: SetNull)

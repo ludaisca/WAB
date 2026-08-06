@@ -22,6 +22,10 @@ interface WebhookMessage {
     list_reply?: { id: string; title: string; description?: string };
   };
   button?: { payload: string; text: string };
+  // Presente cuando type === "reaction". `emoji` viene vacío/ausente cuando el
+  // lead QUITA una reacción que ya había puesto — no cuando reacciona por
+  // primera vez, ese caso siempre trae el emoji.
+  reaction?: { message_id: string; emoji?: string };
 }
 
 interface WebhookStatus {
@@ -275,6 +279,24 @@ async function syncCampaignCounts(campaignId: string): Promise<void> {
   });
 }
 
+// Una reacción NO es un mensaje nuevo — es metadata que se aplica sobre un
+// WAMessage ya existente (el que reaccionan). Nunca pasa por
+// ingestInboundMessage: no debe crear burbuja, no debe subir unreadCount, no
+// debe notificar y no debe disparar al bot. Se resuelve por wamid, acotado a
+// chats de esta cuenta (mismo criterio defensivo que applyStatusUpdate) para
+// no pisar un mensaje de otra cuenta si algún día un wamid colisionara.
+// Última reacción gana — WhatsApp solo permite una activa por persona/mensaje,
+// así que no hace falta rankear por timestamp como sí pasa con sent/delivered/read.
+async function applyReaction(accountId: string, msg: WebhookMessage): Promise<void> {
+  const targetWamid = msg.reaction?.message_id;
+  if (!targetWamid) return;
+
+  await prisma.wAMessage.updateMany({
+    where: { wamid: targetWamid, chat: { accountId } },
+    data: { reaction: msg.reaction?.emoji || null },
+  });
+}
+
 function normalizePhone(phone: string | undefined | null): string | null {
   if (!phone) return null;
   const digits = phone.replace(/\D/g, "");
@@ -490,43 +512,56 @@ export async function POST(req: Request) {
           data: { lastActivity: new Date() },
         });
 
-        if (value.messages && value.contacts) {
-          const groups = new Map<string, WebhookMessage[]>();
-          for (const msg of value.messages) {
-            const list = groups.get(msg.from) ?? [];
-            list.push(msg);
-            groups.set(msg.from, list);
+        if (value.messages) {
+          // Las reacciones viajan mezcladas en el mismo array `messages` que los
+          // mensajes normales, pero no son mensajes: se aplican directo sobre el
+          // WAMessage reaccionado y nunca pasan por ingestInboundMessage. Se
+          // separan primero para que ni siquiera necesiten `value.contacts`
+          // (una reacción no crea/actualiza ningún Contact).
+          const reactions = value.messages.filter((m) => m.type === "reaction");
+          if (reactions.length > 0) {
+            await Promise.all(reactions.map((msg) => applyReaction(account.id, msg)));
           }
+          const inboundMessages = value.messages.filter((m) => m.type !== "reaction");
 
-          await Promise.all(
-            Array.from(groups.values()).map(async (msgs) => {
-              for (const msg of msgs) {
-                const contact = value.contacts!.find((c) => c.wa_id === msg.from);
-                const contactName = contact?.profile?.name ?? msg.from;
-                const { mediaId, mimeType, filename, caption } = getMediaInfo(msg);
-                // Meta puede omitir timestamp — un Invalid Date rompería el
-                // create de Prisma; se usa "ahora" como respaldo.
-                const tsNum = Number(msg.timestamp);
-                const timestamp = Number.isFinite(tsNum) && tsNum > 0
-                  ? new Date(tsNum * 1000)
-                  : new Date();
+          if (inboundMessages.length > 0 && value.contacts) {
+            const groups = new Map<string, WebhookMessage[]>();
+            for (const msg of inboundMessages) {
+              const list = groups.get(msg.from) ?? [];
+              list.push(msg);
+              groups.set(msg.from, list);
+            }
 
-                await ingestInboundMessage(account.id, {
-                  remoteJid: msg.from,
-                  wamid: msg.id ?? null,
-                  timestamp,
-                  type: msg.type,
-                  body: getMessageBody(msg),
-                  contactName,
-                  isGroup: msg.from.includes("@g.us"),
-                  mediaId,
-                  mimeType,
-                  filename,
-                  caption,
-                });
-              }
-            })
-          );
+            await Promise.all(
+              Array.from(groups.values()).map(async (msgs) => {
+                for (const msg of msgs) {
+                  const contact = value.contacts!.find((c) => c.wa_id === msg.from);
+                  const contactName = contact?.profile?.name ?? msg.from;
+                  const { mediaId, mimeType, filename, caption } = getMediaInfo(msg);
+                  // Meta puede omitir timestamp — un Invalid Date rompería el
+                  // create de Prisma; se usa "ahora" como respaldo.
+                  const tsNum = Number(msg.timestamp);
+                  const timestamp = Number.isFinite(tsNum) && tsNum > 0
+                    ? new Date(tsNum * 1000)
+                    : new Date();
+
+                  await ingestInboundMessage(account.id, {
+                    remoteJid: msg.from,
+                    wamid: msg.id ?? null,
+                    timestamp,
+                    type: msg.type,
+                    body: getMessageBody(msg),
+                    contactName,
+                    isGroup: msg.from.includes("@g.us"),
+                    mediaId,
+                    mimeType,
+                    filename,
+                    caption,
+                  });
+                }
+              })
+            );
+          }
         }
 
         if (value.statuses) {

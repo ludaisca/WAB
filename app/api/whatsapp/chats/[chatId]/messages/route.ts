@@ -51,6 +51,7 @@ export async function GET(
         filename: true,
         bytesSize: true,
         transcription: true,
+        reaction: true,
         status: true,
         timestamp: true,
       },

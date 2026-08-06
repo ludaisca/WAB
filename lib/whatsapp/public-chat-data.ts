@@ -16,6 +16,7 @@ export interface PublicChatMessage {
   filename: string | null;
   bytesSize: number | null;
   transcription: string | null;
+  reaction: string | null;
   status: string | null;
   timestamp: string;
   hasMedia: boolean;
@@ -48,6 +49,7 @@ export async function getPublicChatData(token: string): Promise<PublicChatData |
           filename: true,
           bytesSize: true,
           transcription: true,
+          reaction: true,
           status: true,
           timestamp: true,
           // No se expone mediaUrl (ruta en disco) ni mediaId (id de Meta) — el
@@ -75,6 +77,7 @@ export async function getPublicChatData(token: string): Promise<PublicChatData |
       filename: m.filename,
       bytesSize: m.bytesSize,
       transcription: m.transcription,
+      reaction: m.reaction,
       status: m.status,
       timestamp: m.timestamp.toISOString(),
       hasMedia: !!m.mediaUrl,

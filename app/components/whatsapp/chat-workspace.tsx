@@ -98,6 +98,7 @@ interface Message {
   filename: string | null;
   bytesSize: number | null;
   transcription: string | null;
+  reaction: string | null;
   status: string | null;
   timestamp: string;
 }
@@ -284,35 +285,52 @@ function MessageBubble({
         isLatest ? "animate-slide-up" : ""
       }`}
     >
-      <div
-        className={`max-w-[75%] px-3.5 py-2.5 text-sm leading-relaxed ${
-          isInbound
-            ? "rounded-2xl rounded-tl-sm bg-surface text-foreground"
-            : "rounded-bubble-br bg-accent text-on-accent"
-        }`}
-      >
-        {hasMedia && (
-          <div className="mb-1 space-y-1">
-            <MediaContent msg={msg} onPreview={onPreview} />
-            {caption && <p className="whitespace-pre-wrap break-words">{caption}</p>}
-          </div>
-        )}
-        {!hasMedia && msg.body}
-        {hasMedia && !caption && !msg.body && <span className="sr-only">[{msg.messageType}]</span>}
-        <div className={`flex items-center justify-end gap-1 mt-1 ${
-          isInbound ? "text-muted-darker" : "text-on-accent/70"
-        }`}>
-          <span className="text-[10px]">{formatBubbleTime(msg.timestamp)}</span>
-          {!isInbound && msg.status && (
-            <span className="text-[10px]">
-              {msg.status === "sent" && <Check size={10} />}
-              {msg.status === "delivered" && <CheckCheck size={10} />}
-              {/* El salto entregado→leído monta un elemento nuevo, así que el
-                  micro-pop marca el cambio de estado sin ser intrusivo. */}
-              {msg.status === "read" && <CheckCheck size={10} className="text-info animate-scale-in-spring" />}
-            </span>
+      {/* relative: el chip de reacción se ancla a la burbuja, no a la fila
+          completa (que ocupa el ancho libre por el justify-start/end de arriba). */}
+      <div className="relative max-w-[75%]">
+        <div
+          className={`px-3.5 py-2.5 text-sm leading-relaxed ${
+            isInbound
+              ? "rounded-2xl rounded-tl-sm bg-surface text-foreground"
+              : "rounded-bubble-br bg-accent text-on-accent"
+          }`}
+        >
+          {hasMedia && (
+            <div className="mb-1 space-y-1">
+              <MediaContent msg={msg} onPreview={onPreview} />
+              {caption && <p className="whitespace-pre-wrap break-words">{caption}</p>}
+            </div>
           )}
+          {!hasMedia && msg.body}
+          {hasMedia && !caption && !msg.body && <span className="sr-only">[{msg.messageType}]</span>}
+          <div className={`flex items-center justify-end gap-1 mt-1 ${
+            isInbound ? "text-muted-darker" : "text-on-accent/70"
+          }`}>
+            <span className="text-[10px]">{formatBubbleTime(msg.timestamp)}</span>
+            {!isInbound && msg.status && (
+              <span className="text-[10px]">
+                {msg.status === "sent" && <Check size={10} />}
+                {msg.status === "delivered" && <CheckCheck size={10} />}
+                {/* El salto entregado→leído monta un elemento nuevo, así que el
+                    micro-pop marca el cambio de estado sin ser intrusivo. */}
+                {msg.status === "read" && <CheckCheck size={10} className="text-info animate-scale-in-spring" />}
+              </span>
+            )}
+          </div>
         </div>
+        {/* Emoji con el que el lead reaccionó a este mensaje (webhook
+            type: "reaction" — ver applyReaction en el route del webhook). Chip
+            asomando en la esquina opuesta al pico de la burbuja, mismo lugar
+            donde WhatsApp lo muestra. animate-scale-in-spring: distingue una
+            reacción nueva llegando por el poll de 5s de una que ya estaba ahí. */}
+        {msg.reaction && (
+          <span
+            className={`absolute -bottom-2 ${isInbound ? "right-0" : "left-0"} flex h-5 min-w-5 items-center justify-center rounded-full bg-surface-light px-1 text-xs shadow-sm ring-1 ring-border animate-scale-in-spring`}
+            title="Reacción del contacto"
+          >
+            {msg.reaction}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -643,7 +661,7 @@ export function ChatWorkspace({
             let changed = false;
             const merged = prev.map((m) => {
               const fresh = byId.get(m.id);
-              if (fresh && (fresh.status !== m.status || fresh.mediaUrl !== m.mediaUrl || fresh.transcription !== m.transcription)) {
+              if (fresh && (fresh.status !== m.status || fresh.mediaUrl !== m.mediaUrl || fresh.transcription !== m.transcription || fresh.reaction !== m.reaction)) {
                 changed = true;
                 return fresh;
               }

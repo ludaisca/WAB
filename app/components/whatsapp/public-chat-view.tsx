@@ -147,29 +147,39 @@ function MessageBubble({ token, msg, onPreview }: { token: string; msg: PublicCh
 
   return (
     <div className={`flex ${isInbound ? "justify-start" : "justify-end"}`}>
-      <div
-        className={`max-w-[75%] px-3.5 py-2.5 text-sm leading-relaxed ${
-          isInbound ? "rounded-2xl rounded-tl-sm bg-surface text-foreground" : "rounded-bubble-br bg-accent text-on-accent"
-        }`}
-      >
-        {isMediaType && (
-          <div className="mb-1 space-y-1">
-            <MediaContent token={token} msg={msg} onPreview={onPreview} />
-            {caption && <p className="whitespace-pre-wrap break-words">{caption}</p>}
-          </div>
-        )}
-        {!isMediaType && msg.body}
-        {isMediaType && !caption && !msg.body && <span className="sr-only">[{msg.messageType}]</span>}
-        <div className={`flex items-center justify-end gap-1 mt-1 ${isInbound ? "text-muted-darker" : "text-on-accent/70"}`}>
-          <span className="text-[10px]">{formatBubbleTime(msg.timestamp)}</span>
-          {!isInbound && msg.status && (
-            <span className="text-[10px]">
-              {msg.status === "sent" && <Check size={10} />}
-              {msg.status === "delivered" && <CheckCheck size={10} />}
-              {msg.status === "read" && <CheckCheck size={10} className="text-info" />}
-            </span>
+      <div className="relative max-w-[75%]">
+        <div
+          className={`px-3.5 py-2.5 text-sm leading-relaxed ${
+            isInbound ? "rounded-2xl rounded-tl-sm bg-surface text-foreground" : "rounded-bubble-br bg-accent text-on-accent"
+          }`}
+        >
+          {isMediaType && (
+            <div className="mb-1 space-y-1">
+              <MediaContent token={token} msg={msg} onPreview={onPreview} />
+              {caption && <p className="whitespace-pre-wrap break-words">{caption}</p>}
+            </div>
           )}
+          {!isMediaType && msg.body}
+          {isMediaType && !caption && !msg.body && <span className="sr-only">[{msg.messageType}]</span>}
+          <div className={`flex items-center justify-end gap-1 mt-1 ${isInbound ? "text-muted-darker" : "text-on-accent/70"}`}>
+            <span className="text-[10px]">{formatBubbleTime(msg.timestamp)}</span>
+            {!isInbound && msg.status && (
+              <span className="text-[10px]">
+                {msg.status === "sent" && <Check size={10} />}
+                {msg.status === "delivered" && <CheckCheck size={10} />}
+                {msg.status === "read" && <CheckCheck size={10} className="text-info" />}
+              </span>
+            )}
+          </div>
         </div>
+        {msg.reaction && (
+          <span
+            className={`absolute -bottom-2 ${isInbound ? "right-0" : "left-0"} flex h-5 min-w-5 items-center justify-center rounded-full bg-surface-light px-1 text-xs shadow-sm ring-1 ring-border`}
+            title="Reacción del contacto"
+          >
+            {msg.reaction}
+          </span>
+        )}
       </div>
     </div>
   );
