@@ -13,6 +13,7 @@ import { EmptyState } from "@/app/components/ui/empty-state";
 import { PageHeader } from "@/app/components/ui/page-header";
 import { EntityList, EntityRow } from "@/app/components/ui/entity-list";
 import { EntityAvatar } from "@/app/components/ui/avatar";
+import { Pagination } from "@/app/components/ui/pagination";
 import { useToast } from "@/app/components/ui/toast";
 import { formatDate } from "@/lib/timezone";
 import { TemplateFormModal } from "./_form";
@@ -56,6 +57,8 @@ function TemplatesContent() {
   const [metricsTemplateId, setMetricsTemplateId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 25;
 
   useEffect(() => {
     fetch("/api/whatsapp/accounts")
@@ -124,6 +127,15 @@ function TemplatesContent() {
     if (statusFilter && t.status !== statusFilter) return false;
     return true;
   }), [templates, search, statusFilter]);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- keeps pagination valid when filters narrow/widen the result set
+  useEffect(() => { setPage(1); }, [search, statusFilter, selectedAccountId]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageRows = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page]
+  );
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -205,7 +217,7 @@ function TemplatesContent() {
           </div>
 
           <EntityList
-          rows={filtered}
+          rows={pageRows}
           rowKey={(t) => t.id}
           loading={loading}
           error={fetchError}
@@ -238,6 +250,10 @@ function TemplatesContent() {
             );
           }}
           />
+
+          {totalPages > 1 && (
+            <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} className="justify-center" />
+          )}
         </div>
       )}
 

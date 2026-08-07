@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Megaphone, Trash2, Workflow, ExternalLink } from "lucide-react";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
 import { Switch } from "@/app/components/ui/switch";
+import { Select } from "@/app/components/ui/select";
+import { KpiStrip, type KpiItem } from "@/app/components/ui/kpi-strip";
+import { Pagination } from "@/app/components/ui/pagination";
 import { EntityList, EntityRow } from "@/app/components/ui/entity-list";
 import { EntityAvatar } from "@/app/components/ui/avatar";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
@@ -90,11 +93,32 @@ function CampaignsTab() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<Array<{ id: string; name: string; phoneNumber: string | null }>>([]);
+  const [accountFilter, setAccountFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 25;
 
-  const fetchCampaigns = useCallback(async () => {
+  // Cuentas para el selector — mismo patrón que chat-workspace.tsx: de la API,
+  // no derivadas de `campaigns` (con el filtro puesto, la lista en memoria
+  // sería de una sola cuenta y el selector perdería las demás opciones).
+  useEffect(() => {
+    fetch("/api/whatsapp/accounts")
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d)) {
+          setAccounts(d.map((a: { id: string; name: string; phoneNumber: string | null }) => ({
+            id: a.id, name: a.name, phoneNumber: a.phoneNumber ?? null,
+          })));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const fetchCampaigns = useCallback(async (accountId: string) => {
     setLoading(true);
     try {
-      const res = await fetch("/api/whatsapp/campaigns");
+      const params = accountId ? `?accountId=${encodeURIComponent(accountId)}` : "";
+      const res = await fetch(`/api/whatsapp/campaigns${params}`);
       const data = await res.json();
       if (Array.isArray(data)) setCampaigns(data);
     } catch {
@@ -104,8 +128,37 @@ function CampaignsTab() {
     }
   }, [toastError]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchCampaigns also used for manual refresh
-  useEffect(() => { fetchCampaigns(); }, [fetchCampaigns]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount y en cada cambio de filtro
+  useEffect(() => { fetchCampaigns(accountFilter); }, [fetchCampaigns, accountFilter]);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- keeps pagination valid when the account filter narrows/widens the result set
+  useEffect(() => { setPage(1); }, [accountFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(campaigns.length / PAGE_SIZE));
+  const pageRows = useMemo(
+    () => campaigns.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [campaigns, page]
+  );
+
+  // Resumen del conjunto filtrado — solo campañas ya enviadas (DRAFT/SCHEDULED
+  // no tienen envíos que sumar todavía). Se calcula sobre lo que ya está en
+  // memoria (misma respuesta que alimenta la lista), no un endpoint aparte.
+  const summaryKpis: KpiItem[] = useMemo(() => {
+    const sent = campaigns.reduce((acc, c) => acc + c.sentCount, 0);
+    const delivered = campaigns.reduce((acc, c) => acc + c.deliveredCount, 0);
+    const read = campaigns.reduce((acc, c) => acc + c.readCount, 0);
+    const failed = campaigns.reduce((acc, c) => acc + c.failedCount, 0);
+    const attempted = delivered + read + failed; // "leídos" implica entregado, no se duplica
+    const deliveryRate = attempted > 0 ? Math.round(((delivered + read) / attempted) * 100) : null;
+    return [
+      { label: "Campañas", value: String(campaigns.length), numeric: campaigns.length },
+      { label: "Enviados", value: sent.toLocaleString("es-MX"), numeric: sent },
+      { label: "Entregados", value: delivered.toLocaleString("es-MX"), numeric: delivered },
+      { label: "Leídos", value: read.toLocaleString("es-MX"), numeric: read },
+      { label: "Fallidos", value: failed.toLocaleString("es-MX"), numeric: failed },
+      { label: "Tasa entrega", value: deliveryRate != null ? `${deliveryRate}%` : "—" },
+    ];
+  }, [campaigns]);
 
   async function handleDelete() {
     if (!deleteId) return;
@@ -126,12 +179,35 @@ function CampaignsTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {accounts.length > 1 ? (
+          <Select
+            value={accountFilter}
+            onChange={(e) => setAccountFilter(e.target.value)}
+            className="w-64"
+            aria-label="Filtrar campañas por cuenta"
+          >
+            <option value="">Todas las cuentas</option>
+            {accounts.map((acc) => (
+              <option key={acc.id} value={acc.id}>
+                {acc.name}{acc.phoneNumber ? ` · ${acc.phoneNumber}` : ""}
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <span />
+        )}
         <Button href="/whatsapp/campanas/nueva" icon={Plus} size="sm">Nueva campaña</Button>
       </div>
 
+      {!loading && campaigns.length > 0 && (
+        <div className="border-b border-border pb-4">
+          <KpiStrip items={summaryKpis} size="compact" />
+        </div>
+      )}
+
       <EntityList
-        rows={campaigns}
+        rows={pageRows}
         rowKey={(c) => c.id}
         loading={loading}
         emptyIcon={Megaphone}
@@ -198,6 +274,10 @@ function CampaignsTab() {
           );
         }}
       />
+
+      {totalPages > 1 && (
+        <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} className="justify-center" />
+      )}
 
       <ConfirmDialog
         open={!!deleteId}

@@ -132,7 +132,7 @@ export async function POST(req: Request) {
   }
 }
 
-export async function GET(_req: Request) {
+export async function GET(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -147,8 +147,18 @@ export async function GET(_req: Request) {
     // regla que chats/contactos/plantillas.
     const accountIds = await getUserAccountIds(session.user.id);
 
+    // ?accountId= acota a una sola cuenta (filtro del listado) — se valida
+    // contra accountIds en vez de confiar en el query param a ciegas, mismo
+    // criterio que cualquier otra ruta account-scoped.
+    const { searchParams } = new URL(req.url);
+    const accountIdParam = searchParams.get("accountId");
+    if (accountIdParam && !accountIds.includes(accountIdParam)) {
+      return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 });
+    }
+    const scopedAccountIds = accountIdParam ? [accountIdParam] : accountIds;
+
     const campaigns = await prisma.wACampaign.findMany({
-      where: { waAccountId: { in: accountIds } },
+      where: { waAccountId: { in: scopedAccountIds } },
       select: {
         id: true,
         name: true,
