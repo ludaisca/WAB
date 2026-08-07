@@ -45,10 +45,24 @@ function toParts(content: AIMessage["content"]): GooglePart[] {
     if (p.type === "text") return { text: p.text };
     // data URI scheme: data:<mime>;base64,<data> — inlineData itself is mime-agnostic,
     // it works the same for an image_url or audio_url part.
+    //
+    // El <mime> puede traer parámetros propios (p. ej. WhatsApp siempre manda
+    // notas de voz como "audio/ogg; codecs=opus") — eso agrega un ";" extra
+    // ANTES del ";base64," real. Un regex que exige ";base64," justo después
+    // del primer ";" (como el que había aquí) nunca hace match para ese caso:
+    // cae al fallback de abajo y el audio se descarta por completo — Gemini
+    // nunca recibe los bytes, solo el prompt de texto. Bug real, no teórico:
+    // toda nota de voz de WhatsApp entraba por acá y el bot/transcriptor
+    // "escuchaba" nada. `(.+)` es voraz, así que hace backtrack hasta el
+    // ÚLTIMO ";base64," literal — corta correctamente aunque el mime tenga
+    // sus propios ";" — y luego se limpia a solo el tipo base porque
+    // inlineData.mimeType de Gemini espera "audio/ogg", no el Content-Type
+    // completo con parámetros.
     const url = p.type === "image_url" ? p.image_url.url : p.audio_url.url;
-    const match = url.match(/^data:([^;]+);base64,(.+)$/);
+    const match = url.match(/^data:(.+);base64,(.+)$/);
     if (match) {
-      return { inlineData: { mimeType: match[1], data: match[2] } };
+      const mimeType = match[1].split(";")[0].trim();
+      return { inlineData: { mimeType, data: match[2] } };
     }
     // Plain URL isn't supported by inlineData (which expects raw bytes); skip silently.
     return { text: "[contenido no embebido]" };
