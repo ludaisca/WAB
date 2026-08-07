@@ -43,14 +43,6 @@ import { hueClassFor } from "@/app/components/ui/hue";
 
 const CHATS_PAGE_SIZE = 30;
 
-type ChatStatus = "OPEN" | "PENDING" | "RESOLVED";
-
-const STATUS_BADGE: Record<ChatStatus, { label: string; tone: "info" | "warning" | "success" }> = {
-  OPEN: { label: "Abierto", tone: "info" },
-  PENDING: { label: "Pendiente", tone: "warning" },
-  RESOLVED: { label: "Resuelto", tone: "success" },
-};
-
 interface ChatItem {
   id: string;
   accountId: string;
@@ -61,7 +53,6 @@ interface ChatItem {
   lastMessageAt: string | null;
   unreadCount: number;
   contactId: string | null;
-  status: ChatStatus;
   assignedToId: string | null;
   assignedTo: { id: string; name: string | null } | null;
   account: { id: string; name: string; phoneNumber: string | null };
@@ -797,22 +788,6 @@ export function ChatWorkspace({
     }
   }
 
-  async function handleStatusChange(newStatus: ChatStatus) {
-    if (!selectedChatId) return;
-    try {
-      const res = await fetch(`/api/whatsapp/chats/${selectedChatId}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Error al cambiar estado");
-      setChats((prev) => prev.map((c) => (c.id === selectedChatId ? { ...c, status: data.status } : c)));
-    } catch (err) {
-      toastError(err instanceof Error ? err.message : "Error al cambiar estado");
-    }
-  }
-
   const accountOptions = accounts.length > 0
     ? accounts
     : Array.from(new Map(chats.map((c) => [c.account.id, c.account])).values());
@@ -1066,16 +1041,6 @@ export function ChatWorkspace({
               {/* Row 2: conversation metadata controls — free to wrap, never fights the name for space */}
               {selectedChat && (
                 <div className="flex items-center gap-2 flex-wrap">
-                  <select
-                    value={selectedChat.status}
-                    onChange={(e) => handleStatusChange(e.target.value as ChatStatus)}
-                    className="text-xs font-medium rounded-md border border-border bg-surface-light px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-accent/40"
-                    title="Estado de la conversación"
-                  >
-                    {(Object.keys(STATUS_BADGE) as ChatStatus[]).map((s) => (
-                      <option key={s} value={s}>{STATUS_BADGE[s].label}</option>
-                    ))}
-                  </select>
                   <ChatTagPicker key={selectedChat.id} chatId={selectedChat.id} />
                   <LeadScoreBadge key={`score-${selectedChat.id}`} chatId={selectedChat.id} />
                   <ChatCostBadge key={`cost-${selectedChat.id}`} chatId={selectedChat.id} />
