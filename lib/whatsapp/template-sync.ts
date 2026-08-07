@@ -22,19 +22,35 @@ interface MetaTemplateRow {
 }
 
 async function fetchMetaTemplates(wabaId: string, accessToken: string): Promise<MetaTemplateRow[]> {
-  const url = `${GRAPH_API}/${wabaId}/message_templates`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  const all: MetaTemplateRow[] = [];
+  // Meta pagina message_templates (25 por página si no se pide `limit`
+  // explícito). Sin seguir `paging.next`, cualquier cuenta con más de una
+  // página perdía silenciosamente sus plantillas restantes en cada sync:
+  // syncAccountTemplates() borra localmente todo lo que no vino en esta
+  // respuesta (ver deleteMany de abajo), y este tick corre cada 15 min sobre
+  // TODAS las cuentas — confirmado en producción: 6 cuentas quedaron clavadas
+  // en exactamente 25 plantillas. `limit=100` reduce los round-trips, pero lo
+  // que realmente arregla el bug es seguir `paging.next` hasta agotarlo.
+  let url: string | null = `${GRAPH_API}/${wabaId}/message_templates?limit=100`;
 
-  const body = (await res.json().catch(() => ({}))) as { data?: MetaTemplateRow[] } & MetaError;
+  while (url) {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
 
-  if (!res.ok) {
-    const msg = body.error?.error_user_msg ?? body.error?.message ?? "Error al sincronizar plantillas";
-    throw new Error(msg);
+    const body = (await res.json().catch(() => ({}))) as
+      { data?: MetaTemplateRow[]; paging?: { next?: string } } & MetaError;
+
+    if (!res.ok) {
+      const msg = body.error?.error_user_msg ?? body.error?.message ?? "Error al sincronizar plantillas";
+      throw new Error(msg);
+    }
+
+    all.push(...(body.data ?? []));
+    url = body.paging?.next ?? null;
   }
 
-  return body.data ?? [];
+  return all;
 }
 
 export interface SyncableAccount {
