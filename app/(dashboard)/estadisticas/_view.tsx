@@ -496,7 +496,11 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
                 <SectionHeader eyebrow="Leads" title="Chats calificados" />
                 <div className="mt-3 space-y-3">
                   <div>
-                    <p className="font-mono text-hero font-semibold tracking-tight">
+                    {/* text-3xl en vez de text-hero bajo sm: — mismo ajuste que
+                        kpi-strip.tsx: a font-size hero, un número de varias
+                        cifras puede necesitar más ancho del que da esta
+                        columna angosta del aside y desbordarse. */}
+                    <p className="font-mono text-3xl sm:text-hero font-semibold tracking-tight break-words">
                       <AnimatedNumber value={stats.qualifiedChats.total} />
                     </p>
                     {/* Deduplicado por chat (mejor score) — por eso puede no coincidir

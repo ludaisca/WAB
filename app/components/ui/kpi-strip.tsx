@@ -39,11 +39,11 @@ function KpiContent({ item, hero }: { item: KpiItem; hero: boolean }) {
       <p className="text-eyebrow font-medium uppercase tracking-wider text-muted-darker">
         {item.label}
       </p>
-      <p className="flex items-baseline gap-2">
+      <p className="flex flex-wrap items-baseline gap-x-2">
         <span
           className={cn(
-            "font-mono font-semibold tracking-tight text-foreground",
-            hero ? "text-hero" : "text-2xl"
+            "font-mono font-semibold tracking-tight text-foreground break-words",
+            hero ? "text-3xl sm:text-hero" : "text-xl sm:text-2xl"
           )}
         >
           {item.numeric !== undefined ? (
@@ -81,7 +81,13 @@ export function KpiStrip({ items, size = "hero", className }: KpiStripProps) {
   return (
     <div
       className={cn(
-        "flex flex-wrap divide-border sm:divide-x",
+        // gap-y: sin esto, una fila que envuelve (flex-wrap) queda pegada a
+        // la anterior — con min-w-32 como único piso, una celda con un valor
+        // grande (p. ej. "28,224") a font-size hero podía quedar más angosta
+        // que su propio contenido, que se desbordaba horizontalmente y se
+        // montaba encima de la celda vecina en vez de hacer wrap dentro de
+        // su caja (ver break-words en el <span> del valor, abajo).
+        "flex flex-wrap gap-y-4 divide-border sm:divide-x",
         className
       )}
     >
