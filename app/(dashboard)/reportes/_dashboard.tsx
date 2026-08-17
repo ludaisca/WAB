@@ -108,7 +108,7 @@ export function ReportesDashboard({ dateFrom, dateTo }: { dateFrom: string; date
 
   if (!data) return null;
 
-  const { kpis, dailyMessages, leadsByLabel, campaignFunnel, botCostRows, diagnostics } = data;
+  const { kpis, dailyMessages, dailyMessagesTruncated, leadsByLabel, campaignFunnel, botCostRows, diagnostics } = data;
 
   const kpiItems: KpiItem[] = [
     { label: "Mensajes", value: kpis.messagesTotal.toLocaleString("es-MX"), numeric: kpis.messagesTotal },
@@ -179,6 +179,12 @@ export function ReportesDashboard({ dateFrom, dateTo }: { dateFrom: string; date
                   height={260}
                 />
               </div>
+              {dailyMessagesTruncated && (
+                <p className="mt-2 text-xs text-muted-darker">
+                  Mostrando los últimos {dailyMessages.length.toLocaleString("es-MX")} días por volumen alto — el
+                  rango completo tiene {kpis.messagesTotal.toLocaleString("es-MX")} mensajes.
+                </p>
+              )}
             </section>
 
             <section>

@@ -65,6 +65,10 @@ export interface DashboardDiagnosticsSummary {
 export interface ReportDashboardData {
   kpis: DashboardKpis;
   dailyMessages: DailyMessageRow[];
+  // true cuando la muestra de dailyMessages se truncó (rango con más de
+  // TREND_SAMPLE_LIMIT mensajes, ver messages.ts:fetchDailyMessageTrend) — la
+  // gráfica solo cubre los días más recientes, no el rango completo elegido.
+  dailyMessagesTruncated: boolean;
   leadsByLabel: Array<{ label: string; count: number }>;
   campaignFunnel: { sent: number; delivered: number; read: number; failed: number };
   botCostRows: BotCostRow[];
@@ -100,6 +104,27 @@ const AUTOMATION_STATUS_KEY: Record<string, "sent" | "delivered" | "read" | "fai
   failed: "failed",
 };
 
+// WACampaignRecipient.status (y LeadSheetImportedRow.status para envíos de
+// automatización) es un estado ACTUAL excluyente que WhatsApp sobreescribe
+// solo hacia adelante (SENT→DELIVERED→READ, ver applyStatusUpdate() en
+// app/api/whatsapp/webhook/route.ts) — no una fila por etapa alcanzada. Un
+// groupBy(status) ingenuo suma cada bucket como si ya fuera el total de esa
+// etapa, lo que subcuenta "sent"/"delivered" (excluye a quienes ya avanzaron
+// a la siguiente) y puede mostrar leídos > enviados (>100% en el embudo).
+// Mismo criterio acumulativo que ya usa syncCampaignCounts() en el webhook
+// para WACampaign.deliveredCount/readCount — "entregado" cuenta también a
+// quien ya llegó a "leído", y "enviado" cuenta a quien llegó a cualquiera de
+// las 3 etapas siguientes.
+function addCumulativeFunnel(
+  funnel: { sent: number; delivered: number; read: number; failed: number },
+  counts: { sent: number; delivered: number; read: number; failed: number }
+): void {
+  funnel.sent += counts.sent + counts.delivered + counts.read;
+  funnel.delivered += counts.delivered + counts.read;
+  funnel.read += counts.read;
+  funnel.failed += counts.failed;
+}
+
 export async function getReportDashboard(
   accountIds: string[],
   userId: string,
@@ -108,7 +133,7 @@ export async function getReportDashboard(
 ): Promise<ReportDashboardData> {
   const [
     messageCounts,
-    dailyMessages,
+    dailyMessagesResult,
     chatsActive,
     contactsNew,
     leadScores,
@@ -143,6 +168,7 @@ export async function getReportDashboard(
     fetchAiCostSummary(userId, gte, lt),
     runSystemDiagnostics(userId),
   ]);
+  const { rows: dailyMessages, truncated: dailyMessagesTruncated } = dailyMessagesResult;
 
   const labelCounts = new Map<string, number>();
   let scoreSum = 0;
@@ -193,18 +219,22 @@ export async function getReportDashboard(
     .map(([date, counts]) => ({ date, ...counts }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  const campaignFunnel = { sent: 0, delivered: 0, read: 0, failed: 0 };
+  const manualCounts = { sent: 0, delivered: 0, read: 0, failed: 0 };
   for (const g of manualStatusGroups) {
     const count = g._count._all;
-    if (g.status === "SENT") campaignFunnel.sent += count;
-    else if (g.status === "DELIVERED") campaignFunnel.delivered += count;
-    else if (g.status === "READ") campaignFunnel.read += count;
-    else if (g.status === "FAILED") campaignFunnel.failed += count;
+    if (g.status === "SENT") manualCounts.sent += count;
+    else if (g.status === "DELIVERED") manualCounts.delivered += count;
+    else if (g.status === "READ") manualCounts.read += count;
+    else if (g.status === "FAILED") manualCounts.failed += count;
   }
+  const automationCounts = { sent: 0, delivered: 0, read: 0, failed: 0 };
   for (const g of automationStatusGroups) {
     const key = AUTOMATION_STATUS_KEY[g.status];
-    if (key) campaignFunnel[key] += g._count._all;
+    if (key) automationCounts[key] += g._count._all;
   }
+  const campaignFunnel = { sent: 0, delivered: 0, read: 0, failed: 0 };
+  addCumulativeFunnel(campaignFunnel, manualCounts);
+  addCumulativeFunnel(campaignFunnel, automationCounts);
 
   const high = diagnostics.issues.filter((i) => i.severity === "alta").length;
   const medium = diagnostics.issues.filter((i) => i.severity === "media").length;
@@ -221,6 +251,7 @@ export async function getReportDashboard(
       leadsQualified,
     },
     dailyMessages,
+    dailyMessagesTruncated,
     leadsByLabel,
     campaignFunnel,
     botCostRows: botCostRows.filter((b) => b.interactions > 0).slice(0, 5),

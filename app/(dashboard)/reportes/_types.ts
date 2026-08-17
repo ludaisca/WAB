@@ -25,6 +25,9 @@ export interface ReportDashboardData {
     leadsQualified: number;
   };
   dailyMessages: Array<{ date: string; inbound: number; outbound: number; total: number }>;
+  // true si la gráfica no alcanzó a cubrir el rango completo elegido (más de
+  // 5,000 mensajes en el rango) — ver lib/reports/queries/messages.ts.
+  dailyMessagesTruncated: boolean;
   leadsByLabel: Array<{ label: string; count: number }>;
   campaignFunnel: { sent: number; delivered: number; read: number; failed: number };
   botCostRows: Array<{

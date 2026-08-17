@@ -52,14 +52,25 @@ export async function fetchMessageCounts(accountIds: string[], gte: Date, lt: Da
 // el dashboard "no actualizaba".
 const TREND_SAMPLE_LIMIT = 5000;
 
-export async function fetchDailyMessageTrend(accountIds: string[], gte: Date, lt: Date): Promise<DailyMessageRow[]> {
+export interface DailyMessageTrendResult {
+  rows: DailyMessageRow[];
+  // true cuando el rango elegido tiene más de TREND_SAMPLE_LIMIT mensajes: la
+  // muestra (más reciente primero) se agota antes de cubrir el rango
+  // completo, así que la gráfica solo alcanza a mostrar los últimos días con
+  // volumen alto aunque el rango pedido sea mucho más amplio. El consumidor
+  // (dashboard.ts/_dashboard.tsx) usa esto para avisarlo en vez de dejar la
+  // gráfica con pinta de "congelada" sin explicación.
+  truncated: boolean;
+}
+
+export async function fetchDailyMessageTrend(accountIds: string[], gte: Date, lt: Date): Promise<DailyMessageTrendResult> {
   const rows = await prisma.wAMessage.findMany({
     where: { chat: { accountId: { in: accountIds } }, createdAt: { gte, lt } },
     select: { createdAt: true, direction: true },
     orderBy: { createdAt: "desc" },
     take: TREND_SAMPLE_LIMIT,
   });
-  return bucketDailyMessages(rows);
+  return { rows: bucketDailyMessages(rows), truncated: rows.length === TREND_SAMPLE_LIMIT };
 }
 
 // Mismo bucketing por dateKeyInTz() (CDMX) que get-stats.ts:dailyMessages.
