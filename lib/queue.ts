@@ -41,6 +41,9 @@ export const templateSyncQueue = new Queue("template-sync", { connection, defaul
 export const agentActionExpiryQueue = new Queue("agent-action-expiry", { connection, defaultJobOptions });
 export const systemDiagnosticsQueue = new Queue("system-diagnostics", { connection, defaultJobOptions });
 export const backupQueue = new Queue("system-backup", { connection, defaultJobOptions });
+// defaultJobOptions (attempts:3) — a diferencia de restoreQueue, regenerar un
+// .xlsx es 100% seguro de reintentar (el job solo lee datos).
+export const reportQueue = new Queue("report-generate", { connection, defaultJobOptions });
 
 // attempts:1, sin retry automático — un reintento de BullMQ sobre un job que
 // ya falló a mitad de una restauración destructiva es exactamente el tipo de

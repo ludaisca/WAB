@@ -36,6 +36,7 @@ model User {
   systemBackups          SystemBackup[]
   systemRestoreLogs      SystemRestoreLog[]
   audioTranscriptions    AudioTranscriptionUsage[]
+  systemReports          SystemReport[]
 
   @@map("users")
 }
@@ -956,6 +957,9 @@ enum NotificationType {
   // o falló — ver SystemRestoreLog para el detalle/auditoría completa.
   RESTORE_COMPLETED
   RESTORE_FAILED
+  // Reporte .xlsx (lib/workers/report-worker.ts) terminó de generarse o falló.
+  REPORT_READY
+  REPORT_FAILED
 }
 
 model Notification {
@@ -1114,6 +1118,39 @@ model SystemBackup {
 
   @@index([type, status, startedAt])
   @@map("system_backups")
+}
+
+// Reporte .xlsx "todo incluido" para un rango de fechas, generado async vía
+// BullMQ (queue "report-generate") — ver lib/reports/generate-report.ts.
+// A diferencia de SystemBackup: sin S3, sin manifest/checksums, sin tipo
+// SCHEDULED/PRE_RESTORE (solo generación manual por botón), sizeBytes es Int
+// (un .xlsx de reportes de negocio nunca se acerca al límite de 2.1GB que
+// justifica BigInt en SystemBackup.sizeBytes).
+model SystemReport {
+  id           String       @id @default(cuid())
+  status       ReportStatus @default(PENDING)
+  // Límites UTC ya calculados a partir del rango CDMX elegido por el admin
+  // (ver lib/reports/date-range.ts:reportRangeToUtc) — rangeTo es EXCLUSIVO
+  // (medianoche CDMX del día siguiente al último día elegido).
+  rangeFrom    DateTime
+  rangeTo      DateTime
+  filename     String?
+  sizeBytes    Int?
+  errorMessage String?      @db.Text
+  startedAt    DateTime     @default(now())
+  completedAt  DateTime?
+  createdById  String?
+  createdBy    User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([status, startedAt])
+  @@map("system_reports")
+}
+
+enum ReportStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
 }
 
 enum RestoreStatus {

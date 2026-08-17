@@ -15,6 +15,7 @@ import { processAgentActionExpiryTick } from "./agent-action-expiry-worker";
 import { processSystemDiagnosticsTick } from "./system-diagnostics-worker";
 import { processBackupJob, processScheduledBackupTick } from "./backup-worker";
 import { processRestoreJob } from "./restore-worker";
+import { processReportJob } from "./report-worker";
 import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue, campaignQueue, sheetsSyncQueue, leadSheetImportQueue, templateSyncQueue, agentActionExpiryQueue, systemDiagnosticsQueue, backupQueue } from "@/lib/queue";
 import { MEXICO_CITY_TZ } from "@/lib/timezone";
 
@@ -130,7 +131,17 @@ export function startWorkers() {
     await processRestoreJob(job.data);
   }, { connection, concurrency: 1 });
 
-  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, audioTranscribeWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker, sheetsSyncWorker, leadSheetImportWorker, templateSyncWorker, agentActionExpiryWorker, systemDiagnosticsWorker, backupWorker, restoreWorker);
+  // Sin tick repetible — v1 de Reportes solo tiene generación manual por
+  // botón. concurrency:2 es seguro (a diferencia de pg_dump, generar dos
+  // .xlsx en paralelo son solo lecturas, sin estado compartido que corromper).
+  const reportWorker = new Worker("report-generate", async (job) => {
+    await processReportJob(job.data, {
+      attemptsMade: job.attemptsMade,
+      maxAttempts: job.opts.attempts ?? 1,
+    });
+  }, { connection, concurrency: 2 });
+
+  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, audioTranscribeWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker, sheetsSyncWorker, leadSheetImportWorker, templateSyncWorker, agentActionExpiryWorker, systemDiagnosticsWorker, backupWorker, restoreWorker, reportWorker);
 
   // 2am, antes del purge de media-cleanup (3am) — así el backup diario
   // captura los medios que esa limpieza va a purgar esa misma madrugada, no

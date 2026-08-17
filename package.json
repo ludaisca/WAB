@@ -18,6 +18,7 @@
     "@tailwindcss/postcss": "^4",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.79.3",
+    "exceljs": "^4.4.0",
     "googleapis": "^173.0.0",
     "ioredis": "^5.11.1",
     "lucide-react": "^1.17.0",

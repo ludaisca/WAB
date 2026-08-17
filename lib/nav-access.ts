@@ -5,7 +5,7 @@
 // alcanzable para este rol?" sin duplicar las listas ni arriesgarse a que
 // diverjan de lo que proxy.ts realmente aplica.
 
-export const PROTECTED = ["/dashboard", "/configuracion", "/whatsapp", "/usuarios", "/estadisticas", "/asistente-ia"];
+export const PROTECTED = ["/dashboard", "/configuracion", "/whatsapp", "/usuarios", "/estadisticas", "/asistente-ia", "/reportes"];
 
 export const EXECUTIVE_BLOCKED = [
   "/dashboard",
@@ -18,6 +18,7 @@ export const EXECUTIVE_BLOCKED = [
   "/configuracion/ia",
   "/asistente-ia",
   "/configuracion/backups",
+  "/reportes",
 ];
 
 // Rol "user" conserva Panel/Estadísticas/Chats/Cuentas/Plantillas/Campañas/
@@ -29,7 +30,7 @@ export const EXECUTIVE_BLOCKED = [
 // una ruta separada que bloquear. /configuracion/ia (API keys, modelo por
 // defecto, presupuesto, recuperación de leads) es admin-only — solo el
 // dueño de la cuenta administra config de IA, no roles compartidos/delegados.
-export const USER_BLOCKED = ["/whatsapp/contactos", "/whatsapp/bots", "/configuracion/ia", "/asistente-ia", "/configuracion/backups"];
+export const USER_BLOCKED = ["/whatsapp/contactos", "/whatsapp/bots", "/configuracion/ia", "/asistente-ia", "/configuracion/backups", "/reportes"];
 
 function matches(path: string, list: string[]): boolean {
   return list.some((r) => path === r || path.startsWith(r + "/"));

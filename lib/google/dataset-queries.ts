@@ -7,7 +7,7 @@
 
 import type { ChatStatus, LeadStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
+import { fetchChatAttributions } from "@/lib/whatsapp/chat-attribution";
 import { chatAccessWhere, getChatVisibilityFilter } from "@/lib/whatsapp/chat-visibility";
 import { ensurePublicChatTokensForChats, publicChatUrl } from "@/lib/whatsapp/chat-public-link";
 import {
@@ -101,7 +101,6 @@ export async function buildLeadScoreRows(
           account: { select: { id: true, name: true, origen: true, leadIdPrefix: true } },
           contact: { select: { realName: true, leadNumber: true } },
           publicShareToken: true,
-          messages: CHAT_ATTRIBUTION_MESSAGE_QUERY,
         },
       },
     },
@@ -120,8 +119,13 @@ export async function buildLeadScoreRows(
     scores.map((s) => ({ id: s.chat.id, publicShareToken: s.chat.publicShareToken }))
   );
 
+  // Batching manual en vez de un `messages: CHAT_ATTRIBUTION_MESSAGE_QUERY`
+  // anidado en el select de arriba — ver el comentario de fetchChatAttributions
+  // sobre por qué ese patrón revienta con datasets grandes.
+  const attributions = await fetchChatAttributions(scores.map((s) => s.chat.id));
+
   return scores.map((s) => {
-    const { messages, publicShareToken, contact, ...chatRest } = s.chat;
+    const { publicShareToken, contact, ...chatRest } = s.chat;
     return {
       id: s.id,
       score: s.score,
@@ -131,7 +135,7 @@ export async function buildLeadScoreRows(
       details: s.details as LeadScoreRow["details"],
       updatedAt: s.updatedAt.toISOString(),
       scorer: s.scorer,
-      campaign: resolveChatAttribution(messages),
+      campaign: attributions.get(s.chat.id) ?? null,
       chat: {
         ...chatRest,
         contact: contact ? { ...contact, leadNumber: contact.leadNumber.toString() } : null,
@@ -260,10 +264,16 @@ export async function buildChatRows(
       assignedTo: { select: { name: true } },
       contact: { select: { realName: true } },
       chatTags: { select: { tag: { select: { name: true } } } },
-      messages: CHAT_ATTRIBUTION_MESSAGE_QUERY,
     },
     orderBy: { lastMessageAt: "desc" },
   });
+
+  // Batching manual en vez de un `messages: CHAT_ATTRIBUTION_MESSAGE_QUERY`
+  // anidado en el select de arriba — ese patrón revienta con "Query parameter
+  // limit exceeded" apenas el where matchea varios miles de chats (Prisma no
+  // puede partir en lotes una relación cargada con filtros de negación). Ver
+  // el comentario de fetchChatAttributions.
+  const attributions = await fetchChatAttributions(chats.map((c) => c.id));
 
   return chats.map((c) => ({
     id: c.id,
@@ -276,7 +286,7 @@ export async function buildChatRows(
     assignedTo: c.assignedTo,
     contact: c.contact,
     tags: c.chatTags.map((ct) => ct.tag.name),
-    campaign: resolveChatAttribution(c.messages),
+    campaign: attributions.get(c.id) ?? null,
   }));
 }
 

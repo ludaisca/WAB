@@ -16,6 +16,7 @@ import {
   Target,
   Sparkles,
   DatabaseBackup,
+  FileSpreadsheet,
 } from "lucide-react";
 import { AppShell, type NavItem, type NavGroup } from "@/app/components/ui/app-shell";
 import { NotificationBell } from "@/app/components/ui/notification-bell";
@@ -113,6 +114,9 @@ export function DashboardShell({
           items: [
             ...(isAdmin
               ? [{ href: "/usuarios" as const,  label: "Usuarios",         icon: Users as React.ElementType, exact: true }]
+              : []),
+            ...(isAdmin
+              ? [{ href: "/reportes" as const, label: "Reportes", icon: FileSpreadsheet as React.ElementType }]
               : []),
             ...(isAdmin
               ? [{ href: "/configuracion/backups" as const, label: "Backups", icon: DatabaseBackup as React.ElementType }]

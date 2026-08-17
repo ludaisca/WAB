@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, MessageSquare, Megaphone, Bot as BotIcon, DollarSign, Phone, Gauge, AlertTriangle, DatabaseBackup, RotateCcw } from "lucide-react";
+import { Bell, MessageSquare, Megaphone, Bot as BotIcon, DollarSign, Phone, Gauge, AlertTriangle, DatabaseBackup, RotateCcw, FileSpreadsheet } from "lucide-react";
 import { Dropdown } from "./dropdown";
 import { cn } from "./cn";
 
 interface NotificationItem {
   id: string;
-  type: "CHAT_MESSAGE" | "CAMPAIGN_COMPLETED" | "CAMPAIGN_FAILED" | "BOT_ERROR" | "BUDGET_EXCEEDED" | "ACCOUNT_STATUS" | "SCORER_ERROR" | "SYSTEM_ISSUE" | "BACKUP_COMPLETED" | "BACKUP_FAILED" | "RESTORE_COMPLETED" | "RESTORE_FAILED";
+  type: "CHAT_MESSAGE" | "CAMPAIGN_COMPLETED" | "CAMPAIGN_FAILED" | "BOT_ERROR" | "BUDGET_EXCEEDED" | "ACCOUNT_STATUS" | "SCORER_ERROR" | "SYSTEM_ISSUE" | "BACKUP_COMPLETED" | "BACKUP_FAILED" | "RESTORE_COMPLETED" | "RESTORE_FAILED" | "REPORT_READY" | "REPORT_FAILED";
   title: string;
   body: string | null;
   link: string | null;
@@ -29,6 +29,8 @@ const TYPE_ICON: Record<NotificationItem["type"], React.ElementType> = {
   BACKUP_FAILED: DatabaseBackup,
   RESTORE_COMPLETED: RotateCcw,
   RESTORE_FAILED: RotateCcw,
+  REPORT_READY: FileSpreadsheet,
+  REPORT_FAILED: FileSpreadsheet,
 };
 
 // Antes los 12 tipos pintaban el mismo gris — los pares éxito/fallo
@@ -48,6 +50,8 @@ const TYPE_TONE: Record<NotificationItem["type"], "success" | "danger" | "warnin
   BACKUP_FAILED: "danger",
   RESTORE_COMPLETED: "success",
   RESTORE_FAILED: "danger",
+  REPORT_READY: "success",
+  REPORT_FAILED: "danger",
 };
 
 const TONE_TEXT: Record<"success" | "danger" | "warning" | "info" | "accent", string> = {
