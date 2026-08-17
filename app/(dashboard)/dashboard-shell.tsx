@@ -17,6 +17,7 @@ import {
   Sparkles,
   DatabaseBackup,
   FileSpreadsheet,
+  Handshake,
 } from "lucide-react";
 import { AppShell, type NavItem, type NavGroup } from "@/app/components/ui/app-shell";
 import { NotificationBell } from "@/app/components/ui/notification-bell";
@@ -120,6 +121,9 @@ export function DashboardShell({
               : []),
             ...(isAdmin
               ? [{ href: "/configuracion/backups" as const, label: "Backups", icon: DatabaseBackup as React.ElementType }]
+              : []),
+            ...(isAdmin
+              ? [{ href: "/crm-ejecutivos" as const, label: "CRM Ejecutivos", icon: Handshake as React.ElementType }]
               : []),
             { href: "/configuracion",           label: "Configuración",    icon: Settings, exact: true },
           ],

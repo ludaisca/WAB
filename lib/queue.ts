@@ -40,6 +40,7 @@ export const leadSheetImportQueue = new Queue("lead-sheet-import", { connection,
 export const templateSyncQueue = new Queue("template-sync", { connection, defaultJobOptions });
 export const agentActionExpiryQueue = new Queue("agent-action-expiry", { connection, defaultJobOptions });
 export const systemDiagnosticsQueue = new Queue("system-diagnostics", { connection, defaultJobOptions });
+export const crmEjecutivosSyncQueue = new Queue("crm-ejecutivos-sync", { connection, defaultJobOptions });
 export const backupQueue = new Queue("system-backup", { connection, defaultJobOptions });
 // defaultJobOptions (attempts:3) — a diferencia de restoreQueue, regenerar un
 // .xlsx es 100% seguro de reintentar (el job solo lee datos).

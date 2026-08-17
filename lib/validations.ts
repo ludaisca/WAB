@@ -238,6 +238,17 @@ export const tagSchema = z.object({
   color: z.string().max(30).optional(),
 });
 
+// Tal cual se manda a ?ejecutivephone= del CRM externo — solo dígitos, sin
+// normalizar más (el propio endpoint espera el formato nacional de 10
+// dígitos que ellos usan internamente).
+export const trackedExecutiveSchema = z.object({
+  phone: z.string().regex(/^\d{7,15}$/, "El teléfono debe tener solo dígitos (7-15)"),
+  label: z.string().min(1, "El nombre es requerido").max(100),
+  active: z.boolean().optional(),
+});
+
+export const trackedExecutiveUpdateSchema = trackedExecutiveSchema.partial();
+
 export const cannedResponseSchema = z.object({
   waAccountId: z.string().min(1, "La cuenta es requerida"),
   shortcut: z

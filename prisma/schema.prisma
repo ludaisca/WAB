@@ -1203,3 +1203,74 @@ model SystemRestoreLog {
   @@index([status, startedAt])
   @@map("system_restore_logs")
 }
+
+// CRM Ejecutivos (2026-08): WAB solo cubre WhatsApp — los mismos leads también
+// se trabajan por otros canales (llamadas, etc.) en un CRM externo de la
+// empresa (crmc.limenka360.com), por ejecutivo humano. `TrackedExecutive` es
+// la lista de teléfonos de ejecutivo que el admin decide monitorear —
+// deliberadamente independiente de `User`/rol "ejecutivo": ese CRM externo
+// tiene sus propios ejecutivos, que no necesariamente son usuarios de WAB.
+// Ver lib/crm-ejecutivos/.
+model TrackedExecutive {
+  id        String   @id @default(cuid())
+  // Tal cual lo pide el endpoint externo (?ejecutivephone=), no normalizado —
+  // la normalización para cruzar contra Contact vive en phone-match.ts.
+  phone     String   @unique
+  label     String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  prospects ExternalProspect[]
+
+  @@map("tracked_executives")
+}
+
+// Copia local de cada prospecto que el CRM externo reporta para un
+// TrackedExecutive — sincronizada por el tick de lib/workers/crm-ejecutivos-sync-worker.ts
+// (resync completo por ejecutivo en cada corrida, no incremental: el endpoint
+// externo no ofrece un "dame solo lo que cambió", así que un resync completo
+// es la única forma de capturar cambios de estado en prospectos ya vistos,
+// no solo altas nuevas).
+model ExternalProspect {
+  id                 String   @id @default(cuid())
+  // `id` del CRM externo — clave de upsert.
+  externalId         String   @unique
+  trackedExecutiveId String
+  trackedExecutive   TrackedExecutive @relation(fields: [trackedExecutiveId], references: [id], onDelete: Cascade)
+
+  name               String
+  phone              String
+  // Últimos 10 dígitos de `phone` (lib/crm-ejecutivos/phone-match.ts) —
+  // precalculado en el sync para poder cruzar por sufijo contra
+  // Contact.remoteJid (que trae código de país, `phone` de este CRM no)
+  // sin tener que renormalizar en cada request de lectura.
+  phoneKey           String
+  email              String?
+  product            String?
+  campaign           String?
+  observations       String?  @db.Text
+  isOportunity       Boolean  @default(false)
+  isClient           Boolean  @default(false)
+  rejected           Boolean  @default(false)
+  rejectedReason     String?
+  discarted          Boolean  @default(false)
+  discartedReason    String?
+  lastTrackingReason String?  @db.Text
+  lastTrackingAt     DateTime?
+  // createdAt/updatedAt DEL PROSPECTO EN EL CRM EXTERNO — distintos de los
+  // createdAt/updatedAt de esta fila local (que son de la sincronización).
+  sourceCreatedAt    DateTime
+  sourceUpdatedAt    DateTime
+  // Payload crudo del CRM externo tal cual — de respaldo para no perder
+  // ningún campo que no se haya modelado explícitamente arriba.
+  raw                Json
+
+  syncedAt  DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([phoneKey])
+  @@index([trackedExecutiveId])
+  @@map("external_prospects")
+}

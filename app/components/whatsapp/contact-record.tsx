@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Copy } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { Plus, Copy, Handshake } from "lucide-react";
 import { EntityAvatar } from "@/app/components/ui/avatar";
 import { Banner } from "@/app/components/ui/banner";
 import { Badge } from "@/app/components/ui/badge";
@@ -63,6 +64,18 @@ function qualifiedDataRows(data: Record<string, unknown>) {
   }));
 }
 
+interface ExternalProspectMatch {
+  id: string;
+  name: string;
+  product: string | null;
+  isOportunity: boolean;
+  isClient: boolean;
+  rejected: boolean;
+  discarted: boolean;
+  lastTrackingReason: string | null;
+  executiveLabel: string;
+}
+
 function scoreDetailRows(details: ScoreDetails) {
   const rows: Array<{ label: string; value: string }> = [];
   if (details.nombre_real) rows.push({ label: "Nombre real", value: details.nombre_real });
@@ -84,6 +97,8 @@ export function ContactRecord({
   contactId: string;
   onUpdated: () => void;
 }) {
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === "admin";
   const { success, error: toastError } = useToast();
   const [contact, setContact] = useState<ContactDetail | null>(null);
   const [allTags, setAllTags] = useState<TagOption[]>([]);
@@ -98,6 +113,22 @@ export function ContactRecord({
 
   const [activity, setActivity] = useState<ContactActivity | null>(null);
   const [activityLoading, setActivityLoading] = useState(true);
+
+  // Cruce con CRM Ejecutivos (feature admin-only, ver CLAUDE.md) — solo se
+  // pide si el rol es admin, ni siquiera se intenta para el resto (la ruta
+  // igual 403earía, pero evita el roundtrip innecesario).
+  const [externalProspects, setExternalProspects] = useState<ExternalProspectMatch[]>([]);
+
+  const fetchExternalProspects = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      const res = await fetch(`/api/whatsapp/contacts/${contactId}/external-prospects`);
+      const data = await res.json();
+      if (res.ok && Array.isArray(data)) setExternalProspects(data);
+    } catch {
+      // Extra de contexto — un fallo aquí no debe tumbar el resto del panel.
+    }
+  }, [contactId, isAdmin]);
 
   const fetchActivity = useCallback(async () => {
     setActivityLoading(true);
@@ -139,7 +170,8 @@ export function ContactRecord({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/contactId-change; fetchAll también se usa para refrescar manualmente
     fetchAll();
     fetchActivity();
-  }, [fetchAll, fetchActivity]);
+    fetchExternalProspects();
+  }, [fetchAll, fetchActivity, fetchExternalProspects]);
 
   async function handleLeadStatusChange(leadStatus: string) {
     if (!contact) return;
@@ -335,6 +367,20 @@ export function ContactRecord({
           Contacto bloqueado — el bot no responde y no recibe campañas, reactivaciones ni calificaciones.
           Sus mensajes siguen llegando aquí y puedes responderlos manualmente.
           {contact.blockedNote && <span className="block mt-1 opacity-90">Motivo: {contact.blockedNote}</span>}
+        </Banner>
+      )}
+
+      {externalProspects.length > 0 && (
+        <Banner tone="info" icon={Handshake} title="También es prospecto en CRM Ejecutivos">
+          {externalProspects.map((p) => (
+            <div key={p.id} className="mt-1 first:mt-0">
+              <span className="font-medium">{p.executiveLabel}</span>
+              {p.product && <span> · {p.product}</span>}
+              {" · "}
+              {p.isClient ? "Cliente" : p.rejected ? "Rechazado" : p.discarted ? "Descartado" : p.isOportunity ? "Oportunidad" : "Prospecto"}
+              {p.lastTrackingReason && <span className="block text-xs opacity-80 mt-0.5">{p.lastTrackingReason}</span>}
+            </div>
+          ))}
         </Banner>
       )}
 

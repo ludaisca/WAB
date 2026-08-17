@@ -13,10 +13,14 @@ import { processLeadSheetImportTick } from "./lead-sheet-worker";
 import { processTemplateSyncTick } from "./template-sync-worker";
 import { processAgentActionExpiryTick } from "./agent-action-expiry-worker";
 import { processSystemDiagnosticsTick } from "./system-diagnostics-worker";
+import { processCrmEjecutivosSyncTick } from "./crm-ejecutivos-sync-worker";
 import { processBackupJob, processScheduledBackupTick } from "./backup-worker";
 import { processRestoreJob } from "./restore-worker";
 import { processReportJob } from "./report-worker";
 import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue, campaignQueue, sheetsSyncQueue, leadSheetImportQueue, templateSyncQueue, agentActionExpiryQueue, systemDiagnosticsQueue, backupQueue } from "@/lib/queue";
+// crmEjecutivosSyncQueue NO se importa aquí — el tick automático está
+// desactivado (ver el bloque comentado más abajo), y app/api/crm-ejecutivos/
+// sync-now/route.ts ya la importa directo de lib/queue.ts para el trigger manual.
 import { MEXICO_CITY_TZ } from "@/lib/timezone";
 
 const connection = {
@@ -113,6 +117,10 @@ export function startWorkers() {
     await processSystemDiagnosticsTick();
   }, { connection, concurrency: 1 });
 
+  const crmEjecutivosSyncWorker = new Worker("crm-ejecutivos-sync", async () => {
+    await processCrmEjecutivosSyncTick();
+  }, { connection, concurrency: 1 });
+
   const backupWorker = new Worker("system-backup", async (job) => {
     // Misma cola lleva el tick diario ("scheduled-tick") y los backups
     // manuales disparados desde la UI ("manual") — concurrency 1 evita que dos
@@ -141,7 +149,7 @@ export function startWorkers() {
     });
   }, { connection, concurrency: 2 });
 
-  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, audioTranscribeWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker, sheetsSyncWorker, leadSheetImportWorker, templateSyncWorker, agentActionExpiryWorker, systemDiagnosticsWorker, backupWorker, restoreWorker, reportWorker);
+  workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, audioTranscribeWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker, sheetsSyncWorker, leadSheetImportWorker, templateSyncWorker, agentActionExpiryWorker, systemDiagnosticsWorker, backupWorker, restoreWorker, reportWorker, crmEjecutivosSyncWorker);
 
   // 2am, antes del purge de media-cleanup (3am) — así el backup diario
   // captura los medios que esa limpieza va a purgar esa misma madrugada, no
@@ -263,6 +271,26 @@ export function startWorkers() {
       { jobId: "system-diagnostics-tick", repeat: { pattern: "0 * * * *", tz: MEXICO_CITY_TZ } }
     )
     .catch((err) => console.error("[workers] No se pudo programar system-diagnostics:", err));
+
+  // Tick automático DESACTIVADO a propósito (Luis, 2026-08-17) — mientras se
+  // valida el volumen real (cientos de prospectos por ejecutivo desde que se
+  // acotó FLOOR_DATE en client.ts) y se decide qué tan seguido conviene
+  // resincronizar sin golpear de más el CRM externo. Por ahora la sync solo
+  // corre manual ("Sincronizar ahora" en /crm-ejecutivos, ver sync-now/route.ts).
+  // El worker "crmEjecutivosSyncWorker" de arriba sigue registrado y activo
+  // — sin el tick de abajo, simplemente nunca recibe trabajo por su cuenta.
+  // Para reactivar el tick: descomentar este bloque. Importante — un
+  // `.add()` con `repeat` sobrevive en Redis independientemente del código;
+  // si esto se desactivó alguna vez y luego se reactiva, confirma con
+  // `getRepeatableJobs()` que no quedó un tick viejo duplicado.
+  //
+  // crmEjecutivosSyncQueue
+  //   .add(
+  //     "tick",
+  //     {},
+  //     { jobId: "crm-ejecutivos-sync-tick", repeat: { pattern: "*/15 * * * *", tz: MEXICO_CITY_TZ } }
+  //   )
+  //   .catch((err) => console.error("[workers] No se pudo programar crm-ejecutivos-sync:", err));
 
   console.log("[workers] BullMQ workers started");
 }
