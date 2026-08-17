@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { fetchAllProspects, type RawExternalProspect } from "./client";
+import { fetchAllProspects, fetchProspectTrackings, type RawExternalProspect } from "./client";
 import { phoneKey } from "./phone-match";
 
 export interface SyncResult {
@@ -29,6 +29,14 @@ function mapProspect(raw: RawExternalProspect, trackedExecutiveId: string) {
     discartedReason: raw.discartedreason || null,
     lastTrackingReason: raw.lastTracking?.reason || null,
     lastTrackingAt: raw.lastTrackingcreatedAt ? new Date(raw.lastTrackingcreatedAt) : null,
+    salesCount: raw.totalsales != null ? Math.round(raw.totalsales) : null,
+    pipelineStatus: raw.status ?? null,
+    pipelinePhaseId: raw.phaseId || null,
+    nextPendingAt: raw.nextpendingat ? new Date(raw.nextpendingat) : null,
+    oportunityAt: raw.oportunityAt ? new Date(raw.oportunityAt) : null,
+    clientAt: raw.clientat ? new Date(raw.clientat) : null,
+    rejectedAt: raw.rejectedAt ? new Date(raw.rejectedAt) : null,
+    reassignedAt: raw.reassignedAt ? new Date(raw.reassignedAt) : null,
     sourceCreatedAt: new Date(raw.createdAt),
     sourceUpdatedAt: new Date(raw.updatedAt),
     raw: raw as object,
@@ -49,7 +57,29 @@ export async function syncTrackedExecutive(executive: { id: string; phone: strin
   try {
     const raws = await fetchAllProspects(executive.phone);
     for (const raw of raws) {
-      const data = mapProspect(raw, executive.id);
+      const base = mapProspect(raw, executive.id);
+
+      // Historial completo solo para prospectos con actividad real
+      // (totalTrackings > 0) — el ~80% que no tiene nada más allá del alta
+      // automática no gana nada con esta llamada extra y multiplicaría el
+      // tiempo de sync por ~5 sin necesidad (ver comentario del campo
+      // `trackings` en schema.prisma). Un fallo puntual en esta llamada no
+      // bloquea el upsert del prospecto — se reintenta en el siguiente sync.
+      let data: typeof base & { trackings?: object } = base;
+      const totalTrackings = typeof raw.totalTrackings === "number" ? raw.totalTrackings : 0;
+      if (totalTrackings > 0) {
+        try {
+          const trackings = await fetchProspectTrackings(executive.phone, raw.phone);
+          data = { ...base, trackings: trackings as object };
+        } catch {
+          // se queda con lo que ya tenía guardado (si algo) en vez de pisarlo con nada
+        }
+        // Mismo respiro que entre ejecutivos — ahora son ~decenas de
+        // llamadas extra por corrida (una por prospecto con actividad), no
+        // solo 3, así que sigue siendo importante no ráfaguear el CRM externo.
+        await new Promise((r) => setTimeout(r, 150));
+      }
+
       await prisma.externalProspect.upsert({
         where: { externalId: raw.id },
         create: data,

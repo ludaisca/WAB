@@ -2,35 +2,10 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
+import { matchContactsByPhoneKeys, type ContactMatch } from "@/lib/crm-ejecutivos/match-contacts";
+import { matchLeadScores } from "@/lib/crm-ejecutivos/score-correlation";
 
 const PAGE_SIZE = 25;
-
-// Cruce con Contact/WAChat por teléfono — bounded a lo que trae la página
-// actual (como mucho PAGE_SIZE claves), nunca escanea la tabla completa de
-// Contact. `endsWith` no usa índice (Contact.remoteJid no tiene uno para
-// esto) pero con ≤25 condiciones OR por request es equivalente en costo a
-// unas pocas decenas de lookups puntuales — mismo criterio de "acotado por
-// página, no por tabla completa" que ya usan otras rutas interactivas de
-// este repo (ver el gotcha de fetchMessagesInRange en CLAUDE.md).
-async function matchContactsByPhoneKeys(phoneKeys: string[]): Promise<Map<string, { contactId: string; chatId: string | null; accountId: string }>> {
-  if (phoneKeys.length === 0) return new Map();
-
-  const contacts = await prisma.contact.findMany({
-    where: { OR: phoneKeys.map((k) => ({ remoteJid: { endsWith: k } })) },
-    select: { id: true, remoteJid: true, accountId: true, chat: { select: { id: true } } },
-  });
-
-  const map = new Map<string, { contactId: string; chatId: string | null; accountId: string }>();
-  for (const c of contacts) {
-    const digits = c.remoteJid.replace(/@.*$/, "").replace(/\D/g, "");
-    const key = digits.slice(-10);
-    // Si dos contactos distintos comparten los últimos 10 dígitos (muy
-    // improbable, pero posible entre cuentas), se queda el primero visto —
-    // no hay forma de desambiguar mejor sin el código de país exacto.
-    if (!map.has(key)) map.set(key, { contactId: c.id, chatId: c.chat?.id ?? null, accountId: c.accountId });
-  }
-  return map;
-}
 
 export async function GET(req: Request) {
   const session = await auth();
@@ -66,7 +41,7 @@ export async function GET(req: Request) {
     // el cruce sobre TODOS los phoneKey distintos que matchean el resto de
     // filtros (acotado por el volumen real de ExternalProspect, no de
     // Contact) y se acota el where con `phoneKey: { in: ... }`.
-    let matchedKeysPrefetch: Map<string, { contactId: string; chatId: string | null; accountId: string }> | null = null;
+    let matchedKeysPrefetch: Map<string, ContactMatch> | null = null;
     if (onlyMatched) {
       const distinct = await prisma.externalProspect.findMany({
         where,
@@ -92,26 +67,49 @@ export async function GET(req: Request) {
     // vez de volver a golpear Contact con las mismas claves de esta página.
     const matches = matchedKeysPrefetch ?? (await matchContactsByPhoneKeys(rows.map((r) => r.phoneKey)));
 
-    const items = rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      phone: r.phone,
-      email: r.email,
-      product: r.product,
-      campaign: r.campaign,
-      observations: r.observations,
-      isOportunity: r.isOportunity,
-      isClient: r.isClient,
-      rejected: r.rejected,
-      rejectedReason: r.rejectedReason,
-      discarted: r.discarted,
-      lastTrackingReason: r.lastTrackingReason,
-      lastTrackingAt: r.lastTrackingAt?.toISOString() ?? null,
-      sourceCreatedAt: r.sourceCreatedAt.toISOString(),
-      sourceUpdatedAt: r.sourceUpdatedAt.toISOString(),
-      trackedExecutive: r.trackedExecutive,
-      wab: matches.get(r.phoneKey) ?? null,
-    }));
+    // Predicción IA de WAB por chat matcheado — acotado a los chatId de la
+    // página actual (como mucho PAGE_SIZE), mismo criterio de "bounded by
+    // page" que matchContactsByPhoneKeys de arriba.
+    const chatIds = rows
+      .map((r) => matches.get(r.phoneKey)?.chatId)
+      .filter((id): id is string => !!id);
+    const scores = await matchLeadScores(chatIds);
+
+    const items = rows.map((r) => {
+      const match = matches.get(r.phoneKey) ?? null;
+      const score = match?.chatId ? scores.get(match.chatId) : undefined;
+      return {
+        id: r.id,
+        name: r.name,
+        phone: r.phone,
+        email: r.email,
+        product: r.product,
+        campaign: r.campaign,
+        observations: r.observations,
+        isOportunity: r.isOportunity,
+        isClient: r.isClient,
+        rejected: r.rejected,
+        rejectedReason: r.rejectedReason,
+        discarted: r.discarted,
+        discartedReason: r.discartedReason,
+        lastTrackingReason: r.lastTrackingReason,
+        lastTrackingAt: r.lastTrackingAt?.toISOString() ?? null,
+        salesCount: r.salesCount,
+        pipelineStatus: r.pipelineStatus,
+        pipelinePhaseId: r.pipelinePhaseId,
+        nextPendingAt: r.nextPendingAt?.toISOString() ?? null,
+        oportunityAt: r.oportunityAt?.toISOString() ?? null,
+        clientAt: r.clientAt?.toISOString() ?? null,
+        rejectedAt: r.rejectedAt?.toISOString() ?? null,
+        reassignedAt: r.reassignedAt?.toISOString() ?? null,
+        trackings: r.trackings,
+        sourceCreatedAt: r.sourceCreatedAt.toISOString(),
+        sourceUpdatedAt: r.sourceUpdatedAt.toISOString(),
+        trackedExecutive: r.trackedExecutive,
+        wab: match,
+        aiScore: score ? { label: score.label, score: score.score, scorerName: score.scorerName, updatedAt: score.updatedAt.toISOString() } : null,
+      };
+    });
 
     return NextResponse.json({ items, total, page, pageSize: PAGE_SIZE });
   } catch (error) {

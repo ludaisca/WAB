@@ -8,8 +8,9 @@ import { Tabs } from "@/app/components/ui/tabs";
 import { useToast } from "@/app/components/ui/toast";
 import { ProspectsTab } from "./_prospects-tab";
 import { ExecutivesTab } from "./_executives-tab";
+import { AccuracyTab } from "./_accuracy-tab";
 
-type Tab = "prospectos" | "ejecutivos";
+type Tab = "prospectos" | "precision" | "ejecutivos";
 
 export function CrmEjecutivosView() {
   const { success, error: toastError } = useToast();
@@ -45,13 +46,14 @@ export function CrmEjecutivosView() {
       <Tabs
         items={[
           { value: "prospectos", label: "Prospectos" },
+          { value: "precision", label: "Precisión IA" },
           { value: "ejecutivos", label: "Ejecutivos monitoreados" },
         ]}
         value={tab}
         onChange={(v) => setTab(v as Tab)}
       />
 
-      {tab === "prospectos" ? <ProspectsTab /> : <ExecutivesTab />}
+      {tab === "prospectos" ? <ProspectsTab /> : tab === "precision" ? <AccuracyTab /> : <ExecutivesTab />}
     </div>
   );
 }

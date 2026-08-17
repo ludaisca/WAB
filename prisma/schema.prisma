@@ -1258,6 +1258,32 @@ model ExternalProspect {
   discartedReason    String?
   lastTrackingReason String?  @db.Text
   lastTrackingAt     DateTime?
+  // Campos adicionales del CRM externo — ya venían en el payload crudo (ver
+  // `raw` abajo) sin modelarse. Añadidos 2026-08 para poder mostrarlos sin
+  // tener que leer `raw` en cada request. `pipelineStatus`/`pipelinePhaseId`
+  // son ids opacos del CRM externo (no hay catálogo/lookup investigado para
+  // traducirlos a texto) — se guardan y muestran tal cual.
+  // `totalsales` en el CRM externo es un CONTEO de ventas cerradas, no un
+  // monto en dinero (confirmado por datos reales: máximo observado 3,
+  // mayoría en 0) — nombrado salesCount para no sugerir que es dinero.
+  salesCount         Int?
+  pipelineStatus     Int?
+  pipelinePhaseId    String?
+  nextPendingAt      DateTime?
+  oportunityAt       DateTime?
+  // Fecha exacta en que el prospecto se volvió cliente — más precisa que
+  // depender solo del flag isClient para saber "cuándo".
+  clientAt           DateTime?
+  rejectedAt         DateTime?
+  reassignedAt       DateTime?
+  // Historial COMPLETO de seguimientos (GET /agents/get-trackings, endpoint
+  // distinto de get-all-prospects que solo trae el último) — arreglo crudo
+  // {id, status, reason, observations, createdAt, action} en orden
+  // descendente por fecha. Solo se llena para prospectos con actividad real
+  // (raw.totalTrackings > 0 en el momento del sync, ver sync.ts) — traerlo
+  // para los ~80% sin ningún seguimiento además del alta automática no
+  // aporta nada y multiplicaría por ~5 las llamadas al CRM externo por sync.
+  trackings          Json?
   // createdAt/updatedAt DEL PROSPECTO EN EL CRM EXTERNO — distintos de los
   // createdAt/updatedAt de esta fila local (que son de la sincronización).
   sourceCreatedAt    DateTime

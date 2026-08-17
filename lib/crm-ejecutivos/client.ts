@@ -4,6 +4,7 @@
 // (confirmado: responde sin headers, con Access-Control-Allow-Origin: *) —
 // no hay credencial que inyectar aquí, es tal cual lo expone ese CRM hoy.
 import { fetchWithTimeout } from "@/lib/http/fetch-with-timeout";
+import { phoneKey } from "./phone-match";
 
 const BASE_URL = "https://crmc.limenka360.com";
 
@@ -61,6 +62,23 @@ export interface RawExternalProspect {
   campaign?: string;
   lastTracking?: { reason?: string } | null;
   lastTrackingcreatedAt?: string | null;
+  // Confirmados presentes en la respuesta real (curl 2026-08-17) pero sin
+  // modelar hasta ahora — quedaban solo dentro del catch-all de abajo,
+  // preservados en ExternalProspect.raw pero nunca en columnas propias.
+  totalsales?: number;
+  status?: number;
+  phaseId?: string;
+  nextpendingat?: string | null;
+  oportunityAt?: string | null;
+  clientat?: string | null;
+  rejectedAt?: string | null;
+  reassignedAt?: string | null;
+  // Conteo real de seguimientos registrados — confirmado exacto por prueba
+  // manual (curl 2026-08-17): un prospecto con totalTrackings=10 regresó
+  // exactamente 10 resultados en /agents/get-trackings. Usado en sync.ts
+  // para decidir si vale la pena pedir el historial completo de ese
+  // prospecto puntual (0 = nada más allá del alta automática).
+  totalTrackings?: number;
   createdAt: string;
   updatedAt: string;
   [key: string]: unknown;
@@ -107,4 +125,43 @@ export async function fetchAllProspects(ejecutivephone: string): Promise<RawExte
   }
 
   return all;
+}
+
+export interface RawTracking {
+  id: string;
+  status: number;
+  reason: string;
+  observations: string;
+  createdAt: string;
+  action: string;
+}
+
+interface TrackingsResponse {
+  results: RawTracking[];
+}
+
+// GET /agents/get-trackings — historial COMPLETO de seguimientos de UN
+// prospecto puntual (a diferencia de get-all-prospects, que solo trae el
+// último en `lastTracking`). Encontrado 2026-08-17 vía un nodo de n8n de
+// referencia, no documentado en ningún lado propio. Confirmado por prueba
+// manual: sin paginación visible (la respuesta no trae `count`; un
+// prospecto con totalTrackings=10 regresó exactamente 10 resultados en una
+// sola llamada) — se asume que siempre regresa el historial completo.
+//
+// ejecutivephone va en los mismos últimos 10 dígitos que fetchAllProspects
+// usa para ese mismo parámetro (confirmado en el nodo n8n de referencia:
+// `.slice(-10)`) — se normaliza aquí con phoneKey() por si algún
+// TrackedExecutive.phone llegara a guardarse con código de país.
+// prospectphone va TAL CUAL como lo tenemos guardado en
+// ExternalProspect.phone (mismo formato nativo del CRM externo, sin
+// transformación) — confirmado por prueba manual, no acepta el formato con
+// código de país de Contact.remoteJid.
+export async function fetchProspectTrackings(ejecutivephone: string, prospectphone: string): Promise<RawTracking[]> {
+  const url = `${BASE_URL}/agents/get-trackings?ejecutivephone=${encodeURIComponent(phoneKey(ejecutivephone))}&prospectphone=${encodeURIComponent(prospectphone)}&order=-createdAt`;
+  const res = await fetchWithTimeout(url, 15000);
+  if (!res.ok) {
+    throw new Error(`CRM Ejecutivos (trackings) respondió ${res.status} para prospectphone=${prospectphone}`);
+  }
+  const data = (await res.json()) as TrackingsResponse;
+  return data.results;
 }

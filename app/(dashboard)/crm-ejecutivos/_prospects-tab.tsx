@@ -12,8 +12,25 @@ import { Select } from "@/app/components/ui/select";
 import { Input } from "@/app/components/ui/input";
 import { Modal } from "@/app/components/ui/modal";
 import { formatDateTime } from "@/lib/timezone";
+import { labelText, labelTone } from "@/lib/whatsapp/export-columns";
 
 interface ExecutiveOption { id: string; label: string; }
+
+interface AiScoreMatch {
+  label: string;
+  score: number;
+  scorerName: string;
+  updatedAt: string;
+}
+
+interface TrackingEntry {
+  id: string;
+  status: number;
+  reason: string;
+  observations: string;
+  createdAt: string;
+  action: string;
+}
 
 interface ProspectRow {
   id: string;
@@ -28,12 +45,60 @@ interface ProspectRow {
   rejected: boolean;
   rejectedReason: string | null;
   discarted: boolean;
+  discartedReason: string | null;
   lastTrackingReason: string | null;
   lastTrackingAt: string | null;
+  salesCount: number | null;
+  pipelineStatus: number | null;
+  pipelinePhaseId: string | null;
+  nextPendingAt: string | null;
+  oportunityAt: string | null;
+  clientAt: string | null;
+  rejectedAt: string | null;
+  reassignedAt: string | null;
+  // Historial completo de seguimientos — solo presente para prospectos con
+  // actividad real (ver comentario del campo `trackings` en schema.prisma).
+  trackings: TrackingEntry[] | null;
   sourceCreatedAt: string;
   sourceUpdatedAt: string;
   trackedExecutive: { id: string; label: string; phone: string };
   wab: { contactId: string; chatId: string | null; accountId: string } | null;
+  aiScore: AiScoreMatch | null;
+}
+
+function AiScoreBadge({ aiScore }: { aiScore: AiScoreMatch | null }) {
+  if (!aiScore) return <span className="text-xs text-muted-darker">Sin evaluar</span>;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Badge tone={labelTone(aiScore.label)} size="sm">{labelText(aiScore.label)}</Badge>
+      <span className="text-[11px] font-mono text-muted-darker">{aiScore.score}</span>
+    </span>
+  );
+}
+
+// Historial completo de seguimientos — line de tiempo simple (sin componente
+// de gráfica de por medio, es una lista cronológica de texto). `action` es
+// el canal usado por el ejecutivo (Whatsapp/Llamada/Seguimiento Automatico).
+function TrackingTimeline({ trackings }: { trackings: TrackingEntry[] }) {
+  return (
+    <div>
+      <p className="text-xs text-muted-darker mb-2">Historial de seguimientos ({trackings.length})</p>
+      <ol className="space-y-3 border-l border-border pl-4">
+        {trackings.map((t) => (
+          <li key={t.id} className="relative">
+            <span className="absolute -left-[18px] top-1 h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone="neutral" size="sm">{t.action || "Sin especificar"}</Badge>
+              <span className="text-[11px] text-muted-darker">{formatDateTime(t.createdAt)}</span>
+            </div>
+            {(t.observations || t.reason) && (
+              <p className="text-sm text-foreground mt-1">{t.observations || t.reason}</p>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
 }
 
 function StatusBadge({ row }: { row: ProspectRow }) {
@@ -129,6 +194,12 @@ export function ProspectsTab() {
       key: "status",
       header: "Estado",
       render: (r) => <StatusBadge row={r} />,
+    },
+    {
+      key: "aiScore",
+      header: "Predicción IA",
+      render: (r) => <AiScoreBadge aiScore={r.aiScore} />,
+      hideBelow: "md",
     },
     {
       key: "wab",
@@ -236,6 +307,13 @@ export function ProspectsTab() {
                 {formatDateTime(detailRow.sourceUpdatedAt, { dateStyle: "long", timeStyle: "short" })}
               </span>
             </div>
+            {(detailRow.clientAt || detailRow.oportunityAt || detailRow.rejectedAt) && (
+              <p className="text-[11px] text-muted-darker -mt-2">
+                {detailRow.isClient && detailRow.clientAt && `Cliente desde ${formatDateTime(detailRow.clientAt)}`}
+                {!detailRow.isClient && detailRow.isOportunity && detailRow.oportunityAt && `Oportunidad desde ${formatDateTime(detailRow.oportunityAt)}`}
+                {detailRow.rejected && detailRow.rejectedAt && `Rechazado el ${formatDateTime(detailRow.rejectedAt)}`}
+              </p>
+            )}
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <div>
                 <dt className="text-xs text-muted-darker">Teléfono</dt>
@@ -257,32 +335,77 @@ export function ProspectsTab() {
                   <dd>{detailRow.product}</dd>
                 </div>
               )}
+              {!!detailRow.salesCount && (
+                <div>
+                  <dt className="text-xs text-muted-darker">Ventas registradas</dt>
+                  <dd className="font-mono">{detailRow.salesCount}</dd>
+                </div>
+              )}
+              {detailRow.nextPendingAt && (
+                <div>
+                  <dt className="text-xs text-muted-darker">Próximo seguimiento</dt>
+                  <dd>{formatDateTime(detailRow.nextPendingAt)}</dd>
+                </div>
+              )}
               {detailRow.campaign && (
                 <div className="col-span-2">
                   <dt className="text-xs text-muted-darker">Campaña</dt>
                   <dd>{detailRow.campaign}</dd>
                 </div>
               )}
+              {(detailRow.pipelineStatus !== null || detailRow.pipelinePhaseId) && (
+                <div className="col-span-2">
+                  <dt className="text-xs text-muted-darker">Estado interno del CRM externo</dt>
+                  <dd className="text-xs text-muted-darker font-mono">
+                    {detailRow.pipelineStatus !== null && `status: ${detailRow.pipelineStatus}`}
+                    {detailRow.pipelineStatus !== null && detailRow.pipelinePhaseId && " · "}
+                    {detailRow.pipelinePhaseId && `fase: ${detailRow.pipelinePhaseId}`}
+                  </dd>
+                </div>
+              )}
             </dl>
+            <div>
+              <p className="text-xs text-muted-darker mb-1">Predicción de la IA (WAB)</p>
+              {detailRow.aiScore ? (
+                <div className="flex items-center gap-2">
+                  <AiScoreBadge aiScore={detailRow.aiScore} />
+                  <span className="text-[11px] text-muted-darker">
+                    {detailRow.aiScore.scorerName} · {formatDateTime(detailRow.aiScore.updatedAt)}
+                  </span>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-darker">Sin evaluar aún — no hay un lead calificado para este chat en WAB.</p>
+              )}
+            </div>
             {detailRow.observations && (
               <div>
                 <p className="text-xs text-muted-darker mb-1">Observaciones</p>
                 <p className="text-sm text-foreground whitespace-pre-wrap">{detailRow.observations}</p>
               </div>
             )}
-            {detailRow.lastTrackingReason && (
-              <div>
-                <p className="text-xs text-muted-darker mb-1">Último seguimiento</p>
-                <p className="text-sm text-foreground whitespace-pre-wrap">{detailRow.lastTrackingReason}</p>
-                {detailRow.lastTrackingAt && (
-                  <p className="text-[11px] text-muted-darker mt-1">{formatDateTime(detailRow.lastTrackingAt)}</p>
-                )}
-              </div>
+            {detailRow.trackings && detailRow.trackings.length > 0 ? (
+              <TrackingTimeline trackings={detailRow.trackings} />
+            ) : (
+              detailRow.lastTrackingReason && (
+                <div>
+                  <p className="text-xs text-muted-darker mb-1">Último seguimiento</p>
+                  <p className="text-sm text-foreground whitespace-pre-wrap">{detailRow.lastTrackingReason}</p>
+                  {detailRow.lastTrackingAt && (
+                    <p className="text-[11px] text-muted-darker mt-1">{formatDateTime(detailRow.lastTrackingAt)}</p>
+                  )}
+                </div>
+              )
             )}
             {detailRow.rejected && detailRow.rejectedReason && (
               <div>
                 <p className="text-xs text-danger mb-1">Motivo de rechazo</p>
                 <p className="text-sm text-foreground">{detailRow.rejectedReason}</p>
+              </div>
+            )}
+            {detailRow.discarted && detailRow.discartedReason && (
+              <div>
+                <p className="text-xs text-muted-darker mb-1">Motivo de descarte</p>
+                <p className="text-sm text-foreground">{detailRow.discartedReason}</p>
               </div>
             )}
             {detailRow.wab?.chatId && (
