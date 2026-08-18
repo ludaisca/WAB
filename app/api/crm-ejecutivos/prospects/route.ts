@@ -3,9 +3,24 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import { matchContactsByPhoneKeys, type ContactMatch } from "@/lib/crm-ejecutivos/match-contacts";
-import { matchLeadScores } from "@/lib/crm-ejecutivos/score-correlation";
+import { matchLeadScores, resolveAiLabel } from "@/lib/crm-ejecutivos/score-correlation";
+import { zonedDateTimeToUtc } from "@/lib/timezone";
 
 const PAGE_SIZE = 25;
+
+// Mismo orden de prioridad que StatusBadge en _prospects-tab.tsx — el select
+// "Estado" tiene que devolver exactamente las filas cuyo badge en pantalla
+// coincide con lo elegido, no una combinación de flags independiente entre sí.
+function statusWhere(status: string): Prisma.ExternalProspectWhereInput | null {
+  switch (status) {
+    case "cliente": return { isClient: true };
+    case "rechazado": return { isClient: false, rejected: true };
+    case "descartado": return { isClient: false, rejected: false, discarted: true };
+    case "oportunidad": return { isClient: false, rejected: false, discarted: false, isOportunity: true };
+    case "prospecto": return { isClient: false, rejected: false, discarted: false, isOportunity: false };
+    default: return null;
+  }
+}
 
 export async function GET(req: Request) {
   const session = await auth();
@@ -16,13 +31,28 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1);
     const trackedExecutiveId = searchParams.get("trackedExecutiveId");
-    const isOportunity = searchParams.get("isOportunity");
+    const status = searchParams.get("status");
     const onlyMatched = searchParams.get("onlyMatched") === "true";
+    const aiLabel = searchParams.get("aiLabel");
     const search = searchParams.get("search")?.trim();
+    const dateFrom = searchParams.get("dateFrom");
+    const dateTo = searchParams.get("dateTo");
+
+    const sourceCreatedAt: Prisma.DateTimeFilter = {};
+    if (dateFrom) sourceCreatedAt.gte = zonedDateTimeToUtc(dateFrom, "00:00");
+    if (dateTo) {
+      // Límite superior EXCLUSIVO: medianoche CDMX del día siguiente al
+      // elegido — evita el error de "23:59:59Z" que en CDMX es ~18:00, no
+      // medianoche (mismo criterio que lib/reports/date-range.ts).
+      const [y, m, d] = dateTo.split("-").map(Number);
+      const nextDay = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+      sourceCreatedAt.lt = zonedDateTimeToUtc(nextDay, "00:00");
+    }
 
     const where: Prisma.ExternalProspectWhereInput = {
       ...(trackedExecutiveId ? { trackedExecutiveId } : {}),
-      ...(isOportunity === "true" ? { isOportunity: true } : {}),
+      ...(status && status !== "all" ? (statusWhere(status) ?? {}) : {}),
+      ...(Object.keys(sourceCreatedAt).length > 0 ? { sourceCreatedAt } : {}),
       ...(search
         ? {
             OR: [
@@ -34,22 +64,38 @@ export async function GET(req: Request) {
         : {}),
     };
 
-    // "Solo con match en WAB" tiene que filtrar ANTES de paginar (no solo
-    // ocultar filas de la página actual) — si no, "Siguiente" seguiría
-    // avanzando por prospectos sin match de por medio y el conteo/paginación
-    // no cuadrarían con lo que el usuario realmente ve. Para eso se resuelve
-    // el cruce sobre TODOS los phoneKey distintos que matchean el resto de
-    // filtros (acotado por el volumen real de ExternalProspect, no de
-    // Contact) y se acota el where con `phoneKey: { in: ... }`.
+    // "Solo con match en WAB" y el filtro "Predicción IA" tienen que
+    // resolverse ANTES de paginar (no solo ocultar filas de la página
+    // actual) — si no, "Siguiente" seguiría avanzando por prospectos que no
+    // cumplen y el conteo/paginación no cuadrarían con lo que el usuario
+    // realmente ve. Un aiLabel específico implica matched (solo un prospecto
+    // con match puede tener predicción), así que ambos comparten la misma
+    // resolución: se cruza sobre TODOS los phoneKey distintos que matchean
+    // el resto de filtros (acotado por el volumen real de ExternalProspect,
+    // no de Contact) y se acota el where con `phoneKey: { in: ... }`.
+    const needsMatchResolution = onlyMatched || (!!aiLabel && aiLabel !== "all");
     let matchedKeysPrefetch: Map<string, ContactMatch> | null = null;
-    if (onlyMatched) {
+    if (needsMatchResolution) {
       const distinct = await prisma.externalProspect.findMany({
         where,
         select: { phoneKey: true },
         distinct: ["phoneKey"],
       });
       matchedKeysPrefetch = await matchContactsByPhoneKeys(distinct.map((d) => d.phoneKey));
-      where.phoneKey = { in: Array.from(matchedKeysPrefetch.keys()) };
+
+      if (aiLabel && aiLabel !== "all") {
+        const candidateChatIds = Array.from(matchedKeysPrefetch.values())
+          .map((m) => m.chatId)
+          .filter((id): id is string => !!id);
+        const candidateScores = await matchLeadScores(candidateChatIds);
+        const keep = new Set<string>();
+        for (const [phoneKey, match] of matchedKeysPrefetch) {
+          if (resolveAiLabel(match, candidateScores) === aiLabel) keep.add(phoneKey);
+        }
+        where.phoneKey = { in: Array.from(keep) };
+      } else {
+        where.phoneKey = { in: Array.from(matchedKeysPrefetch.keys()) };
+      }
     }
 
     const [total, rows] = await Promise.all([
@@ -63,8 +109,9 @@ export async function GET(req: Request) {
       }),
     ]);
 
-    // Si ya se resolvió el cruce completo arriba (onlyMatched), reusarlo en
-    // vez de volver a golpear Contact con las mismas claves de esta página.
+    // Si ya se resolvió el cruce completo arriba (onlyMatched o aiLabel),
+    // reusarlo en vez de volver a golpear Contact con las mismas claves de
+    // esta página.
     const matches = matchedKeysPrefetch ?? (await matchContactsByPhoneKeys(rows.map((r) => r.phoneKey)));
 
     // Predicción IA de WAB por chat matcheado — acotado a los chatId de la

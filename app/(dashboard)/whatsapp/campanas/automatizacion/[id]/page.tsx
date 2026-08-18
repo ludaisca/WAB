@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, RefreshCw, History, CalendarRange, Trash2, ExternalLink } from "lucide-react";
+import { ArrowLeft, RefreshCw, History, CalendarRange, Trash2, ExternalLink, Pencil } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
@@ -88,6 +88,9 @@ export default function LeadSheetSourceDetailPage() {
   const [source, setSource] = useState<SourceDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [savingName, setSavingName] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -166,6 +169,36 @@ export default function LeadSheetSourceDetailPage() {
       toastError(err instanceof Error ? err.message : "Error");
     } finally {
       setToggling(false);
+    }
+  }
+
+  function startEditName() {
+    setNameDraft(source?.name ?? "");
+    setEditingName(true);
+  }
+
+  async function handleSaveName() {
+    const trimmed = nameDraft.trim();
+    if (!trimmed) {
+      toastError("El nombre no puede estar vacío");
+      return;
+    }
+    setSavingName(true);
+    try {
+      const res = await fetch(`/api/whatsapp/lead-sheet-sources/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Error al guardar");
+      setSource((prev) => (prev ? { ...prev, name: data.name } : prev));
+      setEditingName(false);
+      success("Nombre actualizado");
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al renombrar la fuente");
+    } finally {
+      setSavingName(false);
     }
   }
 
@@ -287,10 +320,35 @@ export default function LeadSheetSourceDetailPage() {
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight">{source.name}</h1>
-            <Badge tone={source.enabled ? "success" : "neutral"} size="sm">{source.enabled ? "Activa" : "Pausada"}</Badge>
-          </div>
+          {editingName ? (
+            <div className="flex items-center gap-2">
+              <Input
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                className="text-lg font-bold max-w-sm"
+                autoComplete="off"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveName();
+                  if (e.key === "Escape") setEditingName(false);
+                }}
+              />
+              <Button size="sm" onClick={handleSaveName} disabled={savingName}>
+                {savingName ? <Spinner /> : "Guardar"}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setEditingName(false)} disabled={savingName}>
+                Cancelar
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold tracking-tight">{source.name}</h1>
+              <Badge tone={source.enabled ? "success" : "neutral"} size="sm">{source.enabled ? "Activa" : "Pausada"}</Badge>
+              <button onClick={startEditName} className="text-muted-darker hover:text-foreground transition-colors" aria-label="Renombrar fuente">
+                <Pencil size={14} />
+              </button>
+            </div>
+          )}
           <p className="text-sm text-muted-darker mt-1">
             {source.waAccount.name} · Plantilla: {source.waTemplate.name} ({source.waTemplate.language})
           </p>

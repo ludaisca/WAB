@@ -2,17 +2,35 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Handshake, ExternalLink } from "lucide-react";
-import { Workbench, WorkbenchMain, WorkbenchAside } from "@/app/components/ui/workbench";
+import { Search, Handshake, ExternalLink } from "lucide-react";
 import { SectionHeader } from "@/app/components/ui/section-header";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import { Pagination } from "@/app/components/ui/pagination";
 import { Badge } from "@/app/components/ui/badge";
 import { Select } from "@/app/components/ui/select";
 import { Input } from "@/app/components/ui/input";
+import { DatePicker } from "@/app/components/ui/date-picker";
+import { Checkbox } from "@/app/components/ui/checkbox";
 import { Modal } from "@/app/components/ui/modal";
 import { formatDateTime } from "@/lib/timezone";
 import { labelText, labelTone } from "@/lib/whatsapp/export-columns";
+import { AI_LABELS, aiLabelText } from "@/lib/crm-ejecutivos/ai-labels";
+
+const STATUS_OPTIONS = [
+  { value: "all", label: "Todos los estados" },
+  { value: "prospecto", label: "Prospecto" },
+  { value: "oportunidad", label: "Oportunidad" },
+  { value: "cliente", label: "Cliente" },
+  { value: "rechazado", label: "Rechazado" },
+  { value: "descartado", label: "Descartado" },
+];
+
+const AI_LABEL_OPTIONS = [
+  { value: "all", label: "Todas las predicciones" },
+  ...AI_LABELS.map((l) => ({ value: l, label: aiLabelText(l) })),
+  { value: "otro", label: aiLabelText("otro") },
+  { value: "sin_evaluacion", label: aiLabelText("sin_evaluacion") },
+];
 
 interface ExecutiveOption { id: string; label: string; }
 
@@ -118,7 +136,10 @@ export function ProspectsTab() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [executives, setExecutives] = useState<ExecutiveOption[]>([]);
   const [executiveFilter, setExecutiveFilter] = useState("all");
-  const [oportunityOnly, setOportunityOnly] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [aiLabelFilter, setAiLabelFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   // Activo por default — la vista útil del día a día es "los que ya son
   // míos en WAB", no el historial completo del CRM externo. El checkbox
   // sigue disponible para desmarcarlo y ver todo cuando haga falta.
@@ -139,9 +160,12 @@ export function ProspectsTab() {
     try {
       const params = new URLSearchParams({ page: String(page) });
       if (executiveFilter !== "all") params.set("trackedExecutiveId", executiveFilter);
-      if (oportunityOnly) params.set("isOportunity", "true");
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (aiLabelFilter !== "all") params.set("aiLabel", aiLabelFilter);
       if (onlyMatched) params.set("onlyMatched", "true");
       if (search.trim()) params.set("search", search.trim());
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
 
       const res = await fetch(`/api/crm-ejecutivos/prospects?${params}`);
       const data = await res.json();
@@ -154,7 +178,7 @@ export function ProspectsTab() {
     } finally {
       setLoading(false);
     }
-  }, [page, executiveFilter, oportunityOnly, onlyMatched, search]);
+  }, [page, executiveFilter, statusFilter, aiLabelFilter, onlyMatched, search, dateFrom, dateTo]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/filtro-cambiado; fetchRows también se usa para refrescar manualmente
@@ -162,7 +186,7 @@ export function ProspectsTab() {
   }, [fetchRows]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- vuelve a página 1 cuando cambia un filtro, evita quedar en una página vacía
-  useEffect(() => { setPage(1); }, [executiveFilter, oportunityOnly, onlyMatched, search]);
+  useEffect(() => { setPage(1); }, [executiveFilter, statusFilter, aiLabelFilter, onlyMatched, search, dateFrom, dateTo]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const detailRow = items.find((r) => r.id === detailId) ?? null;
@@ -230,73 +254,70 @@ export function ProspectsTab() {
     },
   ];
 
+  const filtersActive = executiveFilter !== "all" || statusFilter !== "all" || aiLabelFilter !== "all" || onlyMatched || !!search.trim() || !!dateFrom || !!dateTo;
+
   return (
     <>
-      <Workbench>
-        <WorkbenchMain>
-          <SectionHeader eyebrow="CRM Ejecutivos" title="Prospectos" />
-          <div className="mt-4">
-            <Table
-              columns={columns}
-              rows={items}
-              rowKey={(r) => r.id}
-              loading={loading}
-              error={fetchError}
-              onRetry={fetchRows}
-              onRowClick={(r) => setDetailId(r.id)}
-              emptyIcon={Handshake}
-              emptyTitle="Sin prospectos"
-              emptyDescription={
-                executives.length === 0
-                  ? "Agrega un ejecutivo monitoreado en la otra pestaña para empezar a ver sus prospectos aquí."
-                  : executiveFilter !== "all" || oportunityOnly || onlyMatched || search.trim()
-                    ? "Ningún prospecto cumple los filtros activos — prueba a quitar alguno (\"Solo con match en WAB\" está activo por default)."
-                    : "Agrega un ejecutivo monitoreado en la otra pestaña para empezar a ver sus prospectos aquí."
-              }
-            />
-            {totalPages > 1 && (
-              <div className="flex justify-center mt-4 pt-4 border-t border-border">
-                <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
-              </div>
-            )}
-          </div>
-        </WorkbenchMain>
+      <div className="space-y-4">
+        <SectionHeader eyebrow="CRM Ejecutivos" title="Prospectos" />
 
-        <WorkbenchAside>
-          <SectionHeader eyebrow="Filtros" title="Refinar búsqueda" />
-          <div className="mt-4 space-y-3">
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por nombre, teléfono o producto..."
-            />
-            <Select value={executiveFilter} onChange={(e) => setExecutiveFilter(e.target.value)}>
-              <option value="all">Todos los ejecutivos</option>
-              {executives.map((e) => (
-                <option key={e.id} value={e.id}>{e.label}</option>
-              ))}
-            </Select>
-            <label className="flex items-center gap-2 text-sm text-muted-darker">
-              <input
-                type="checkbox"
-                checked={oportunityOnly}
-                onChange={(e) => setOportunityOnly(e.target.checked)}
-                className="accent-accent"
-              />
-              Solo oportunidades
-            </label>
-            <label className="flex items-center gap-2 text-sm text-muted-darker">
-              <input
-                type="checkbox"
-                checked={onlyMatched}
-                onChange={(e) => setOnlyMatched(e.target.checked)}
-                className="accent-accent"
-              />
-              Solo con match en WAB
-            </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <Input
+            icon={Search}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nombre, teléfono o producto..."
+            className="w-full sm:flex-1 sm:min-w-[220px]"
+          />
+          <Select value={executiveFilter} onChange={(e) => setExecutiveFilter(e.target.value)} className="w-full sm:w-auto sm:min-w-[170px]">
+            <option value="all">Todos los ejecutivos</option>
+            {executives.map((e) => (
+              <option key={e.id} value={e.id}>{e.label}</option>
+            ))}
+          </Select>
+          <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full sm:w-auto sm:min-w-[150px]">
+            {STATUS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </Select>
+          <Select value={aiLabelFilter} onChange={(e) => setAiLabelFilter(e.target.value)} className="w-full sm:w-auto sm:min-w-[190px]">
+            {AI_LABEL_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </Select>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <DatePicker value={dateFrom} onChange={setDateFrom} placeholder="Creado desde" max={dateTo || undefined} />
+            <DatePicker value={dateTo} onChange={setDateTo} placeholder="Creado hasta" min={dateFrom || undefined} />
           </div>
-        </WorkbenchAside>
-      </Workbench>
+          <Checkbox checked={onlyMatched} onChange={setOnlyMatched} label="Solo con match en WAB" className="sm:ml-auto" />
+        </div>
+
+        <div>
+          <Table
+            columns={columns}
+            rows={items}
+            rowKey={(r) => r.id}
+            loading={loading}
+            error={fetchError}
+            onRetry={fetchRows}
+            onRowClick={(r) => setDetailId(r.id)}
+            emptyIcon={Handshake}
+            emptyTitle="Sin prospectos"
+            emptyDescription={
+              executives.length === 0
+                ? "Agrega un ejecutivo monitoreado en la otra pestaña para empezar a ver sus prospectos aquí."
+                : filtersActive
+                  ? "Ningún prospecto cumple los filtros activos — prueba a quitar alguno (\"Solo con match en WAB\" está activo por default)."
+                  : "Agrega un ejecutivo monitoreado en la otra pestaña para empezar a ver sus prospectos aquí."
+            }
+          />
+          {totalPages > 1 && (
+            <div className="flex justify-center mt-4 pt-4 border-t border-border">
+              <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+            </div>
+          )}
+        </div>
+      </div>
 
       <Modal open={!!detailRow} onClose={() => setDetailId(null)} title={detailRow?.name} size="lg">
         {detailRow && (

@@ -10,7 +10,6 @@ import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { DropdownItem } from "@/app/components/ui/dropdown";
 import { PageHeader } from "@/app/components/ui/page-header";
 import { SectionHeader } from "@/app/components/ui/section-header";
-import { Workbench, WorkbenchMain, WorkbenchAside } from "@/app/components/ui/workbench";
 import { EntityList, EntityRow } from "@/app/components/ui/entity-list";
 import { EntityAvatar } from "@/app/components/ui/avatar";
 import { Table, type TableColumn } from "@/app/components/ui/table";
@@ -445,106 +444,101 @@ function LeadsTab() {
 
   return (
     <>
-      <Workbench>
-        <WorkbenchMain>
-          <SectionHeader
-            eyebrow="Leads"
-            title="Leads calificados"
-            action={
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={Download}
-                onClick={() => setExportModalOpen(true)}
-                disabled={filtered.length === 0}
-              >
-                Exportar CSV
-              </Button>
-            }
-          />
+      <div className="space-y-4">
+        <SectionHeader
+          eyebrow="Leads"
+          title="Leads calificados"
+          action={
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Download}
+              onClick={() => setExportModalOpen(true)}
+              disabled={filtered.length === 0}
+            >
+              Exportar CSV
+            </Button>
+          }
+        />
 
-          {selectedIds.size > 0 && (
-            <p className="mt-2 text-xs text-muted-darker">{selectedIds.size} lead(s) seleccionado(s).</p>
-          )}
+        <div className="flex flex-wrap items-center gap-3">
+          <Select value={scorerFilter} onChange={(e) => setScorerFilter(e.target.value)} className="w-full sm:w-auto sm:min-w-[190px]">
+            <option value="all">Todos los calificadores</option>
+            {scorers.map(([id, name]) => (
+              <option key={id} value={id}>{name}</option>
+            ))}
+          </Select>
+          <Select value={labelFilter} onChange={(e) => setLabelFilter(e.target.value)} className="w-full sm:w-auto sm:min-w-[190px]">
+            <option value="all">Todas las calificaciones</option>
+            <option value="prioridad_alta">Prioridad alta</option>
+            <option value="oportunidad">Oportunidad</option>
+            <option value="interesado">Interesado</option>
+            <option value="frio">Frío</option>
+            <option value="descartado">Descartado</option>
+          </Select>
+          <Select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="w-full sm:w-auto sm:min-w-[170px]">
+            <option value="all">Todas las cuentas</option>
+            {accounts.map(([id, name]) => (
+              <option key={id} value={id}>{name}</option>
+            ))}
+          </Select>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <DatePicker value={dateFrom} onChange={setDateFrom} placeholder="Desde" max={dateTo || undefined} />
+            <DatePicker value={dateTo} onChange={setDateTo} placeholder="Hasta" min={dateFrom || undefined} />
+          </div>
+        </div>
 
-          <div className="mt-4">
-            <Table
-              columns={columns}
-              rows={pageRows}
-              rowKey={(r) => r.id}
-              loading={loading}
-              error={fetchError}
-              onRetry={fetchRows}
-              onRowClick={(r) => setDetailId(r.id)}
-              emptyIcon={Sparkles}
-              emptyTitle="Sin leads calificados"
-              emptyDescription="Los chats que califiques manualmente o mediante ejecución automática aparecerán aquí."
-              mobileCard={(r) => {
-                const label = columns.find((c) => c.key === "label")!;
-                return (
-                  <div className="flex items-start gap-3 min-w-0 w-full">
-                    <div onClick={(e) => e.stopPropagation()} className="pt-0.5 shrink-0">
-                      <Checkbox checked={selectedIds.has(r.id)} onChange={() => toggleSelected(r.id)} />
-                    </div>
-                    <div className="space-y-1 min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-sm truncate">{r.chat.name || r.chat.remoteJid.split("@")[0]}</span>
-                        {label.render(r)}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-darker">
-                        <span>{r.chat.remoteJid.split("@")[0]}</span>
-                        <span>·</span>
-                        <span className="truncate">{r.chat.account.name}</span>
-                        <span>·</span>
-                        <span className="truncate">{r.scorer.name}</span>
-                      </div>
-                      <p className="text-xs text-muted-darker line-clamp-2">{r.summary}</p>
-                      <p className="text-[11px] text-muted-darker">
-                        {formatDateTime(r.updatedAt)}
-                      </p>
-                    </div>
+        {selectedIds.size > 0 && (
+          <p className="text-xs text-muted-darker">{selectedIds.size} lead(s) seleccionado(s).</p>
+        )}
+
+        <div>
+          <Table
+            columns={columns}
+            rows={pageRows}
+            rowKey={(r) => r.id}
+            loading={loading}
+            error={fetchError}
+            onRetry={fetchRows}
+            onRowClick={(r) => setDetailId(r.id)}
+            emptyIcon={Sparkles}
+            emptyTitle="Sin leads calificados"
+            emptyDescription="Los chats que califiques manualmente o mediante ejecución automática aparecerán aquí."
+            mobileCard={(r) => {
+              const label = columns.find((c) => c.key === "label")!;
+              return (
+                <div className="flex items-start gap-3 min-w-0 w-full">
+                  <div onClick={(e) => e.stopPropagation()} className="pt-0.5 shrink-0">
+                    <Checkbox checked={selectedIds.has(r.id)} onChange={() => toggleSelected(r.id)} />
                   </div>
-                );
-              }}
-            />
-            {totalPages > 1 && (
-              <div className="flex justify-center mt-4 pt-4 border-t border-border">
-                <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
-              </div>
-            )}
-          </div>
-        </WorkbenchMain>
-
-        <WorkbenchAside>
-          <SectionHeader eyebrow="Filtros" title="Refinar búsqueda" />
-          <div className="mt-4 space-y-3">
-            <Select value={scorerFilter} onChange={(e) => setScorerFilter(e.target.value)}>
-              <option value="all">Todos los calificadores</option>
-              {scorers.map(([id, name]) => (
-                <option key={id} value={id}>{name}</option>
-              ))}
-            </Select>
-            <Select value={labelFilter} onChange={(e) => setLabelFilter(e.target.value)}>
-              <option value="all">Todas las calificaciones</option>
-              <option value="prioridad_alta">Prioridad alta</option>
-              <option value="oportunidad">Oportunidad</option>
-              <option value="interesado">Interesado</option>
-              <option value="frio">Frío</option>
-              <option value="descartado">Descartado</option>
-            </Select>
-            <Select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)}>
-              <option value="all">Todas las cuentas</option>
-              {accounts.map(([id, name]) => (
-                <option key={id} value={id}>{name}</option>
-              ))}
-            </Select>
-            <div className="flex gap-2">
-              <DatePicker value={dateFrom} onChange={setDateFrom} placeholder="Desde" max={dateTo || undefined} />
-              <DatePicker value={dateTo} onChange={setDateTo} placeholder="Hasta" min={dateFrom || undefined} />
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-sm truncate">{r.chat.name || r.chat.remoteJid.split("@")[0]}</span>
+                      {label.render(r)}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-darker">
+                      <span>{r.chat.remoteJid.split("@")[0]}</span>
+                      <span>·</span>
+                      <span className="truncate">{r.chat.account.name}</span>
+                      <span>·</span>
+                      <span className="truncate">{r.scorer.name}</span>
+                    </div>
+                    <p className="text-xs text-muted-darker line-clamp-2">{r.summary}</p>
+                    <p className="text-[11px] text-muted-darker">
+                      {formatDateTime(r.updatedAt)}
+                    </p>
+                  </div>
+                </div>
+              );
+            }}
+          />
+          {totalPages > 1 && (
+            <div className="flex justify-center mt-4 pt-4 border-t border-border">
+              <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
             </div>
-          </div>
-        </WorkbenchAside>
-      </Workbench>
+          )}
+        </div>
+      </div>
 
       <Modal
         open={!!detailRow}

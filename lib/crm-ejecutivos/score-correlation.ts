@@ -7,7 +7,8 @@
 // agregación en memoria, nada de anidar relaciones filtradas en un
 // findMany grande (ver el gotcha de fetchChatAttributions en CLAUDE.md).
 import { prisma } from "@/lib/prisma";
-import { matchContactsByPhoneKeys } from "./match-contacts";
+import { matchContactsByPhoneKeys, type ContactMatch } from "./match-contacts";
+import { AI_LABELS, type AiLabel } from "./ai-labels";
 
 export interface LeadScoreMatch {
   label: string;
@@ -38,12 +39,16 @@ export async function matchLeadScores(chatIds: string[]): Promise<Map<string, Le
   return map;
 }
 
-// Etiquetas de la taxonomía de 5 fases de lib/whatsapp/lead-scoring.ts, más
-// un bucket para prospectos con match en WAB pero sin ninguna evaluación IA
-// todavía. Los labels legado (tibio/caliente) de scores viejos se agrupan
-// dentro de su fila propia igual — no se intenta remapearlos.
-const AI_LABELS = ["descartado", "frio", "interesado", "oportunidad", "prioridad_alta"] as const;
-type AiLabel = (typeof AI_LABELS)[number] | "otro" | "sin_evaluacion";
+// Resuelve la "Predicción IA" de un prospecto ya cruzado con WAB — null si
+// ni siquiera tiene match (no participa en ninguna comparación). Compartida
+// con el filtro `aiLabel` de app/api/crm-ejecutivos/prospects/route.ts para
+// que ambos lugares clasifiquen exactamente igual.
+export function resolveAiLabel(contactMatch: ContactMatch | undefined, scoreMatches: Map<string, LeadScoreMatch>): AiLabel | null {
+  if (!contactMatch) return null;
+  const scoreMatch = contactMatch.chatId ? scoreMatches.get(contactMatch.chatId) : undefined;
+  if (!scoreMatch) return "sin_evaluacion";
+  return (AI_LABELS as readonly string[]).includes(scoreMatch.label) ? (scoreMatch.label as AiLabel) : "otro";
+}
 
 type RealOutcome = "cliente" | "oportunidad" | "rechazado" | "descartado" | "en_proceso";
 
@@ -117,12 +122,8 @@ export async function getLeadScoreAccuracy(trackedExecutiveId?: string): Promise
     if (!contactMatch) continue; // sin match en WAB — no participa en la comparación
     totalMatched++;
 
-    const scoreMatch = contactMatch.chatId ? scoreMatches.get(contactMatch.chatId) : undefined;
-    const aiLabel: AiLabel = scoreMatch
-      ? (AI_LABELS as readonly string[]).includes(scoreMatch.label)
-        ? (scoreMatch.label as AiLabel)
-        : "otro"
-      : "sin_evaluacion";
+    // No-null: ya se filtró `if (!contactMatch) continue` arriba.
+    const aiLabel = resolveAiLabel(contactMatch, scoreMatches)!;
 
     const outcome = realOutcomeOf(p);
     const row = rowFor(aiLabel);
