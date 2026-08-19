@@ -5,6 +5,7 @@ import { Modal } from "@/app/components/ui/modal";
 import { Button } from "@/app/components/ui/button";
 import { Banner } from "@/app/components/ui/banner";
 import { Input } from "@/app/components/ui/input";
+import { Checkbox } from "@/app/components/ui/checkbox";
 import { RESTORE_CONFIRMATION_PHRASE } from "@/lib/backup/constants";
 import { formatDateTime } from "@/lib/timezone";
 import type { RestorePreviewResponse } from "./_types";
@@ -91,15 +92,11 @@ export function RestoreConfirmModal({ open, onClose, preview, onConfirm, loading
         )}
 
         <div className="space-y-3 pt-2 border-t border-border">
-          <label className="flex items-start gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={understood}
-              onChange={(e) => setUnderstood(e.target.checked)}
-              className="mt-0.5"
-            />
-            Entiendo que esta acción reemplaza todos los datos actuales y no se puede deshacer directamente.
-          </label>
+          <Checkbox
+            checked={understood}
+            onChange={setUnderstood}
+            label="Entiendo que esta acción reemplaza todos los datos actuales y no se puede deshacer directamente."
+          />
 
           <div>
             <p className="text-xs text-muted-darker mb-1.5">

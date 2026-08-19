@@ -6,13 +6,20 @@ import { X } from "lucide-react";
 import { cn } from "./cn";
 import { useHasMounted } from "@/app/hooks/use-has-mounted";
 
-type ModalSize = "sm" | "md" | "lg" | "xl";
+type ModalSize = "sm" | "md" | "lg" | "xl" | "2xl";
 
 const SIZE: Record<ModalSize, string> = {
   sm: "max-w-sm",
   md: "max-w-md",
   lg: "max-w-lg",
   xl: "max-w-2xl",
+  // Para modales con contenido de 2 columnas (ej. formulario + preview en
+  // vivo lado a lado) que se quedan cortos en xl. Antes de esto, el único
+  // caso (plantillas/_form.tsx) resolvía el ancho apilando un className
+  // suelto ("max-w-3xl") encima de size="xl" — dos utilidades max-w-*
+  // conflictivas en el mismo elemento (cn() no usa tailwind-merge, así que
+  // cuál "gana" depende del orden interno de Tailwind, no es intencional).
+  "2xl": "max-w-3xl",
 };
 
 export interface ModalProps {

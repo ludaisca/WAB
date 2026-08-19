@@ -157,7 +157,7 @@ export function TrendChart({
       )}
       <div style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={{ top: 6, right: 8, bottom: 0, left: -14 }}>
+          <AreaChart data={data} margin={{ top: 6, right: 8, bottom: 0, left: -4 }}>
             <defs>
               {visible.map((s, i) => (
                 <linearGradient key={s.key} id={`${uid}-${s.key}`} x1="0" y1="0" x2="0" y2="1">

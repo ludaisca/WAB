@@ -24,11 +24,17 @@ interface UsageData {
   entries: UsageEntry[];
 }
 
+// Duplicado a propósito de estadisticas/_view.tsx:formatCost (y su copia en
+// reportes/_dashboard.tsx) — mismo criterio: evita acoplar este componente a
+// un helper privado de otra pantalla. Debe mantenerse IDÉNTICO a esas dos
+// copias — antes le faltaba el corte en $100 (redondeo + separador de miles),
+// así que un costo alto se veía distinto aquí que en Estadísticas/Reportes.
 function formatCost(value: number): string {
   if (value === 0) return "$0";
   if (value < 0.01) return `$${value.toFixed(4)}`;
   if (value < 1) return `$${value.toFixed(3)}`;
-  return `$${value.toFixed(2)}`;
+  if (value < 100) return `$${value.toFixed(2)}`;
+  return `$${Math.round(value).toLocaleString()}`;
 }
 
 export function ChatCostBadge({ chatId }: { chatId: string }) {

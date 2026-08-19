@@ -285,8 +285,7 @@ export function TemplateFormModal({ open, onClose, accounts, defaultAccountId = 
       onClose={() => { resetForm(); onClose(); }}
       title="Nueva plantilla de marketing"
       description="Crea una plantilla que será enviada a revisión por Meta."
-      size="xl"
-      className="max-w-3xl"
+      size="2xl"
       footer={
         <>
           <Button variant="secondary" onClick={() => { resetForm(); onClose(); }}>

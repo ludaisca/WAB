@@ -191,9 +191,14 @@ export async function importNewLeadsForSource(
   const rotatingIdx = rotatingValues.length > 0 ? source.rotatingParamIndex : null;
   let cursor = source.rotationCursor;
 
+  // "Facebook Ads:" — mismo nombre que el ítem de nav/página de esta feature
+  // (antes decía "Lead Ads:", desalineado desde que /whatsapp/campanas/automatizacion
+  // se renombró a "Facebook Ads"). Los 6 tags ya creados con el prefijo viejo
+  // (~457 contactos/chats reales) no se tocan aquí — es un rename de datos de
+  // producción, se hace aparte si el usuario lo confirma.
   const leadAdsTag = await prisma.tag.upsert({
-    where: { name: `Lead Ads: ${source.name}` },
-    create: { name: `Lead Ads: ${source.name}` },
+    where: { name: `Facebook Ads: ${source.name}` },
+    create: { name: `Facebook Ads: ${source.name}` },
     update: {},
   });
 

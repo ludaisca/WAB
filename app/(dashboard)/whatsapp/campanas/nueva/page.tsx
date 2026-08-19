@@ -8,6 +8,7 @@ import { Card, CardBody, CardFooter } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
+import { Switch } from "@/app/components/ui/switch";
 import { SearchableSelect } from "@/app/components/ui/searchable-select";
 import { Badge } from "@/app/components/ui/badge";
 import { FormField } from "@/app/components/ui/form-field";
@@ -469,7 +470,7 @@ export default function NewCampaignPage() {
                     <p className="text-sm font-medium">Enviar ahora</p>
                     <p className="text-xs text-muted-darker">La campaña comenzará a enviarse inmediatamente</p>
                   </div>
-                  <input type="checkbox" checked={sendNow} onChange={e => setSendNow(e.target.checked)} className="h-5 w-5 rounded border-border text-accent focus:ring-accent" />
+                  <Switch checked={sendNow} onCheckedChange={setSendNow} label="Enviar ahora" />
                 </div>
 
                 {!sendNow && (

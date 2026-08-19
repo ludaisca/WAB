@@ -263,7 +263,7 @@ export default function LeadSheetSourceDetailPage() {
         throw new Error(data.error ?? "Error al eliminar");
       }
       success("Fuente eliminada");
-      router.push("/whatsapp/campanas");
+      router.push("/whatsapp/campanas/automatizacion");
     } catch (err) {
       toastError(err instanceof Error ? err.message : "Error");
     }
@@ -314,8 +314,8 @@ export default function LeadSheetSourceDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link href="/whatsapp/campanas" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground transition-colors mb-3">
-        <ArrowLeft size={14} /> Volver a campañas
+      <Link href="/whatsapp/campanas/automatizacion" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground transition-colors mb-3">
+        <ArrowLeft size={14} /> Volver a Facebook Ads
       </Link>
 
       <div className="flex items-start justify-between gap-4 flex-wrap">

@@ -56,11 +56,20 @@ function SidebarContent({
 }) {
   const pathname = usePathname();
 
+  // Un item cuyo href es prefijo del de otro (ej. /whatsapp/campanas y
+  // /whatsapp/campanas/automatizacion, hoy hermanos en el sidebar) haría
+  // match simultáneo por startsWith en cualquier ruta bajo el más
+  // específico — se calcula una sola vez cuál es el match más largo entre
+  // TODOS los items y solo ese se resalta, en vez de que cada renderLink
+  // decida de forma aislada.
+  const allItems = nav.flatMap((groupOrItem) => ("items" in groupOrItem ? groupOrItem.items : [groupOrItem]));
+  const activeHref = allItems
+    .filter((item) => (item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + "/")))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+
   const renderLink = (item: NavItem) => {
     const Icon = item.icon;
-    const active = item.exact
-      ? pathname === item.href
-      : pathname === item.href || pathname.startsWith(item.href + "/");
+    const active = item.href === activeHref;
 
     return (
       <li key={item.href} className="relative w-full">
@@ -73,7 +82,12 @@ function SidebarContent({
         <Link
           href={item.href}
           onClick={onClose}
+          // Colapsado, el label de texto no se renderiza (solo el ícono) — sin
+          // esto el link quedaría sin nombre accesible para lectores de
+          // pantalla. `title` además da el tooltip nativo al pasar el mouse.
           title={collapsed ? item.label : undefined}
+          aria-label={collapsed ? item.label : undefined}
+          aria-current={active ? "page" : undefined}
           className={cn(
             "flex items-center text-sm font-medium transition-all duration-150",
             collapsed ? "justify-center w-10 h-10 mx-auto" : "gap-3 px-3 py-2.5",
@@ -84,7 +98,7 @@ function SidebarContent({
               : "rounded-lg text-muted hover:bg-surface-light hover:text-foreground"
           )}
         >
-          <Icon size={18} className="shrink-0" />
+          <Icon size={18} className="shrink-0" aria-hidden="true" />
           {!collapsed && item.label}
         </Link>
       </li>
@@ -108,21 +122,27 @@ function SidebarContent({
         )}
       </div>
 
-      <nav className={cn("flex-1 overflow-y-auto w-full", collapsed ? "px-1" : "px-3")}>
+      <nav aria-label="Navegación principal" className={cn("flex-1 overflow-y-auto w-full", collapsed ? "px-1" : "px-3")}>
         <div className="flex flex-col gap-5 w-full">
           {nav.map((groupOrItem, index) => {
             const isGroup = "items" in groupOrItem;
             if (isGroup) {
               const group = groupOrItem as NavGroup;
               if (group.items.length === 0) return null;
+              // El título visual del grupo ("CAMPAÑAS", "AJUSTES"...) no
+              // decía nada por sí solo a un lector de pantalla — no estaba
+              // asociado a la lista de links de abajo. aria-labelledby lo
+              // conecta, para que "Campañas Masivas" se anuncie agrupado
+              // bajo "Campañas" y no como un link suelto.
+              const groupTitleId = !collapsed && group.title ? `nav-group-${index}` : undefined;
               return (
                 <div key={group.title || index} className="flex flex-col gap-1 w-full">
                   {!collapsed && group.title && (
-                    <div className="px-3 text-[10px] font-bold text-muted-darker tracking-wider uppercase mb-1">
+                    <div id={groupTitleId} className="px-3 text-[10px] font-bold text-muted-darker tracking-wider uppercase mb-1">
                       {group.title}
                     </div>
                   )}
-                  <ul className="flex flex-col gap-0.5 w-full">
+                  <ul aria-labelledby={groupTitleId} className="flex flex-col gap-0.5 w-full">
                     {group.items.map(renderLink)}
                   </ul>
                 </div>
@@ -205,6 +225,15 @@ export function AppShell({
 
   return (
     <div className={cn("flex bg-background", fullBleed ? "h-svh" : "min-h-svh")}>
+      {/* Invisible hasta recibir foco por teclado — deja saltar el sidebar
+          completo (y en móvil, el header) sin tener que tabular por cada
+          link del menú para llegar al contenido de la página. */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:rounded-lg focus:bg-accent focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-on-accent"
+      >
+        Saltar al contenido principal
+      </a>
       <aside
         className={cn(
           "hidden md:flex border-r border-border/60 bg-background flex-col shrink-0 transition-all duration-200",
@@ -221,7 +250,13 @@ export function AppShell({
         />
       </aside>
 
-      <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} side="left" width="w-64">
+      <Drawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        side="left"
+        width="w-64"
+        ariaLabel="Menú de navegación"
+      >
         <SidebarContent
           nav={nav}
           accent={accent}
@@ -281,6 +316,8 @@ export function AppShell({
         </header>
 
         <main
+          id="main-content"
+          tabIndex={-1}
           className={cn(
             "flex-1 animate-fade-in",
             fullBleed ? "flex flex-col min-h-0 overflow-hidden" : "p-4 md:p-6 lg:p-8"

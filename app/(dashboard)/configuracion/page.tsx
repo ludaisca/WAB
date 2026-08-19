@@ -38,6 +38,18 @@ export default function SettingsPage() {
   const initials = name.slice(0, 2).toUpperCase();
 
   const [newName, setNewName] = useState(name);
+
+  // useSession() arranca con user undefined mientras carga — el useState de
+  // arriba solo captura ese valor en el PRIMER render, así que sin este
+  // efecto el campo se quedaba pegado en el fallback "Usuario" para siempre
+  // (incluso después de que el resto de la página ya mostraba el nombre
+  // real arriba, en la tarjeta de perfil). "Guardar nombre" sobrescribía
+  // entonces el nombre real con el string genérico "Usuario" si el usuario
+  // no se daba cuenta antes de guardar.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates local editable state once session.user.name resolves async (see comment above)
+    if (user?.name) setNewName(user.name);
+  }, [user?.name]);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
