@@ -13,6 +13,11 @@ export interface DrawerProps {
   onClose: () => void;
   side?: DrawerSide;
   title?: string;
+  /** Nombre accesible para lectores de pantalla cuando no hay `title` visible
+   *  (el header con texto + botón "Cerrar" no siempre encaja visualmente —
+   *  ej. el drawer de navegación móvil ya trae su propio logo/branding). Sin
+   *  ninguno de los dos, el diálogo no tiene nombre accesible. */
+  ariaLabel?: string;
   width?: string;
   className?: string;
   children: React.ReactNode;
@@ -23,6 +28,7 @@ export function Drawer({
   onClose,
   side = "left",
   title,
+  ariaLabel,
   width = "w-72",
   className,
   children,
@@ -117,6 +123,7 @@ export function Drawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
+        aria-label={!title ? ariaLabel : undefined}
         className={cn(
           "absolute top-0 bottom-0 bg-surface border-border flex flex-col shadow-lg",
           side === "left" ? "border-r" : "border-l",

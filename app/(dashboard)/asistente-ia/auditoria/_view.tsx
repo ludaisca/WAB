@@ -7,6 +7,7 @@ import { Table, type TableColumn } from "@/app/components/ui/table";
 import { Badge } from "@/app/components/ui/badge";
 import { Select } from "@/app/components/ui/select";
 import { Pagination } from "@/app/components/ui/pagination";
+import { formatDateTime } from "@/lib/timezone";
 
 interface ActionRow {
   id: string;
@@ -84,13 +85,12 @@ export function AuditoriaView({ initialActions }: { initialActions: ActionRow[] 
       key: "createdAt",
       header: "Fecha",
       hideBelow: "sm",
-      // timeZone explícito — sin esto, el servidor (UTC en Docker) y el navegador
-      // del usuario (su zona local) formatean distinto y React tira un hydration
-      // mismatch al montar este Client Component con el string ya renderizado en SSR.
+      // formatDateTime() ya fija timeZone explícitamente (CDMX) — sin eso, el
+      // servidor (UTC en Docker) y el navegador del usuario (su zona local)
+      // formatean distinto y React tira un hydration mismatch al montar este
+      // Client Component con el string ya renderizado en SSR.
       render: (row) => (
-        <span className="font-mono text-xs text-muted">
-          {new Date(row.createdAt).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short", timeZone: "America/Mexico_City" })}
-        </span>
+        <span className="font-mono text-xs text-muted">{formatDateTime(row.createdAt)}</span>
       ),
     },
   ];

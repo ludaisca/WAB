@@ -20,6 +20,19 @@ const LABELS: Record<string, string> = {
   contactos: "Contactos",
   nueva: "Nueva",
   nuevo: "Nuevo",
+  "asistente-ia": "Asistente IA",
+  auditoria: "Auditoría",
+  backups: "Backups",
+  "crm-ejecutivos": "CRM Ejecutivos",
+  exportaciones: "Exportaciones",
+  reportes: "Reportes",
+  // "automatizacion" tiene su propia página (/whatsapp/campanas/automatizacion,
+  // ver page.tsx ahí) — antes era una pestaña client-side sin ruta propia, lo
+  // que dejaba este segmento clicable hacia una URL sin page.tsx y Next.js
+  // caía al sibling dinámico campanas/[id]/page.tsx ("Campaña no encontrada").
+  // Ahora que tiene página real, es un segmento navegable normal — mismo
+  // nombre que el ítem de sidebar/PageHeader para no decir dos cosas distintas.
+  automatizacion: "Facebook Ads",
 };
 
 export function Breadcrumb() {

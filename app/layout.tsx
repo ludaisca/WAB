@@ -47,6 +47,7 @@ export default function RootLayout({
       lang="es"
       className={`${fraunces.variable} ${manrope.variable} ${plexMono.variable} antialiased`}
       suppressHydrationWarning
+      data-scroll-behavior="smooth"
     >
       <body className="min-h-dvh flex flex-col bg-background text-foreground">
         <ThemeProvider attribute="class" defaultTheme="light" disableTransitionOnChange>

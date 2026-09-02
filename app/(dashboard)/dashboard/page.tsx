@@ -136,7 +136,7 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-10">
       <div className="animate-fade-in-up">
-        <PageHeader title="Panel" description="Resumen de tu actividad en WhatsApp" />
+        <PageHeader title="Panel" description="Resumen de tu actividad en WhatsApp." />
       </div>
 
       <div className="animate-fade-in-up animation-delay-100">

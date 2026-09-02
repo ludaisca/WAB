@@ -18,6 +18,7 @@ import {
   DatabaseBackup,
   FileSpreadsheet,
   Handshake,
+  Workflow,
 } from "lucide-react";
 import { AppShell, type NavItem, type NavGroup } from "@/app/components/ui/app-shell";
 import { NotificationBell } from "@/app/components/ui/notification-bell";
@@ -75,6 +76,17 @@ export function DashboardShell({
           items: [
             { href: "/dashboard",               label: "Panel",            icon: LayoutDashboard, exact: true },
             { href: "/estadisticas",            label: "Estadísticas",     icon: BarChart3, exact: true },
+            // Reportes y CRM Ejecutivos vivían en "Ajustes" — ninguno de los
+            // dos es configuración del sistema, son herramientas de análisis
+            // (reportes .xlsx / dashboard en vivo; comparativa IA vs.
+            // resultado real de otro CRM), así que se agrupan aquí en vez de
+            // quedar mezclados con Usuarios/Backups/Configuración.
+            ...(isAdmin
+              ? [{ href: "/reportes" as const, label: "Reportes", icon: FileSpreadsheet as React.ElementType }]
+              : []),
+            ...(isAdmin
+              ? [{ href: "/crm-ejecutivos" as const, label: "CRM Ejecutivos", icon: Handshake as React.ElementType }]
+              : []),
           ],
         },
         {
@@ -107,7 +119,18 @@ export function DashboardShell({
           title: "Difusión",
           items: [
             { href: "/whatsapp/plantillas",     label: "Plantillas",       icon: FileText },
-            { href: "/whatsapp/campanas",       label: "Campañas Masivas", icon: Megaphone },
+          ],
+        },
+        {
+          // Antes "Campañas Masivas" y la automatización de leads (Facebook
+          // Ads) vivían como pestañas dentro de una sola página/ítem de nav —
+          // ahora son rutas propias, agrupadas aquí como sub-elementos para
+          // que la diferencia (envío manual vs. automático) sea explícita
+          // desde el sidebar y no solo dentro de la página.
+          title: "Campañas",
+          items: [
+            { href: "/whatsapp/campanas",                label: "Campañas Masivas", icon: Megaphone },
+            { href: "/whatsapp/campanas/automatizacion",  label: "Facebook Ads",     icon: Workflow },
           ],
         },
         {
@@ -117,13 +140,7 @@ export function DashboardShell({
               ? [{ href: "/usuarios" as const,  label: "Usuarios",         icon: Users as React.ElementType, exact: true }]
               : []),
             ...(isAdmin
-              ? [{ href: "/reportes" as const, label: "Reportes", icon: FileSpreadsheet as React.ElementType }]
-              : []),
-            ...(isAdmin
               ? [{ href: "/configuracion/backups" as const, label: "Backups", icon: DatabaseBackup as React.ElementType }]
-              : []),
-            ...(isAdmin
-              ? [{ href: "/crm-ejecutivos" as const, label: "CRM Ejecutivos", icon: Handshake as React.ElementType }]
               : []),
             { href: "/configuracion",           label: "Configuración",    icon: Settings, exact: true },
           ],

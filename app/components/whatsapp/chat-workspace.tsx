@@ -1150,7 +1150,7 @@ export function ChatWorkspace({
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-xs truncate">{attachment.name}</p>
-                    <p className="text-[11px] text-muted-darker">{(attachment.size / 1024).toFixed(0)} KB</p>
+                    <p className="text-[11px] text-muted-darker">{formatBytes(attachment.size)}</p>
                   </div>
                   <button
                     type="button"

@@ -157,8 +157,11 @@ export function ReportesDashboard({ dateFrom, dateTo }: { dateFrom: string; date
 
       {diagnostics.issuesFound > 0 && (
         <Banner tone="warning" title="Hallazgos de diagnóstico en este rango">
-          {diagnostics.high} de alta severidad, {diagnostics.medium} de media — mismo barrido que la hoja
-          &quot;Diagnóstico&quot; del reporte .xlsx.
+          {/* Un solo string armado en JS, no JSXText partido en varias líneas — el trimming
+              de espacios de JSX entre una {expresión} y el texto que sigue, cuando ese texto
+              envuelve a la siguiente línea, se traga el espacio inicial en este toolchain
+              (confirmado con Turbopack/SWC: "44de media" en vez de "44 de media"). */}
+          {`${diagnostics.high} de alta severidad, ${diagnostics.medium} de media — mismo barrido que la hoja "Diagnóstico" del reporte .xlsx.`}
         </Banner>
       )}
 

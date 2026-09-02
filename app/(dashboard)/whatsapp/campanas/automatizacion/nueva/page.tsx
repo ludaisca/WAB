@@ -277,8 +277,8 @@ export default function NewLeadSheetSourcePage() {
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
-      <Link href="/whatsapp/campanas" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground transition-colors mb-3">
-        <ArrowLeft size={14} /> Volver a campañas
+      <Link href="/whatsapp/campanas/automatizacion" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground transition-colors mb-3">
+        <ArrowLeft size={14} /> Volver a Facebook Ads
       </Link>
       <h1 className="text-2xl font-bold tracking-tight">Nueva fuente de leads</h1>
 
@@ -507,7 +507,7 @@ export default function NewLeadSheetSourcePage() {
             <Button type="submit" icon={saving ? undefined : Save} disabled={saving}>
               {saving ? <Spinner /> : "Conectar fuente"}
             </Button>
-            <Button href="/whatsapp/campanas" type="button" variant="secondary">Cancelar</Button>
+            <Button href="/whatsapp/campanas/automatizacion" type="button" variant="secondary">Cancelar</Button>
           </CardFooter>
         </form>
       </Card>
