@@ -16,9 +16,11 @@ const nextConfig: NextConfig = {
     "*.ngrok-free.dev",
     "*.ngrok-free.app",
     "*.ngrok.io",
-    "rocky-server",
-    "ghia-cachyos",
-    "asus-fedora",
+    // Nombres por los que se alcanza el dev server. El host se renombró a
+    // "ludaisca" el 2026-09-01 (antes "fedora-server", y "rocky-server" antes
+    // de eso); la laptop ASUS es "ldic" (antes "asus-fedora").
+    "ludaisca",
+    "ldic",
     "fedora",
     "192.168.100.101",
   ],
