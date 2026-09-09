@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
-import { matchContactsByPhoneKeys, type ContactMatch } from "@/lib/crm-ejecutivos/match-contacts";
+import { matchContactsByPhoneKeys, type ContactMatch, type ContactMatchEntry } from "@/lib/crm-ejecutivos/match-contacts";
 import { matchLeadScores, resolveAiLabel } from "@/lib/crm-ejecutivos/score-correlation";
 import { zonedDateTimeToUtc } from "@/lib/timezone";
 
@@ -22,6 +22,18 @@ function statusWhere(status: string): Prisma.ExternalProspectWhereInput | null {
   }
 }
 
+function serializeMatchEntry(e: ContactMatchEntry) {
+  return { ...e, lastMessageAt: e.lastMessageAt?.toISOString() ?? null };
+}
+
+// El cliente recibe `primary` (usado por default para el link "Ver chat" y
+// la Predicción IA) y `all` (todas las coincidencias, para mostrar cuando el
+// teléfono aparece en más de una cuenta — ver el comentario en match-contacts.ts).
+function serializeMatch(match: ContactMatch | null) {
+  if (!match) return null;
+  return { primary: serializeMatchEntry(match.primary), all: match.all.map(serializeMatchEntry) };
+}
+
 export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -34,6 +46,13 @@ export async function GET(req: Request) {
     const status = searchParams.get("status");
     const onlyMatched = searchParams.get("onlyMatched") === "true";
     const aiLabel = searchParams.get("aiLabel");
+    // Un prospecto "sin_evaluacion" tiene match en WAB pero nunca generó una
+    // conversación/calificación real ahí — típicamente fue asignado al
+    // ejecutivo por otro canal (llamada, etc.), lo cual está bien, pero no
+    // aporta nada a "trazar la ruta de leads calificados en WAB" (el uso
+    // principal de este módulo). Este flag oculta ese ruido sin obligar a
+    // elegir una a una las 5 etiquetas reales en el select de Predicción IA.
+    const excludeUnevaluated = searchParams.get("excludeUnevaluated") === "true";
     const search = searchParams.get("search")?.trim();
     const dateFrom = searchParams.get("dateFrom");
     const dateTo = searchParams.get("dateTo");
@@ -64,16 +83,16 @@ export async function GET(req: Request) {
         : {}),
     };
 
-    // "Solo con match en WAB" y el filtro "Predicción IA" tienen que
-    // resolverse ANTES de paginar (no solo ocultar filas de la página
-    // actual) — si no, "Siguiente" seguiría avanzando por prospectos que no
-    // cumplen y el conteo/paginación no cuadrarían con lo que el usuario
-    // realmente ve. Un aiLabel específico implica matched (solo un prospecto
-    // con match puede tener predicción), así que ambos comparten la misma
-    // resolución: se cruza sobre TODOS los phoneKey distintos que matchean
-    // el resto de filtros (acotado por el volumen real de ExternalProspect,
-    // no de Contact) y se acota el where con `phoneKey: { in: ... }`.
-    const needsMatchResolution = onlyMatched || (!!aiLabel && aiLabel !== "all");
+    // "Solo con match en WAB", "Predicción IA" y "excluir sin evaluar"
+    // tienen que resolverse ANTES de paginar (no solo ocultar filas de la
+    // página actual) — si no, "Siguiente" seguiría avanzando por prospectos
+    // que no cumplen y el conteo/paginación no cuadrarían con lo que el
+    // usuario realmente ve. Los tres comparten la misma resolución: se
+    // cruza sobre TODOS los phoneKey distintos que matchean el resto de
+    // filtros (acotado por el volumen real de ExternalProspect, no de
+    // Contact) y se acota el where con `phoneKey: { in: ... }`.
+    const hasExactAiLabel = !!aiLabel && aiLabel !== "all";
+    const needsMatchResolution = onlyMatched || excludeUnevaluated || hasExactAiLabel;
     let matchedKeysPrefetch: Map<string, ContactMatch> | null = null;
     if (needsMatchResolution) {
       const distinct = await prisma.externalProspect.findMany({
@@ -83,14 +102,22 @@ export async function GET(req: Request) {
       });
       matchedKeysPrefetch = await matchContactsByPhoneKeys(distinct.map((d) => d.phoneKey));
 
-      if (aiLabel && aiLabel !== "all") {
+      if (hasExactAiLabel || excludeUnevaluated) {
         const candidateChatIds = Array.from(matchedKeysPrefetch.values())
-          .map((m) => m.chatId)
+          .map((m) => m.primary.chatId)
           .filter((id): id is string => !!id);
         const candidateScores = await matchLeadScores(candidateChatIds);
         const keep = new Set<string>();
         for (const [phoneKey, match] of matchedKeysPrefetch) {
-          if (resolveAiLabel(match, candidateScores) === aiLabel) keep.add(phoneKey);
+          const label = resolveAiLabel(match, candidateScores);
+          // Un aiLabel exacto (incluyendo "sin_evaluacion" elegido a propósito
+          // en el select) manda sobre excludeUnevaluated — es una selección
+          // más específica que el checkbox de "ocultar ruido".
+          if (hasExactAiLabel) {
+            if (label === aiLabel) keep.add(phoneKey);
+          } else if (label && label !== "sin_evaluacion") {
+            keep.add(phoneKey);
+          }
         }
         where.phoneKey = { in: Array.from(keep) };
       } else {
@@ -118,13 +145,13 @@ export async function GET(req: Request) {
     // página actual (como mucho PAGE_SIZE), mismo criterio de "bounded by
     // page" que matchContactsByPhoneKeys de arriba.
     const chatIds = rows
-      .map((r) => matches.get(r.phoneKey)?.chatId)
+      .map((r) => matches.get(r.phoneKey)?.primary.chatId)
       .filter((id): id is string => !!id);
     const scores = await matchLeadScores(chatIds);
 
     const items = rows.map((r) => {
       const match = matches.get(r.phoneKey) ?? null;
-      const score = match?.chatId ? scores.get(match.chatId) : undefined;
+      const score = match?.primary.chatId ? scores.get(match.primary.chatId) : undefined;
       return {
         id: r.id,
         name: r.name,
@@ -153,7 +180,7 @@ export async function GET(req: Request) {
         sourceCreatedAt: r.sourceCreatedAt.toISOString(),
         sourceUpdatedAt: r.sourceUpdatedAt.toISOString(),
         trackedExecutive: r.trackedExecutive,
-        wab: match,
+        wab: serializeMatch(match),
         aiScore: score ? { label: score.label, score: score.score, scorerName: score.scorerName, updatedAt: score.updatedAt.toISOString() } : null,
       };
     });

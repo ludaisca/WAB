@@ -48,7 +48,10 @@ export function ExecutiveFormModal({ open, onClose, editItem, onSaved }: Props) 
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al guardar");
-      success(isEditing ? "Ejecutivo actualizado" : "Ejecutivo agregado — se sincronizará en el próximo tick (cada 15 min) o al pulsar \"Sincronizar ahora\"");
+      // La sincronización automática (tick cada 15 min) está desactivada a
+      // propósito por ahora (ver el bloque comentado en lib/workers/index.ts)
+      // — no prometer un refresco que no va a pasar solo.
+      success(isEditing ? "Ejecutivo actualizado" : "Ejecutivo agregado — pulsa \"Sincronizar ahora\" para traer sus prospectos (la sincronización automática está desactivada por ahora)");
       onSaved();
       onClose();
     } catch (err) {
@@ -106,7 +109,7 @@ export function ExecutiveFormModal({ open, onClose, editItem, onSaved }: Props) 
             <div id={id} className="flex items-center gap-2">
               <Switch checked={active} onCheckedChange={setActive} />
               <span className="text-sm text-muted-darker">
-                {active ? "Se sincroniza en cada tick" : "Pausado — no se sincroniza"}
+                {active ? "Incluido al pulsar \"Sincronizar ahora\"" : "Pausado — no se sincroniza"}
               </span>
             </div>
           )}

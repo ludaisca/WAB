@@ -177,7 +177,10 @@ export function AccuracyTab() {
           resultado real registrado por el ejecutivo en el CRM externo — solo
           cuenta prospectos con match confirmado en WAB. &quot;% Conversión&quot;
           es (cliente + oportunidad) sobre lo ya resuelto (excluye &quot;en
-          proceso&quot;, que todavía no tiene desenlace).
+          proceso&quot;, que todavía no tiene desenlace). Cuando un teléfono
+          aparece en más de una cuenta de WhatsApp, se usa la conversación con
+          actividad más reciente — revisa el detalle de un prospecto en la
+          pestaña Prospectos para ver todas las cuentas donde aparece.
         </p>
         <div className="mt-4">
           <KpiStrip items={kpiItems} size="compact" />

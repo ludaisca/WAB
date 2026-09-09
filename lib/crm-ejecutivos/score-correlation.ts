@@ -45,7 +45,10 @@ export async function matchLeadScores(chatIds: string[]): Promise<Map<string, Le
 // que ambos lugares clasifiquen exactamente igual.
 export function resolveAiLabel(contactMatch: ContactMatch | undefined, scoreMatches: Map<string, LeadScoreMatch>): AiLabel | null {
   if (!contactMatch) return null;
-  const scoreMatch = contactMatch.chatId ? scoreMatches.get(contactMatch.chatId) : undefined;
+  // Cuando el teléfono matchea en más de una cuenta, la comparación usa la
+  // de actividad más reciente (contactMatch.primary) — mismo criterio que
+  // el link "Ver chat" por default en la UI, para que ambos no diverjan.
+  const scoreMatch = contactMatch.primary.chatId ? scoreMatches.get(contactMatch.primary.chatId) : undefined;
   if (!scoreMatch) return "sin_evaluacion";
   return (AI_LABELS as readonly string[]).includes(scoreMatch.label) ? (scoreMatch.label as AiLabel) : "otro";
 }
@@ -99,7 +102,7 @@ export async function getLeadScoreAccuracy(trackedExecutiveId?: string): Promise
   const contactMatches = await matchContactsByPhoneKeys(distinctKeys);
 
   const chatIds = Array.from(contactMatches.values())
-    .map((m) => m.chatId)
+    .map((m) => m.primary.chatId)
     .filter((id): id is string => id !== null);
   const scoreMatches = await matchLeadScores(chatIds);
 
