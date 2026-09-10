@@ -15,6 +15,7 @@ import { Modal } from "@/app/components/ui/modal";
 import { formatDateTime } from "@/lib/timezone";
 import { labelText, labelTone } from "@/lib/whatsapp/export-columns";
 import { AI_LABELS, aiLabelText } from "@/lib/crm-ejecutivos/ai-labels";
+import { detectForeignSigner } from "@/lib/crm-ejecutivos/tracking-signer";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "Todos los estados" },
@@ -80,8 +81,25 @@ interface ProspectRow {
   sourceCreatedAt: string;
   sourceUpdatedAt: string;
   trackedExecutive: { id: string; label: string; phone: string };
-  wab: { contactId: string; chatId: string | null; accountId: string } | null;
+  wab: WabMatch | null;
   aiScore: AiScoreMatch | null;
+}
+
+interface WabMatchEntry {
+  contactId: string;
+  chatId: string | null;
+  accountId: string;
+  accountName: string;
+  lastMessageAt: string | null;
+}
+
+// `all` incluye a `primary` — cuando el teléfono aparece en más de una
+// cuenta de WhatsApp (nada raro en un negocio multi-cuenta), `all.length`
+// será mayor a 1 y la UI lo muestra en vez de esconder la ambigüedad detrás
+// de una sola elección (ver el comentario en lib/crm-ejecutivos/match-contacts.ts).
+interface WabMatch {
+  primary: WabMatchEntry;
+  all: WabMatchEntry[];
 }
 
 function AiScoreBadge({ aiScore }: { aiScore: AiScoreMatch | null }) {
@@ -97,23 +115,39 @@ function AiScoreBadge({ aiScore }: { aiScore: AiScoreMatch | null }) {
 // Historial completo de seguimientos — line de tiempo simple (sin componente
 // de gráfica de por medio, es una lista cronológica de texto). `action` es
 // el canal usado por el ejecutivo (Whatsapp/Llamada/Seguimiento Automatico).
-function TrackingTimeline({ trackings }: { trackings: TrackingEntry[] }) {
+//
+// "Otro agente": Limenka no expone autoría por seguimiento (ver el
+// comentario en lib/crm-ejecutivos/tracking-signer.ts) — se marca cuando el
+// texto trae una autopresentación ("Soy el/la...") que no coincide con el
+// ejecutivo asignado. Confirmado poco frecuente (2 de 146 leads auditados,
+// 2026-09) y siempre por firma detectada, nunca por ausencia de firma.
+function TrackingTimeline({ trackings, executiveLabel }: { trackings: TrackingEntry[]; executiveLabel: string }) {
+  const foreignCount = trackings.filter((t) => detectForeignSigner(t.observations, executiveLabel)).length;
   return (
     <div>
-      <p className="text-xs text-muted-darker mb-2">Historial de seguimientos ({trackings.length})</p>
+      <p className="text-xs text-muted-darker mb-2">
+        Historial de seguimientos ({trackings.length})
+        {foreignCount > 0 && ` — ${foreignCount} de otro agente`}
+      </p>
       <ol className="space-y-3 border-l border-border pl-4">
-        {trackings.map((t) => (
-          <li key={t.id} className="relative">
-            <span className="absolute -left-[18px] top-1 h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge tone="neutral" size="sm">{t.action || "Sin especificar"}</Badge>
-              <span className="text-[11px] text-muted-darker">{formatDateTime(t.createdAt)}</span>
-            </div>
-            {(t.observations || t.reason) && (
-              <p className="text-sm text-foreground mt-1">{t.observations || t.reason}</p>
-            )}
-          </li>
-        ))}
+        {trackings.map((t) => {
+          const foreignSigner = detectForeignSigner(t.observations, executiveLabel);
+          return (
+            <li key={t.id} className="relative">
+              <span className="absolute -left-[18px] top-1 h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone="neutral" size="sm">{t.action || "Sin especificar"}</Badge>
+                <span className="text-[11px] text-muted-darker">{formatDateTime(t.createdAt)}</span>
+                {foreignSigner && (
+                  <Badge tone="warning" size="sm">Otro agente: {foreignSigner}</Badge>
+                )}
+              </div>
+              {(t.observations || t.reason) && (
+                <p className="text-sm text-foreground mt-1">{t.observations || t.reason}</p>
+              )}
+            </li>
+          );
+        })}
       </ol>
     </div>
   );
@@ -144,6 +178,12 @@ export function ProspectsTab() {
   // míos en WAB", no el historial completo del CRM externo. El checkbox
   // sigue disponible para desmarcarlo y ver todo cuando haga falta.
   const [onlyMatched, setOnlyMatched] = useState(true);
+  // También activo por default (Luis, 2026-09) — "sin evaluación IA" son
+  // leads que el ejecutivo trabaja por otro canal y nunca generaron
+  // conversación/calificación en WAB (asignación legítima, pero ruido para
+  // este módulo). Lo que importa aquí es trazar la ruta de los que SÍ se
+  // calificaron dentro de WAB.
+  const [excludeUnevaluated, setExcludeUnevaluated] = useState(true);
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
 
@@ -163,6 +203,7 @@ export function ProspectsTab() {
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (aiLabelFilter !== "all") params.set("aiLabel", aiLabelFilter);
       if (onlyMatched) params.set("onlyMatched", "true");
+      if (excludeUnevaluated) params.set("excludeUnevaluated", "true");
       if (search.trim()) params.set("search", search.trim());
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
@@ -178,7 +219,7 @@ export function ProspectsTab() {
     } finally {
       setLoading(false);
     }
-  }, [page, executiveFilter, statusFilter, aiLabelFilter, onlyMatched, search, dateFrom, dateTo]);
+  }, [page, executiveFilter, statusFilter, aiLabelFilter, onlyMatched, excludeUnevaluated, search, dateFrom, dateTo]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/filtro-cambiado; fetchRows también se usa para refrescar manualmente
@@ -186,7 +227,7 @@ export function ProspectsTab() {
   }, [fetchRows]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- vuelve a página 1 cuando cambia un filtro, evita quedar en una página vacía
-  useEffect(() => { setPage(1); }, [executiveFilter, statusFilter, aiLabelFilter, onlyMatched, search, dateFrom, dateTo]);
+  useEffect(() => { setPage(1); }, [executiveFilter, statusFilter, aiLabelFilter, onlyMatched, excludeUnevaluated, search, dateFrom, dateTo]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const detailRow = items.find((r) => r.id === detailId) ?? null;
@@ -228,20 +269,32 @@ export function ProspectsTab() {
     {
       key: "wab",
       header: "En WAB",
-      render: (r) =>
-        r.wab?.chatId ? (
-          <Link
-            href={`/whatsapp/chat/${r.wab.accountId}/${r.wab.chatId}`}
-            className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
-            onClick={(e) => e.stopPropagation()}
-          >
-            Ver chat <ExternalLink size={12} />
-          </Link>
-        ) : r.wab ? (
-          <span className="text-xs text-muted-darker">Contacto sin chat</span>
-        ) : (
-          <span className="text-xs text-muted-darker">—</span>
-        ),
+      render: (r) => {
+        if (!r.wab) return <span className="text-xs text-muted-darker">—</span>;
+        const extra = r.wab.all.length - 1;
+        return (
+          <span className="inline-flex items-center gap-1.5">
+            {r.wab.primary.chatId ? (
+              <Link
+                href={`/whatsapp/chat/${r.wab.primary.accountId}/${r.wab.primary.chatId}`}
+                className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Ver chat <ExternalLink size={12} />
+              </Link>
+            ) : (
+              <span className="text-xs text-muted-darker">Contacto sin chat</span>
+            )}
+            {/* Mismo teléfono con Contact en más de una cuenta — abre el
+                detalle en vez de ocultarlo, ahí se listan todas. */}
+            {extra > 0 && (
+              <Badge tone="warning" size="sm">
+                +{extra} cuenta{extra === 1 ? "" : "s"}
+              </Badge>
+            )}
+          </span>
+        );
+      },
       hideBelow: "sm",
     },
     {
@@ -254,7 +307,7 @@ export function ProspectsTab() {
     },
   ];
 
-  const filtersActive = executiveFilter !== "all" || statusFilter !== "all" || aiLabelFilter !== "all" || onlyMatched || !!search.trim() || !!dateFrom || !!dateTo;
+  const filtersActive = executiveFilter !== "all" || statusFilter !== "all" || aiLabelFilter !== "all" || onlyMatched || excludeUnevaluated || !!search.trim() || !!dateFrom || !!dateTo;
 
   return (
     <>
@@ -290,6 +343,11 @@ export function ProspectsTab() {
             <DatePicker value={dateTo} onChange={setDateTo} placeholder="Creado hasta" min={dateFrom || undefined} />
           </div>
           <Checkbox checked={onlyMatched} onChange={setOnlyMatched} label="Solo con match en WAB" className="sm:ml-auto" />
+          <Checkbox
+            checked={excludeUnevaluated}
+            onChange={setExcludeUnevaluated}
+            label="Excluir sin evaluar por IA"
+          />
         </div>
 
         <div>
@@ -307,7 +365,7 @@ export function ProspectsTab() {
               executives.length === 0
                 ? "Agrega un ejecutivo monitoreado en la otra pestaña para empezar a ver sus prospectos aquí."
                 : filtersActive
-                  ? "Ningún prospecto cumple los filtros activos — prueba a quitar alguno (\"Solo con match en WAB\" está activo por default)."
+                  ? "Ningún prospecto cumple los filtros activos — prueba a quitar alguno (\"Solo con match en WAB\" y \"Excluir sin evaluar por IA\" están activos por default)."
                   : "Agrega un ejecutivo monitoreado en la otra pestaña para empezar a ver sus prospectos aquí."
             }
           />
@@ -386,7 +444,14 @@ export function ProspectsTab() {
               )}
             </dl>
             <div>
-              <p className="text-xs text-muted-darker mb-1">Predicción de la IA (WAB)</p>
+              <p className="text-xs text-muted-darker mb-1">
+                Predicción de la IA (WAB)
+                {detailRow.wab && detailRow.wab.all.length > 1 && (
+                  <span className="ml-1 text-muted-darker">
+                    — según {detailRow.wab.primary.accountName} (actividad más reciente entre {detailRow.wab.all.length} cuentas)
+                  </span>
+                )}
+              </p>
               {detailRow.aiScore ? (
                 <div className="flex items-center gap-2">
                   <AiScoreBadge aiScore={detailRow.aiScore} />
@@ -405,7 +470,7 @@ export function ProspectsTab() {
               </div>
             )}
             {detailRow.trackings && detailRow.trackings.length > 0 ? (
-              <TrackingTimeline trackings={detailRow.trackings} />
+              <TrackingTimeline trackings={detailRow.trackings} executiveLabel={detailRow.trackedExecutive.label} />
             ) : (
               detailRow.lastTrackingReason && (
                 <div>
@@ -429,13 +494,36 @@ export function ProspectsTab() {
                 <p className="text-sm text-foreground">{detailRow.discartedReason}</p>
               </div>
             )}
-            {detailRow.wab?.chatId && (
-              <Link
-                href={`/whatsapp/chat/${detailRow.wab.accountId}/${detailRow.wab.chatId}`}
-                className="inline-flex text-sm text-accent hover:underline"
-              >
-                Ir al chat en WAB →
-              </Link>
+            {detailRow.wab && (
+              <div>
+                <p className="text-xs text-muted-darker mb-1">
+                  {detailRow.wab.all.length > 1
+                    ? `Este teléfono aparece en ${detailRow.wab.all.length} cuentas de WAB`
+                    : "En WAB"}
+                </p>
+                <ul className="space-y-1.5">
+                  {detailRow.wab.all.map((m) => (
+                    <li key={m.contactId} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="flex items-center gap-1.5">
+                        <Badge tone="neutral" size="sm">{m.accountName}</Badge>
+                        {detailRow.wab!.all.length > 1 && m.contactId === detailRow.wab!.primary.contactId && (
+                          <span className="text-[11px] text-muted-darker">más reciente</span>
+                        )}
+                      </span>
+                      {m.chatId ? (
+                        <Link
+                          href={`/whatsapp/chat/${m.accountId}/${m.chatId}`}
+                          className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
+                        >
+                          Ver chat <ExternalLink size={12} />
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-muted-darker">Contacto sin chat</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
         )}
