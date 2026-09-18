@@ -10,8 +10,6 @@ WAB is a WhatsApp Business CRM built on Meta's official Cloud API: real-time cha
 
 Everything runs in Docker — never install dependencies or run Node/Postgres/Redis on the host.
 
-This repo is worked on in two setups — **local** (checkout and Docker daemon on the same machine) or **remote-server** (checkout reached via an SFTP mount of a separate machine running the stack) — and which one is active isn't fixed to any one hostname. Run `findmnt -T . -no FSTYPE,SOURCE` to detect it; see "Development" in AGENTS.md for the full detection procedure and the exact SSH-wrapping template for remote-server mode. Git commands are unaffected by mode either way and always run directly, never SSH-wrapped.
-
 ```bash
 docker compose up --build                      # start dev stack (app + postgres + redis), hot reload on :17100
 docker compose exec app npx tsc --noEmit        # type check

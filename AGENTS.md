@@ -12,33 +12,6 @@
 
 Everything runs in Docker. Never install dependencies or databases on the host.
 
-**Detect which mode you're in before running anything that touches Docker/Node** — this repo is worked on in two setups, and nothing else tells you which one is active:
-
-- **Local mode**: the checkout and the Docker daemon are on the same machine.
-- **Remote-server mode**: the checkout is an SFTP mount of a separate machine that runs the actual Docker daemon/stack — `rocky-server` is one example of such a machine, not the only one; a future remote could be a different box entirely. `Read`/`Edit`/`Write` work normally either way (it's just file I/O through the mount), but `docker compose`, `node_modules`, and the running containers only exist on the remote machine — running `docker compose` from the mounted path fails locally (bind-mounts break over the network filesystem layer).
-
-Run this once per session to tell which applies:
-
-```bash
-findmnt -T . -no FSTYPE,SOURCE
-```
-
-- Local fstype (`btrfs`/`ext4`/`xfs`/`zfs`/...) → **local mode**.
-- Network/FUSE fstype (`fuse.sshfs`/`nfs`/`cifs`/...) → **remote-server mode**. The `SOURCE` field is `user@host:/remote/path` — parse the remote host and path from it directly, never hardcode a name. (If `findmnt -T .` errors because the path isn't itself a mountpoint, run it against the repo root, or fall back to `stat -f -c '%T' .` for just the fstype.)
-
-**In remote-server mode**, wrap every command that compiles, type-checks, lints, builds, or touches the running containers (including reading live data) in SSH, using the host/path you just parsed:
-
-```bash
-ssh <remote-host> "cd <remote-path> && docker compose exec app npx tsc --noEmit"
-ssh <remote-host> "cd <remote-path> && docker compose exec app npm run lint"
-ssh <remote-host> "cd <remote-path> && docker compose exec app npm run build"
-ssh <remote-host> "cd <remote-path> && docker compose logs -f app"
-```
-
-Purely illustrative (do not hardcode elsewhere) — one real example seen on this repo: `<remote-host>` = `rocky-server`, `<remote-path>` = `/mnt/datos/Proyectos/WAB`. The stack (`wab-app-1`/`wab-db-1`/`wab-redis-1`, port 17100) on whatever the remote host turns out to be is the one with real data — don't `docker compose up` a second copy locally in this mode.
-
-**In local mode**, run the same commands directly, no SSH wrapping:
-
 ```bash
 docker compose up --build   # dev server + postgres + redis, hot reload, port 17100
 docker compose down -v      # full teardown including volumes
@@ -47,9 +20,7 @@ npm run build                # production build check
 npx prisma generate          # after schema changes
 ```
 
-Also in local mode: when testing the app from a browser or `curl`, use this machine's own hostname (`hostname`) or its Tailscale MagicDNS name (`tailscale status --json`, read `.Self.DNSName`/`.Self.HostName` — not `tailscale status --self`, that flag doesn't exist) — never `localhost`, never a hardcoded IP. If that hostname isn't already in `next.config.ts`'s `allowedDevOrigins`, add it and `docker compose restart app` (config changes aren't hot-reloaded) — see the `allowedDevOrigins` gotcha under "Framework quirks".
-
-**Git is unaffected by either mode — never SSH-wrap it, and never skip it.** `git status`/`add`/`commit`/`push` always run directly against the checkout in place, local disk or SFTP-mounted, since git is just file I/O that the mount already handles transparently. Don't do `ssh rocky-server "cd /mnt/datos/Proyectos/WAB && git commit -m ..."` (unnecessary, and risks racing against the mount's own view of the index) — and don't reason "I'm on a remote mount, so I shouldn't commit here" and skip it. Commit exactly as you would in local mode.
+When testing the app from a browser or `curl`, use this machine's own hostname (`hostname`) or its Tailscale MagicDNS name (`tailscale status --json`, read `.Self.DNSName`/`.Self.HostName` — not `tailscale status --self`, that flag doesn't exist) — never `localhost`, never a hardcoded IP. If that hostname isn't already in `next.config.ts`'s `allowedDevOrigins`, add it and `docker compose restart app` (config changes aren't hot-reloaded) — see the `allowedDevOrigins` gotcha under "Framework quirks".
 
 - **docker-compose.yml** is production (used by Coolify). **docker-compose.override.yml** adds dev overrides (volumes, hot reload, env_file). Docker Compose merges both locally.
 - `tailwindcss` and `@tailwindcss/postcss` are in `dependencies` (not devDependencies) — required at build time even with `NODE_ENV=production`.
