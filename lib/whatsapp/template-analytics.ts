@@ -1,4 +1,4 @@
-const GRAPH_API = "https://graph.facebook.com/v21.0";
+import { GRAPH_API } from "@/lib/whatsapp/graph-api";
 
 export interface TemplateAnalyticsPoint {
   date: string; // ISO date, start of the UTC day this point covers

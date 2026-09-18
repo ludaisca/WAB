@@ -4,7 +4,7 @@
 // endpoint), which returns a media ID usable only for *sending* messages/already
 // approved templates, not for template *creation*.
 
-const GRAPH_API = "https://graph.facebook.com/v21.0";
+import { GRAPH_API } from "@/lib/whatsapp/graph-api";
 
 interface MetaError {
   error?: { message?: string; error_user_msg?: string };

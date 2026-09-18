@@ -1,5 +1,4 @@
-const API_VERSION = "v21.0";
-const BASE_URL = "https://graph.facebook.com";
+import { GRAPH_API } from "@/lib/whatsapp/graph-api";
 
 interface SendMessageParams {
   to: string;
@@ -29,7 +28,7 @@ export async function validateToken(
   phoneNumberId: string,
   accessToken: string
 ): Promise<PhoneNumberInfo> {
-  const url = `${BASE_URL}/${API_VERSION}/${phoneNumberId}`;
+  const url = `${GRAPH_API}/${phoneNumberId}`;
 
   const res = await fetch(url, {
     headers: {
@@ -53,7 +52,7 @@ export async function sendMessage(
   accessToken: string,
   params: SendMessageParams
 ): Promise<SendMessageResponse> {
-  const url = `${BASE_URL}/${API_VERSION}/${phoneNumberId}/messages`;
+  const url = `${GRAPH_API}/${phoneNumberId}/messages`;
 
   const payload: Record<string, unknown> = {
     messaging_product: "whatsapp",
@@ -96,7 +95,7 @@ export async function getMediaUrl(
   mediaId: string,
   accessToken: string
 ): Promise<{ url: string; mimeType: string }> {
-  const res = await fetch(`${BASE_URL}/${API_VERSION}/${mediaId}`, {
+  const res = await fetch(`${GRAPH_API}/${mediaId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
@@ -121,7 +120,7 @@ export async function uploadMedia(
   filename: string,
   mimeType: string
 ): Promise<UploadedMedia> {
-  const url = `${BASE_URL}/${API_VERSION}/${phoneNumberId}/media`;
+  const url = `${GRAPH_API}/${phoneNumberId}/media`;
 
   const formData = new FormData();
   if (file instanceof File) {

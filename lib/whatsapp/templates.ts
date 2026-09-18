@@ -5,7 +5,7 @@ import { decrypt } from "@/lib/crypto";
 import { getUserAccountIds } from "@/lib/shared-accounts";
 import { NotFoundError, ValidationError } from "@/lib/errors";
 
-const GRAPH_API = "https://graph.facebook.com/v21.0";
+import { GRAPH_API } from "@/lib/whatsapp/graph-api";
 
 interface MetaTemplateComponent {
   type: string;
