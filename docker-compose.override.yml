@@ -8,7 +8,7 @@ services:
     ports:
       - "17100:5000"
     volumes:
-      - .:/app
+      - .:/app:z
       - /app/node_modules
       - media_data:/app/media
       - backup_data:/app/backups
