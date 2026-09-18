@@ -4,7 +4,7 @@
 // endpoint), which returns a media ID usable only for *sending* messages/already
 // approved templates, not for template *creation*.
 
-import { GRAPH_API } from "@/lib/whatsapp/graph-api";
+import { getGraphApiBase } from "@/lib/whatsapp/graph-api";
 
 interface MetaError {
   error?: { message?: string; error_user_msg?: string };
@@ -16,6 +16,7 @@ export async function uploadTemplateHeaderMedia(
   buffer: Buffer,
   mimeType: string
 ): Promise<string> {
+  const GRAPH_API = await getGraphApiBase();
   const sessionRes = await fetch(
     `${GRAPH_API}/${appId}/uploads?file_length=${buffer.length}&file_type=${encodeURIComponent(mimeType)}&access_token=${encodeURIComponent(accessToken)}`,
     { method: "POST" }

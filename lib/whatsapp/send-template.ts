@@ -1,6 +1,6 @@
 import { decrypt } from "@/lib/crypto";
 import type { WAAccount } from "@prisma/client";
-import { GRAPH_API } from "@/lib/whatsapp/graph-api";
+import { getGraphApiBase } from "@/lib/whatsapp/graph-api";
 
 export interface SendTemplateParams {
   to: string;
@@ -83,6 +83,7 @@ export async function sendTemplateMessage(
     (body.template as Record<string, unknown>).components = templateComponents;
   }
 
+  const GRAPH_API = await getGraphApiBase();
   const url = `${GRAPH_API}/${phoneNumberId}/messages`;
   const requestInit: RequestInit = {
     method: "POST",

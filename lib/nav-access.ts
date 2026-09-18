@@ -18,6 +18,7 @@ export const EXECUTIVE_BLOCKED = [
   "/configuracion/ia",
   "/asistente-ia",
   "/configuracion/backups",
+  "/configuracion/meta-api",
   "/reportes",
   "/crm-ejecutivos",
 ];
@@ -31,7 +32,7 @@ export const EXECUTIVE_BLOCKED = [
 // una ruta separada que bloquear. /configuracion/ia (API keys, modelo por
 // defecto, presupuesto, recuperación de leads) es admin-only — solo el
 // dueño de la cuenta administra config de IA, no roles compartidos/delegados.
-export const USER_BLOCKED = ["/whatsapp/contactos", "/whatsapp/bots", "/configuracion/ia", "/asistente-ia", "/configuracion/backups", "/reportes", "/crm-ejecutivos"];
+export const USER_BLOCKED = ["/whatsapp/contactos", "/whatsapp/bots", "/configuracion/ia", "/asistente-ia", "/configuracion/backups", "/configuracion/meta-api", "/reportes", "/crm-ejecutivos"];
 
 function matches(path: string, list: string[]): boolean {
   return list.some((r) => path === r || path.startsWith(r + "/"));

@@ -1,4 +1,4 @@
-import { GRAPH_API } from "@/lib/whatsapp/graph-api";
+import { getGraphApiBase } from "@/lib/whatsapp/graph-api";
 
 export interface TemplateAnalyticsPoint {
   date: string; // ISO date, start of the UTC day this point covers
@@ -70,6 +70,7 @@ export async function getTemplateAnalytics(
     `.metric_types(["SENT","DELIVERED","READ","CLICKED"])` +
     `.template_ids(["${templateId}"])`;
 
+  const GRAPH_API = await getGraphApiBase();
   let url: string | undefined = `${GRAPH_API}/${wabaId}?fields=${encodeURIComponent(fields)}`;
   const dataPoints: MetaDataPoint[] = [];
 

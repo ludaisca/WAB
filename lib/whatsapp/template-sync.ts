@@ -6,7 +6,7 @@
 import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/crypto";
 
-import { GRAPH_API } from "@/lib/whatsapp/graph-api";
+import { getGraphApiBase } from "@/lib/whatsapp/graph-api";
 
 interface MetaError {
   error?: { message?: string; error_user_msg?: string };
@@ -31,6 +31,7 @@ async function fetchMetaTemplates(wabaId: string, accessToken: string): Promise<
   // TODAS las cuentas — confirmado en producción: 6 cuentas quedaron clavadas
   // en exactamente 25 plantillas. `limit=100` reduce los round-trips, pero lo
   // que realmente arregla el bug es seguir `paging.next` hasta agotarlo.
+  const GRAPH_API = await getGraphApiBase();
   let url: string | null = `${GRAPH_API}/${wabaId}/message_templates?limit=100`;
 
   while (url) {

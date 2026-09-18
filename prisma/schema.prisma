@@ -63,6 +63,16 @@ model SystemConfig {
   s3SecretAccessKey String?
   s3ForcePathStyle  Boolean  @default(false)
 
+  // Versión del Graph API de Meta forzada desde /configuracion/meta-api. NULL =
+  // seguir el default del código (DEFAULT_GRAPH_API_VERSION en
+  // lib/whatsapp/graph-api-versions.ts). Deliberadamente nullable y sin enum:
+  // columnas aditivas que una versión anterior del código simplemente ignora, y
+  // que `db push --accept-data-loss` puede eliminar sin abortar si se hace
+  // rollback del deploy. Ver lib/whatsapp/graph-api.ts.
+  graphApiVersion          String?
+  graphApiVersionUpdatedAt DateTime?
+  graphApiVersionUpdatedBy String?
+
   updatedAt          DateTime @updatedAt @map("updated_at")
 
   @@map("system_config")

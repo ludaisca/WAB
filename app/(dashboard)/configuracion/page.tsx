@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import { User, Lock, CalendarDays, Brain, Users, FileSpreadsheet, ExternalLink, RefreshCw, Unlink, DatabaseBackup } from "lucide-react";
+import { User, Lock, CalendarDays, Brain, Users, FileSpreadsheet, ExternalLink, RefreshCw, Unlink, DatabaseBackup, PlugZap } from "lucide-react";
 import { Card, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -347,6 +347,23 @@ export default function SettingsPage() {
                 </p>
                 <Button href="/configuracion/backups" variant="secondary" size="sm" icon={DatabaseBackup}>
                   Administrar backups
+                </Button>
+              </CardBody>
+            </Card>
+          )}
+
+          {isAdmin && (
+            <Card>
+              <CardBody>
+                <div className="flex items-center gap-2 mb-4">
+                  <PlugZap size={16} className="text-accent" />
+                  <CardTitle>API de Meta</CardTitle>
+                </div>
+                <p className="text-sm text-muted-darker mb-4">
+                  Elige la versión del Graph API con la que el sistema habla con WhatsApp y pruébala antes de aplicarla.
+                </p>
+                <Button href="/configuracion/meta-api" variant="secondary" size="sm" icon={PlugZap}>
+                  Configurar API de Meta
                 </Button>
               </CardBody>
             </Card>

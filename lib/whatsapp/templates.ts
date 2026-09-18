@@ -5,7 +5,7 @@ import { decrypt } from "@/lib/crypto";
 import { getUserAccountIds } from "@/lib/shared-accounts";
 import { NotFoundError, ValidationError } from "@/lib/errors";
 
-import { GRAPH_API } from "@/lib/whatsapp/graph-api";
+import { getGraphApiBase } from "@/lib/whatsapp/graph-api";
 
 interface MetaTemplateComponent {
   type: string;
@@ -94,6 +94,7 @@ export async function createTemplate(
 > {
   const payload = buildPayload(input);
 
+  const GRAPH_API = await getGraphApiBase();
   const url = `${GRAPH_API}/${wabaId}/message_templates`;
   const res = await fetch(url, {
     method: "POST",
@@ -133,6 +134,7 @@ export async function deleteTemplate(
   accessToken: string,
   name: string
 ): Promise<{ success: true } | { success: false; error: string; alreadyGone: boolean }> {
+  const GRAPH_API = await getGraphApiBase();
   const url = `${GRAPH_API}/${wabaId}/message_templates?name=${encodeURIComponent(name)}`;
   const res = await fetch(url, {
     method: "DELETE",

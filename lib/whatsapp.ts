@@ -1,4 +1,4 @@
-import { GRAPH_API } from "@/lib/whatsapp/graph-api";
+import { getGraphApiBase } from "@/lib/whatsapp/graph-api";
 
 interface SendMessageParams {
   to: string;
@@ -28,6 +28,7 @@ export async function validateToken(
   phoneNumberId: string,
   accessToken: string
 ): Promise<PhoneNumberInfo> {
+  const GRAPH_API = await getGraphApiBase();
   const url = `${GRAPH_API}/${phoneNumberId}`;
 
   const res = await fetch(url, {
@@ -52,6 +53,7 @@ export async function sendMessage(
   accessToken: string,
   params: SendMessageParams
 ): Promise<SendMessageResponse> {
+  const GRAPH_API = await getGraphApiBase();
   const url = `${GRAPH_API}/${phoneNumberId}/messages`;
 
   const payload: Record<string, unknown> = {
@@ -95,6 +97,7 @@ export async function getMediaUrl(
   mediaId: string,
   accessToken: string
 ): Promise<{ url: string; mimeType: string }> {
+  const GRAPH_API = await getGraphApiBase();
   const res = await fetch(`${GRAPH_API}/${mediaId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -120,6 +123,7 @@ export async function uploadMedia(
   filename: string,
   mimeType: string
 ): Promise<UploadedMedia> {
+  const GRAPH_API = await getGraphApiBase();
   const url = `${GRAPH_API}/${phoneNumberId}/media`;
 
   const formData = new FormData();
