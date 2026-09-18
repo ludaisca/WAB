@@ -159,7 +159,7 @@ function MessageBubble({ token, msg, onPreview }: { token: string; msg: PublicCh
               {caption && <p className="whitespace-pre-wrap break-words">{caption}</p>}
             </div>
           )}
-          {!isMediaType && msg.body}
+          {!isMediaType && <p className="whitespace-pre-wrap break-words">{msg.body}</p>}
           {isMediaType && !caption && !msg.body && <span className="sr-only">[{msg.messageType}]</span>}
           <div className={`flex items-center justify-end gap-1 mt-1 ${isInbound ? "text-muted-darker" : "text-on-accent/70"}`}>
             <span className="text-[10px]">{formatBubbleTime(msg.timestamp)}</span>

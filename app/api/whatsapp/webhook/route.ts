@@ -4,6 +4,12 @@ import type { RecipientStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ingestInboundMessage } from "@/lib/whatsapp/ingest-message";
 import { isMaintenanceMode } from "@/lib/system-maintenance";
+import {
+  formatContactsBody,
+  formatLocationBody,
+  type WebhookLocation,
+  type WebhookSharedContact,
+} from "@/lib/whatsapp/inbound-body";
 
 interface WebhookMessage {
   from: string;
@@ -15,7 +21,10 @@ interface WebhookMessage {
   video?: { id: string; mime_type: string; caption?: string };
   audio?: { id: string; mime_type: string };
   document?: { id: string; mime_type: string; caption?: string; filename?: string };
-  location?: { latitude: number; longitude: number; name?: string; address?: string };
+  location?: WebhookLocation;
+  // type === "contacts": tarjeta(s) de contacto compartida(s) por el lead.
+  // No confundir con `WebhookValue.contacts` (perfil del remitente).
+  contacts?: WebhookSharedContact[];
   interactive?: {
     type: string;
     button_reply?: { id: string; title: string };
@@ -91,6 +100,8 @@ function getMessageBody(msg: WebhookMessage): string {
   if (msg.interactive?.button_reply?.title) return msg.interactive.button_reply.title;
   if (msg.interactive?.list_reply?.title) return msg.interactive.list_reply.title;
   if (msg.button) return msg.button.text;
+  const shared = formatContactsBody(msg.contacts) ?? formatLocationBody(msg.location);
+  if (shared) return shared;
   return `[${msg.type}]`;
 }
 
