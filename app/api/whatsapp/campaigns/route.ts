@@ -171,6 +171,7 @@ export async function GET(req: Request) {
         deliveredCount: true,
         readCount: true,
         failedCount: true,
+        totalCostUsd: true,
         createdAt: true,
         updatedAt: true,
         waAccount: { select: { id: true, name: true, phoneNumber: true } },

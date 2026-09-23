@@ -18,6 +18,7 @@ import { Pagination } from "@/app/components/ui/pagination";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
 import { formatDateTime } from "@/lib/timezone";
+import { formatUsd } from "@/lib/format";
 
 const STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" | "info" | "danger" | "neutral" }> = {
   DRAFT: { label: "Borrador", tone: "neutral" },
@@ -44,6 +45,7 @@ interface CampaignDetail {
   deliveredCount: number;
   readCount: number;
   failedCount: number;
+  totalCostUsd: number;
   scheduledAt: string | null;
   sentAt: string | null;
   completedAt: string | null;
@@ -180,6 +182,7 @@ export default function CampaignDetailPage() {
               { label: "Entregados", value: String(campaign.deliveredCount), numeric: campaign.deliveredCount },
               { label: "Leídos", value: String(campaign.readCount), numeric: campaign.readCount },
               { label: "Fallidos", value: String(campaign.failedCount), numeric: campaign.failedCount },
+              { label: "Gasto", value: formatUsd(campaign.totalCostUsd), numeric: campaign.totalCostUsd },
             ]}
           />
         </CardBody>

@@ -4,6 +4,7 @@ import { getTemplateVariables, renderTemplateText } from "@/lib/whatsapp/templat
 import { saveMediaFromMeta, isImageMime, isVideoMime } from "@/lib/whatsapp/media-store";
 import { sendTemplateMessage } from "@/lib/whatsapp/send-template";
 import { shouldUpdateName } from "@/lib/whatsapp/contact-name";
+import { estimateMessageCostUsd } from "@/lib/whatsapp/campaign-pricing";
 
 function mediaMessageTypeFromMime(mimeType: string): string {
   if (isImageMime(mimeType)) return "image";
@@ -197,10 +198,11 @@ export async function processCampaignJob(job: CampaignJob) {
       });
 
       const sentAt = new Date();
+      const costUsd = estimateMessageCostUsd(recipient.phoneNumber, campaign.waTemplate.category);
 
       await prisma.wACampaignRecipient.update({
         where: { id: recipient.id },
-        data: { status: "SENT", sentAt, wamid: wamid ?? null },
+        data: { status: "SENT", sentAt, wamid: wamid ?? null, costUsd },
       });
 
       // Only attribute Contact/WAChat/WAMessage on an actual successful
@@ -308,6 +310,11 @@ export async function processCampaignJob(job: CampaignJob) {
   const sentTotal = countOf("SENT") + countOf("DELIVERED") + countOf("READ");
   const failedTotal = countOf("FAILED");
 
+  const costAgg = await prisma.wACampaignRecipient.aggregate({
+    where: { campaignId },
+    _sum: { costUsd: true },
+  });
+
   const finalStatus = pendingCount === 0 ? "COMPLETED" : "FAILED";
 
   await prisma.wACampaign.update({
@@ -315,6 +322,7 @@ export async function processCampaignJob(job: CampaignJob) {
     data: {
       sentCount: sentTotal,
       failedCount: failedTotal,
+      totalCostUsd: costAgg._sum.costUsd ?? 0,
       status: finalStatus,
       completedAt: new Date(),
     },

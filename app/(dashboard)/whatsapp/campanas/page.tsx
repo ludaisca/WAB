@@ -14,6 +14,7 @@ import { EntityAvatar } from "@/app/components/ui/avatar";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { PageHeader } from "@/app/components/ui/page-header";
 import { useToast } from "@/app/components/ui/toast";
+import { formatUsd } from "@/lib/format";
 
 interface Campaign {
   id: string;
@@ -27,6 +28,7 @@ interface Campaign {
   deliveredCount: number;
   readCount: number;
   failedCount: number;
+  totalCostUsd: number;
   createdAt: string;
   waAccount: { id: string; name: string; phoneNumber: string | null };
   waTemplate: { id: string; name: string };
@@ -110,6 +112,7 @@ export default function CampaignsPage() {
     const delivered = campaigns.reduce((acc, c) => acc + c.deliveredCount, 0);
     const read = campaigns.reduce((acc, c) => acc + c.readCount, 0);
     const failed = campaigns.reduce((acc, c) => acc + c.failedCount, 0);
+    const totalCost = campaigns.reduce((acc, c) => acc + c.totalCostUsd, 0);
     const attempted = delivered + read + failed; // "leídos" implica entregado, no se duplica
     const deliveryRate = attempted > 0 ? Math.round(((delivered + read) / attempted) * 100) : null;
     return [
@@ -119,6 +122,7 @@ export default function CampaignsPage() {
       { label: "Leídos", value: read.toLocaleString("es-MX"), numeric: read },
       { label: "Fallidos", value: failed.toLocaleString("es-MX"), numeric: failed },
       { label: "Tasa entrega", value: deliveryRate != null ? `${deliveryRate}%` : "—" },
+      { label: "Gasto", value: formatUsd(totalCost), numeric: totalCost },
     ];
   }, [campaigns]);
 
@@ -207,6 +211,7 @@ export default function CampaignsPage() {
                       <>
                         {" "}· Env: {c.sentCount} · Entr: {c.deliveredCount} · Leídos: {c.readCount}
                         {c.failedCount > 0 && <span className="text-danger"> · Fallos: {c.failedCount}</span>}
+                        {" "}· Gasto: {formatUsd(c.totalCostUsd)}
                       </>
                     )}
                   </>

@@ -1,12 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Bot, Megaphone, UserCheck } from "lucide-react";
+import { Bot, Megaphone, Search, UserCheck } from "lucide-react";
 import { Badge } from "@/app/components/ui/badge";
+import { Banner } from "@/app/components/ui/banner";
+import { Button } from "@/app/components/ui/button";
+import { Input } from "@/app/components/ui/input";
 import { PageHeader } from "@/app/components/ui/page-header";
 import { KpiStrip, type KpiItem } from "@/app/components/ui/kpi-strip";
 import { SectionHeader } from "@/app/components/ui/section-header";
+import { Select } from "@/app/components/ui/select";
+import { DatePicker } from "@/app/components/ui/date-picker";
+import { FormField } from "@/app/components/ui/form-field";
 import { Workbench, WorkbenchMain, WorkbenchAside } from "@/app/components/ui/workbench";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import { Pagination } from "@/app/components/ui/pagination";
@@ -15,7 +21,9 @@ import { TrendChart, DonutChart, FunnelBars } from "@/app/components/ui/chart";
 import { AnimatedNumber } from "@/app/components/ui/animated-number";
 import type { Estadisticas } from "@/lib/estadisticas/get-stats";
 import { CAMPAIGN_ORIGIN_LABEL, LABEL_TEXT, LEAD_STATUS_LABEL } from "@/lib/whatsapp/export-columns";
-import { formatDate, zonedDateTimeToUtc } from "@/lib/timezone";
+import { formatDate, dateKeyInTz, zonedDateTimeToUtc } from "@/lib/timezone";
+import { formatUsd } from "@/lib/format";
+import { useToast } from "@/app/components/ui/toast";
 import { AiSpendChart } from "./_ai-spend-chart";
 
 // Listas largas cortadas a esta cantidad antes de mostrar un enlace o
@@ -81,8 +89,64 @@ function usePage<T>(rows: T[]) {
   return { page, setPage, totalPages, pageRows };
 }
 
+// Sección de campañas de la pestaña "Campañas" — filtrable por cuenta y rango
+// de fechas vía GET /api/estadisticas/campanas. Arranca con lo que ya trajo
+// el Server Component (sin filtro) y solo pega un fetch cuando el usuario
+// activa algún filtro — ver el useEffect en EstadisticasView.
+type CampaignSection = Pick<Estadisticas, "campaignMessagesByOrigin" | "campaignMessageBreakdown" | "campaignSpendUsd">;
+
 export function EstadisticasView({ stats }: { stats: Estadisticas }) {
   const [tab, setTab] = useState<StatsTab>("resumen");
+  const { error: toastError } = useToast();
+  const today = dateKeyInTz(new Date());
+
+  const [accountId, setAccountId] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  // null = "sin filtro aplicado todavía" — en ese caso se muestra lo que ya
+  // trajo el Server Component (defaultSection), sin round-trip.
+  const [fetchedSection, setFetchedSection] = useState<CampaignSection | null>(null);
+  const [campaignFilterLoading, setCampaignFilterLoading] = useState(false);
+
+  const hasCampaignFilter = accountId !== "" || dateFrom !== "" || dateTo !== "";
+  const defaultSection: CampaignSection = {
+    campaignMessagesByOrigin: stats.campaignMessagesByOrigin,
+    campaignMessageBreakdown: stats.campaignMessageBreakdown,
+    campaignSpendUsd: stats.campaignSpendUsd,
+  };
+  const campaignSection = hasCampaignFilter && fetchedSection ? fetchedSection : defaultSection;
+
+  useEffect(() => {
+    // Sin filtro activo, o filtro de fecha a medias (una sola de las dos) —
+    // no hay nada que buscar; el valor mostrado ya cae a defaultSection.
+    if (!hasCampaignFilter) return;
+    if ((dateFrom && !dateTo) || (!dateFrom && dateTo)) return;
+
+    const params = new URLSearchParams();
+    if (accountId) params.set("accountId", accountId);
+    if (dateFrom && dateTo) {
+      params.set("dateFrom", dateFrom);
+      params.set("dateTo", dateTo);
+    }
+
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- refetch al cambiar el filtro; el loading debe reflejarse antes de que la respuesta llegue
+    setCampaignFilterLoading(true);
+    fetch(`/api/estadisticas/campanas?${params.toString()}`)
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        if (!cancelled) setFetchedSection(data);
+      })
+      .catch((err) => {
+        if (!cancelled) toastError(err instanceof Error ? err.message : "Error al filtrar campañas");
+      })
+      .finally(() => {
+        if (!cancelled) setCampaignFilterLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [accountId, dateFrom, dateTo, hasCampaignFilter, toastError]);
 
   const tabItems: TabItem[] = TAB_ITEMS_BASE.map((t) => ({
     ...t,
@@ -90,7 +154,7 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
       t.value === "ia"
         ? stats.botBreakdown.length
         : t.value === "campanas"
-          ? stats.campaignMessageBreakdown.length
+          ? campaignSection.campaignMessageBreakdown.length
           : t.value === "equipo"
             ? stats.agentPerformance.length
             : undefined,
@@ -184,9 +248,23 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
       cellClassName: "text-right font-mono text-xs",
       render: (r) => (r.readRate != null ? `${r.readRate}%` : "—"),
     },
+    {
+      key: "costUsd",
+      header: "Gasto",
+      headerClassName: "text-right",
+      cellClassName: "text-right font-mono text-xs",
+      // null para automatizaciones de Sheets — no tienen costo de envío calculado.
+      render: (r) => (r.costUsd != null ? formatUsd(r.costUsd) : "—"),
+    },
   ], []);
 
-  const campaignPager = usePage(stats.campaignMessageBreakdown);
+  const [campaignSearch, setCampaignSearch] = useState("");
+  const filteredCampaignRows = useMemo(() => {
+    const q = campaignSearch.trim().toLowerCase();
+    if (!q) return campaignSection.campaignMessageBreakdown;
+    return campaignSection.campaignMessageBreakdown.filter((r) => r.name.toLowerCase().includes(q));
+  }, [campaignSection.campaignMessageBreakdown, campaignSearch]);
+  const campaignPager = usePage(filteredCampaignRows);
   const botPager = usePage(stats.botBreakdown);
   const agentPager = usePage(stats.agentPerformance);
 
@@ -388,15 +466,64 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
       {tab === "campanas" && (
         <div className="space-y-8">
           <section className="animate-fade-in-up animation-delay-200">
+            {/* Filtro de cuenta + rango de fechas — acota banner/tablas de
+                toda la pestaña vía GET /api/estadisticas/campanas (ver el
+                useEffect arriba). Sin filtro = lo que ya trajo el Server
+                Component, sin round-trip. */}
+            <div className="flex flex-wrap items-end gap-3">
+              {stats.accountBreakdown.length > 1 && (
+                <FormField label="Cuenta">
+                  {(id) => (
+                    <Select id={id} value={accountId} onChange={(e) => setAccountId(e.target.value)} className="w-56">
+                      <option value="">Todas las cuentas</option>
+                      {stats.accountBreakdown.map((a) => (
+                        <option key={a.id} value={a.id}>{a.name}</option>
+                      ))}
+                    </Select>
+                  )}
+                </FormField>
+              )}
+              <FormField label="Desde">
+                {(id) => <DatePicker id={id} value={dateFrom} onChange={setDateFrom} max={dateTo || today} />}
+              </FormField>
+              <FormField label="Hasta">
+                {(id) => <DatePicker id={id} value={dateTo} onChange={setDateTo} min={dateFrom} max={today} />}
+              </FormField>
+              {hasCampaignFilter && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { setAccountId(""); setDateFrom(""); setDateTo(""); }}
+                >
+                  Limpiar filtros
+                </Button>
+              )}
+            </div>
+
+            <Banner tone="info" title="Gasto en campañas" className="mt-4">
+              <p className="font-mono text-lg font-semibold">
+                {campaignFilterLoading ? "…" : formatUsd(campaignSection.campaignSpendUsd)}
+              </p>
+              <p className="text-xs text-muted-darker">
+                {accountId ? stats.accountBreakdown.find((a) => a.id === accountId)?.name ?? "Cuenta" : "Todas las cuentas"}
+                {" · "}
+                {dateFrom && dateTo
+                  ? `${formatDate(zonedDateTimeToUtc(dateFrom, "00:00"))} – ${formatDate(zonedDateTimeToUtc(dateTo, "00:00"))}`
+                  : "Todo el periodo"}
+              </p>
+            </Banner>
+          </section>
+
+          <section className="animate-fade-in-up animation-delay-200">
             <SectionHeader eyebrow="Difusión" title="Entregas por origen" />
             {/* Panorama global (manual vs. automatización) primero, la tabla
                 fila-por-fila después — antes iba en el aside, subordinada a
                 una tabla paginada que podía ser mucho más larga. */}
-            {stats.campaignMessagesByOrigin.every((o) => o.total === 0) ? (
+            {campaignSection.campaignMessagesByOrigin.every((o) => o.total === 0) ? (
               <p className="py-4 text-center text-sm text-muted">Sin envíos todavía</p>
             ) : (
               <div className="mt-4 grid gap-x-8 gap-y-6 sm:grid-cols-2 sm:divide-x sm:divide-border">
-                {stats.campaignMessagesByOrigin.map((o) => (
+                {campaignSection.campaignMessagesByOrigin.map((o) => (
                   <div key={o.origin} className="space-y-2 sm:first:pl-0 sm:px-8">
                     <p className="text-sm font-medium">{CAMPAIGN_ORIGIN_LABEL[o.origin]}</p>
                     {o.total === 0 ? (
@@ -413,9 +540,14 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
                             { name: "Leídos", value: o.read },
                           ]}
                         />
-                        {o.failed > 0 && (
-                          <Badge tone="danger" size="sm">Fallidos: {o.failed}</Badge>
-                        )}
+                        <div className="flex flex-wrap gap-1.5">
+                          {o.failed > 0 && (
+                            <Badge tone="danger" size="sm">Fallidos: {o.failed}</Badge>
+                          )}
+                          {o.costUsd != null && (
+                            <Badge tone="neutral" size="sm">Gasto: {formatUsd(o.costUsd)}</Badge>
+                          )}
+                        </div>
                       </>
                     )}
                   </div>
@@ -425,15 +557,32 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
           </section>
 
           <section className="animate-fade-in-up animation-delay-300">
-            <SectionHeader eyebrow="Difusión" title="Mensajes por campaña / automatización" />
+            <SectionHeader
+              eyebrow="Difusión"
+              title="Mensajes por campaña / automatización"
+              action={
+                <Input
+                  icon={Search}
+                  placeholder="Buscar por nombre…"
+                  value={campaignSearch}
+                  onChange={(e) => { setCampaignSearch(e.target.value); campaignPager.setPage(1); }}
+                  className="w-56"
+                  aria-label="Buscar campaña por nombre"
+                />
+              }
+            />
             <div className="mt-4">
               <Table
                 columns={campaignColumns}
                 rows={campaignPager.pageRows}
                 rowKey={(r) => `${r.origin}-${r.id}`}
                 emptyIcon={Megaphone}
-                emptyTitle="Sin envíos todavía"
-                emptyDescription="Aparecerán aquí una vez que se envíe una campaña masiva o se dispare una automatización de leads."
+                emptyTitle={campaignSearch ? "Sin resultados" : "Sin envíos todavía"}
+                emptyDescription={
+                  campaignSearch
+                    ? `Ninguna campaña coincide con "${campaignSearch}".`
+                    : "Aparecerán aquí una vez que se envíe una campaña masiva o se dispare una automatización de leads."
+                }
                 mobileCard={(r) => (
                   <div className="w-full min-w-0 space-y-1">
                     <div className="flex items-center justify-between gap-2">
@@ -445,6 +594,7 @@ export function EstadisticasView({ stats }: { stats: Estadisticas }) {
                       <span>{r.delivered} entregados</span>
                       <span>{r.read} leídos</span>
                       {r.failed > 0 && <span className="text-danger">{r.failed} fallidos</span>}
+                      {r.costUsd != null && <span>{formatUsd(r.costUsd)}</span>}
                     </div>
                   </div>
                 )}

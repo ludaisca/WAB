@@ -10,8 +10,15 @@ import {
   countMessages,
 } from "@/lib/estadisticas/global-counts";
 import { getAgentPerformance, type AgentPerformanceRow } from "@/lib/estadisticas/agent-performance";
+import {
+  getCampaignSectionStats,
+  type CampaignBreakdownRow,
+  type CampaignOriginStats,
+} from "@/lib/estadisticas/campaign-stats";
 import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
 import { dateKeyInTz, startOfDayInTz, startOfMonthInTz } from "@/lib/timezone";
+
+export type { CampaignBreakdownRow, CampaignOriginStats } from "@/lib/estadisticas/campaign-stats";
 
 // Mismo orden que VALID_LABELS en lib/whatsapp/lead-scoring.ts, invertido para
 // mostrar primero lo más urgente/accionable.
@@ -61,6 +68,10 @@ export interface Estadisticas {
   agentPerformance: AgentPerformanceRow[];
   monthlyCost: number;
   monthlyBudgetUsd: number | null;
+  // Gasto de ENVÍO de WhatsApp (lib/whatsapp/campaign-pricing.ts), distinto de
+  // monthlyCost/totalCost (gasto de IA). Solo campañas masivas (origin
+  // "manual") tienen costo calculado hoy — las automatizaciones de Sheets no.
+  campaignSpendUsd: number;
   // El funnel de LeadStatus (NEW→CONTACTED→QUALIFIED→CUSTOMER) que hasta ahora
   // no se calculaba en ningún lado pese a ser el concepto central del modelo
   // de datos — LOST queda fuera (es una salida, no una etapa) y se cuenta
@@ -88,24 +99,6 @@ export interface Estadisticas {
     origin: "manual" | "automatizacion" | null;
     count: number;
   }>;
-}
-
-interface CampaignOriginStats {
-  origin: "manual" | "automatizacion";
-  total: number;
-  sent: number;
-  delivered: number;
-  read: number;
-  failed: number;
-  // % sobre mensajes efectivamente enviados (sent+delivered+read+failed) — los
-  // "pending"/"skipped" no cuentan como intento, así que quedan fuera del denominador.
-  deliveryRate: number | null;
-  readRate: number | null;
-}
-
-interface CampaignBreakdownRow extends CampaignOriginStats {
-  id: string;
-  name: string;
 }
 
 export async function getEstadisticas(userId: string): Promise<Estadisticas> {
@@ -145,9 +138,7 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     appSettings,
     agentPerformance,
     leadStatusGroups,
-    campaignsForMessageStats,
-    leadSheetSources,
-    leadSheetStatusGroups,
+    campaignSection,
     leadScores,
   ] = await Promise.all([
     prisma.wAAccount.count({ where: accountWhere }),
@@ -215,25 +206,10 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
       where: { accountId: { in: accountIds } },
       _count: { _all: true },
     }),
-    // Contadores ya vienen agregados en WACampaign (sentCount/deliveredCount/...),
-    // actualizados por el webhook de Meta — no hace falta un groupBy sobre
-    // WACampaignRecipient. Visibilidad por cuenta, no por creador (mismo criterio
-    // que el resto de rutas de campañas, ver AGENTS.md).
-    prisma.wACampaign.findMany({
-      where: { waAccountId: { in: accountIds } },
-      select: { id: true, name: true, sentCount: true, deliveredCount: true, readCount: true, failedCount: true },
-    }),
-    prisma.leadSheetSource.findMany({
-      where: { waAccountId: { in: accountIds } },
-      select: { id: true, name: true },
-    }),
-    // "seeded" nunca se envió (filas ya presentes al conectar la fuente) — no es
-    // un resultado de envío, igual que en sheets-sync.ts.
-    prisma.leadSheetImportedRow.groupBy({
-      by: ["sourceId", "status"],
-      where: { source: { waAccountId: { in: accountIds } }, status: { not: "seeded" } },
-      _count: { _all: true },
-    }),
+    // Visibilidad por cuenta, no por creador (mismo criterio que el resto de
+    // rutas de campañas, ver AGENTS.md). Sin `range` → mismo total histórico
+    // que antes daban las columnas precalculadas de WACampaign.
+    getCampaignSectionStats(accountIds),
     prisma.wALeadScore.findMany({
       where: { chat: { accountId: { in: accountIds } } },
       select: {
@@ -282,71 +258,6 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
   const leadStatusCounts = new Map(leadStatusGroups.map((g) => [g.leadStatus, g._count._all]));
   const leadStatusFunnel = LEAD_FUNNEL_STAGES.map((status) => ({ status, count: leadStatusCounts.get(status) ?? 0 }));
   const leadStatusLost = leadStatusCounts.get("LOST") ?? 0;
-
-  function rate(numerator: number, denominator: number): number | null {
-    return denominator > 0 ? Math.round((numerator / denominator) * 1000) / 10 : null;
-  }
-
-  function toStats(counts: { sent: number; delivered: number; read: number; failed: number }): CampaignOriginStats {
-    const total = counts.sent + counts.delivered + counts.read + counts.failed;
-    return {
-      origin: "manual", // overwritten by callers
-      total,
-      sent: counts.sent,
-      delivered: counts.delivered,
-      read: counts.read,
-      failed: counts.failed,
-      deliveryRate: rate(counts.delivered + counts.read, total),
-      readRate: rate(counts.read, total),
-    };
-  }
-
-  const leadSheetCountsBySource = new Map<string, { sent: number; delivered: number; read: number; failed: number }>();
-  for (const g of leadSheetStatusGroups) {
-    const entry = leadSheetCountsBySource.get(g.sourceId) ?? { sent: 0, delivered: 0, read: 0, failed: 0 };
-    const count = g._count._all;
-    // "skipped" (contacto opt-out de marketing) se excluye de las tasas — nunca
-    // se intentó enviar, no es una entrega/lectura fallida.
-    if (g.status === "sent") entry.sent += count;
-    else if (g.status === "delivered") entry.delivered += count;
-    else if (g.status === "read") entry.read += count;
-    else if (g.status === "failed") entry.failed += count;
-    leadSheetCountsBySource.set(g.sourceId, entry);
-  }
-
-  const manualBreakdown: CampaignBreakdownRow[] = campaignsForMessageStats
-    .map((c) => ({
-      id: c.id,
-      name: c.name,
-      ...toStats({ sent: c.sentCount, delivered: c.deliveredCount, read: c.readCount, failed: c.failedCount }),
-      origin: "manual" as const,
-    }))
-    .filter((r) => r.total > 0);
-
-  const automationBreakdown: CampaignBreakdownRow[] = leadSheetSources
-    .map((s) => ({
-      id: s.id,
-      name: s.name,
-      ...toStats(leadSheetCountsBySource.get(s.id) ?? { sent: 0, delivered: 0, read: 0, failed: 0 }),
-      origin: "automatizacion" as const,
-    }))
-    .filter((r) => r.total > 0);
-
-  const campaignMessageBreakdown = [...manualBreakdown, ...automationBreakdown].sort((a, b) => b.total - a.total);
-
-  const manualTotals = manualBreakdown.reduce(
-    (acc, r) => ({ sent: acc.sent + r.sent, delivered: acc.delivered + r.delivered, read: acc.read + r.read, failed: acc.failed + r.failed }),
-    { sent: 0, delivered: 0, read: 0, failed: 0 }
-  );
-  const automationTotals = automationBreakdown.reduce(
-    (acc, r) => ({ sent: acc.sent + r.sent, delivered: acc.delivered + r.delivered, read: acc.read + r.read, failed: acc.failed + r.failed }),
-    { sent: 0, delivered: 0, read: 0, failed: 0 }
-  );
-
-  const campaignMessagesByOrigin: CampaignOriginStats[] = [
-    { ...toStats(manualTotals), origin: "manual" },
-    { ...toStats(automationTotals), origin: "automatizacion" },
-  ];
 
   const bestScorePerChat = new Map<string, { score: number; label: string; campaign: ReturnType<typeof resolveChatAttribution> }>();
   for (const s of leadScores) {
@@ -405,10 +316,11 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     agentPerformance,
     monthlyCost: Math.round(monthlyCost * 10000) / 10000,
     monthlyBudgetUsd: appSettings?.monthlyBudgetUsd ?? null,
+    campaignSpendUsd: campaignSection.campaignSpendUsd,
     leadStatusFunnel,
     leadStatusLost,
-    campaignMessagesByOrigin,
-    campaignMessageBreakdown,
+    campaignMessagesByOrigin: campaignSection.campaignMessagesByOrigin,
+    campaignMessageBreakdown: campaignSection.campaignMessageBreakdown,
     qualifiedChats,
     qualifiedChatsByCampaign,
   };

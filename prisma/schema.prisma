@@ -591,6 +591,10 @@ model WACampaign {
   deliveredCount  Int                  @default(0)
   readCount       Int                  @default(0)
   failedCount     Int                  @default(0)
+  // Suma de WACampaignRecipient.costUsd, recalculada desde la DB al final de
+  // cada corrida del worker — mismo criterio que sentCount/failedCount (ver
+  // lib/workers/campaign-worker.ts), nunca acumulada en memoria.
+  totalCostUsd    Float                @default(0)
   createdAt       DateTime             @default(now()) @map("created_at")
   updatedAt       DateTime             @updatedAt @map("updated_at")
 
@@ -623,6 +627,9 @@ model WACampaignRecipient {
   sentAt       DateTime?
   deliveredAt  DateTime?
   readAt       DateTime?
+  // Costo estimado del mensaje según lib/whatsapp/campaign-pricing.ts. null =
+  // no se pudo calcular (país/categoría fuera de la tabla), distinto de 0.
+  costUsd      Float?
 
   @@index([wamid])
   @@index([campaignId, status])
