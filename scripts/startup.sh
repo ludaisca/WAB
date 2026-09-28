@@ -25,6 +25,16 @@ else
   npx prisma db push --skip-generate --accept-data-loss
 fi
 
+echo "2b. Backfilling campaign costs (no-op once already computed)..."
+# Debe correr DESPUÉS de `db push` (necesita las columnas costUsd/totalCostUsd
+# que el push acaba de crear). Ver prisma/sql/backfill-campaign-costs.sql —
+# recalcula lo que campaign-worker.ts no pudo calcular en su momento porque
+# el código de costeo (f6172c0, 2026-09-23) nunca había corrido en
+# producción hasta el deploy que introduce este paso. Idempotente (solo toca
+# costUsd IS NULL) — seguro dejarlo corriendo en cada arranque en vez de
+# quitarlo después de la primera vez.
+npx prisma db execute --file prisma/sql/backfill-campaign-costs.sql --schema prisma/schema.prisma || echo "campaign cost backfill skipped"
+
 echo "3. Ensuring pgvector index..."
 npx prisma db execute --file prisma/sql/ensure-vector-index.sql --schema prisma/schema.prisma
 
