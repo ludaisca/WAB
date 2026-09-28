@@ -13,6 +13,8 @@ import {
   countCompletedCampaigns,
   countConnectedAccounts,
 } from "@/lib/estadisticas/global-counts";
+import { getSentMessagesStats } from "@/lib/estadisticas/sent-messages";
+import { MessagesSentCard } from "./_messages-sent-card";
 import { KpiStrip, type KpiItem } from "@/app/components/ui/kpi-strip";
 import { SectionHeader } from "@/app/components/ui/section-header";
 import { Workbench, WorkbenchMain, WorkbenchAside } from "@/app/components/ui/workbench";
@@ -65,6 +67,8 @@ export default async function DashboardPage() {
     botsActive,
     campaignsTotal,
     campaignsCompleted,
+    sentMessagesStats,
+    accountsList,
   ] = await Promise.all([
     Promise.resolve(accountIds.length),
     countConnectedAccounts(accountIds),
@@ -88,6 +92,8 @@ export default async function DashboardPage() {
     countActiveBots(userId),
     countCampaigns(userId),
     countCompletedCampaigns(userId),
+    getSentMessagesStats(accountIds),
+    prisma.wAAccount.findMany({ where: { id: { in: accountIds } }, select: { id: true, name: true } }),
   ]);
 
   const unreadCount = unreadAgg._sum.unreadCount ?? 0;
@@ -145,7 +151,11 @@ export default async function DashboardPage() {
 
       <Workbench>
         <WorkbenchMain>
-          <section className="animate-fade-in-up animation-delay-200">
+          <div className="animate-fade-in-up animation-delay-200">
+            <MessagesSentCard accounts={accountsList} initialStats={sentMessagesStats} />
+          </div>
+
+          <section className="mt-10 animate-fade-in-up animation-delay-300">
             <SectionHeader
               eyebrow="Actividad"
               title="Chats recientes"
