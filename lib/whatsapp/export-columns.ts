@@ -69,6 +69,12 @@ export interface LeadScoreRow {
     // generar el token es una escritura async y esta interfaz debe quedar
     // serializable/pura para el `get` síncrono de abajo.
     publicLink: string;
+    // Timestamp del último WAMessage INBOUND de este chat (null si el
+    // prospecto nunca escribió) — distinto de `updatedAt` de arriba, que es
+    // WALeadScore.updatedAt (última vez que se calificó/recalificó, sin
+    // importar quién mandó el último mensaje). Ver fetchLastInboundMessages()
+    // en lib/whatsapp/chat-attribution.ts.
+    lastInboundAt: string | null;
   };
 }
 
@@ -151,6 +157,11 @@ export const EXPORT_COLUMNS: ExportColumnDef<LeadScoreRow>[] = [
   { key: "tono_interes", label: "Tono de interés", get: (r) => r.details?.tono_interes ?? "" },
   { key: "nivel_interaccion", label: "Nivel de interacción", get: (r) => r.details?.nivel_interaccion ?? "" },
   { key: "updatedAt", label: "Actualizado", get: (r) => formatDate(r.updatedAt) },
+  {
+    key: "lastInboundAt",
+    label: "Última respuesta del prospecto",
+    get: (r) => formatDateOrEmpty(r.chat.lastInboundAt),
+  },
   { key: "publicLink", label: "Link público del chat", get: (r) => r.chat.publicLink },
 ];
 

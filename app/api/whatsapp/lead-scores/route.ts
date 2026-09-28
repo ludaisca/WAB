@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { chatAccessWhere } from "@/lib/whatsapp/chat-visibility";
-import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
+import {
+  CHAT_ATTRIBUTION_MESSAGE_QUERY,
+  resolveChatAttribution,
+  fetchLastInboundMessages,
+} from "@/lib/whatsapp/chat-attribution";
 import { ensurePublicChatTokensForChats, publicChatUrl } from "@/lib/whatsapp/chat-public-link";
 
 export async function GET() {
@@ -43,6 +47,7 @@ export async function GET() {
     const tokens = await ensurePublicChatTokensForChats(
       scores.map((s) => ({ id: s.chat.id, publicShareToken: s.chat.publicShareToken }))
     );
+    const lastInbound = await fetchLastInboundMessages(scores.map((s) => s.chat.id));
 
     const rows = scores.map(({ chat, ...score }) => {
       const { messages, publicShareToken, contact, ...chatRest } = chat;
@@ -53,6 +58,7 @@ export async function GET() {
           // BigInt no es serializable por NextResponse.json() — convertir aquí.
           contact: contact ? { ...contact, leadNumber: contact.leadNumber.toString() } : null,
           publicLink: publicChatUrl(tokens.get(chat.id)!),
+          lastInboundAt: lastInbound.get(chat.id)?.toISOString() ?? null,
         },
         campaign: resolveChatAttribution(messages),
       };

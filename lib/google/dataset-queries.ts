@@ -7,7 +7,7 @@
 
 import type { ChatStatus, LeadStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { fetchChatAttributions } from "@/lib/whatsapp/chat-attribution";
+import { fetchChatAttributions, fetchLastInboundMessages } from "@/lib/whatsapp/chat-attribution";
 import { chatAccessWhere, getChatVisibilityFilter } from "@/lib/whatsapp/chat-visibility";
 import { ensurePublicChatTokensForChats, publicChatUrl } from "@/lib/whatsapp/chat-public-link";
 import {
@@ -123,6 +123,8 @@ export async function buildLeadScoreRows(
   // anidado en el select de arriba — ver el comentario de fetchChatAttributions
   // sobre por qué ese patrón revienta con datasets grandes.
   const attributions = await fetchChatAttributions(scores.map((s) => s.chat.id));
+  // Un lookup por chat, no por score — mismo motivo que attributions/tokens.
+  const lastInbound = await fetchLastInboundMessages(scores.map((s) => s.chat.id));
 
   return scores.map((s) => {
     const { publicShareToken, contact, ...chatRest } = s.chat;
@@ -140,6 +142,7 @@ export async function buildLeadScoreRows(
         ...chatRest,
         contact: contact ? { ...contact, leadNumber: contact.leadNumber.toString() } : null,
         publicLink: publicChatUrl(tokens.get(s.chat.id)!),
+        lastInboundAt: lastInbound.get(s.chat.id)?.toISOString() ?? null,
       },
     };
   });

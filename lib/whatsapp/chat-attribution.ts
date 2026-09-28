@@ -80,3 +80,30 @@ export async function fetchChatAttributions(chatIds: string[]): Promise<Map<stri
 
   return result;
 }
+
+// "Última respuesta del prospecto" — a diferencia de WAChat.lastMessageAt
+// (cualquier mensaje, incluidos los que enviamos nosotros), esto es el
+// timestamp del último WAMessage con direction INBOUND. Mismo patrón de
+// batching que fetchChatAttributions de arriba (distinct chatId + orderBy
+// compuesto, en vez de N findFirst por chat) y por la misma razón: usado
+// sobre datasets que pueden crecer a miles de chats (export de Leads
+// calificados / sync a Sheets).
+export async function fetchLastInboundMessages(chatIds: string[]): Promise<Map<string, Date | null>> {
+  const result = new Map<string, Date | null>();
+  const uniqueIds = Array.from(new Set(chatIds));
+
+  for (let i = 0; i < uniqueIds.length; i += ATTRIBUTION_BATCH_SIZE) {
+    const batch = uniqueIds.slice(i, i + ATTRIBUTION_BATCH_SIZE);
+    const rows = await prisma.wAMessage.findMany({
+      where: { chatId: { in: batch }, direction: "INBOUND" },
+      orderBy: [{ chatId: "asc" }, { timestamp: "desc" }],
+      distinct: ["chatId"],
+      select: { chatId: true, timestamp: true },
+    });
+    for (const r of rows) {
+      result.set(r.chatId, r.timestamp);
+    }
+  }
+
+  return result;
+}
