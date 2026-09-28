@@ -383,9 +383,28 @@ body {
   100% { opacity: 1; transform: scale(1); }
 }
 
-.animate-fade-in-up  { animation: fade-in-up  var(--dur-slower) var(--ease-out-expo) both; }
-.animate-fade-in     { animation: fade-in     var(--dur-slow)   var(--ease) both; }
-.animate-fade-in-blur    { animation: fade-in-blur    var(--dur-slower) var(--ease-out-expo) both; }
+/* fill-mode "backwards" (no "forwards"): estas tres se usan para la entrada
+   de secciones de página que se quedan montadas para siempre (dashboard,
+   estadísticas, reportes, etc.) — con "both"/"forwards", cualquier elemento
+   animado en opacity/transform/filter queda atrapado en su propio stacking
+   context PARA SIEMPRE una vez termina la animación (la spec dice "mientras
+   la animación esté en efecto según animation-fill-mode", y "forwards" la
+   deja "en efecto" indefinidamente aunque el valor computado ya sea idéntico
+   al estado base). Eso rompía cualquier popover absolute+z-50 (el <DatePicker>,
+   p. ej.) que necesitara pintar por encima de la SIGUIENTE <section
+   animate-fade-in-up> del layout — esa siguiente sección, al crear su propio
+   stacking context y venir después en el DOM, tapaba la parte del popover
+   que caía sobre su territorio (mismo mecanismo ya documentado en
+   app-shell.tsx para el header con backdrop-blur). "backwards" evita el
+   flash sin estilo durante el animation-delay pero libera el stacking
+   context en cuanto la animación termina — visualmente idéntico (los
+   keyframes terminan en opacity:1/transform:none, que ya es el valor base).
+   NO tocar animate-scale-in-spring, slide-in/out ni scale-in/out (fill
+   "both" intencional ahí: son popovers/drawers transitorios que se
+   desmontan solos). */
+.animate-fade-in-up  { animation: fade-in-up  var(--dur-slower) var(--ease-out-expo) backwards; }
+.animate-fade-in     { animation: fade-in     var(--dur-slow)   var(--ease) backwards; }
+.animate-fade-in-blur    { animation: fade-in-blur    var(--dur-slower) var(--ease-out-expo) backwards; }
 .animate-scale-in-spring { animation: scale-in-spring var(--dur-slow)   var(--ease-spring) both; }
 .animate-shimmer     { animation: shimmer 1.5s linear infinite; }
 .animate-fade-out    { animation: fade-out    var(--dur) var(--ease) both; }
