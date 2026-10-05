@@ -21,6 +21,15 @@ export interface SendTemplateParams {
   buttonParam?: string | null;
 }
 
+// Meta rechaza (#131009 "Parameter value is not valid") un parámetro de texto vacío,
+// con saltos de línea/tabs o con 4+ espacios seguidos — y las celdas de una hoja
+// (respuestas de formularios de Facebook) traen justo eso. Se normaliza aquí para
+// que todos los callers queden cubiertos; vacío → "-" porque Meta no acepta "".
+export function sanitizeTemplateParam(value: string): string {
+  const clean = String(value ?? "").replace(/\s+/g, " ").trim();
+  return clean || "-";
+}
+
 // Único lugar que construye un payload type:"template" para la Graph API — usado por
 // campaign-worker.ts (envío masivo) y lib/google/lead-sheet-import.ts (envío disparado
 // por una fila nueva en una hoja externa). Lanza Error(mensaje) en fallo; cada caller
@@ -49,7 +58,7 @@ export async function sendTemplateMessage(
     const names = params.bodyParamNames;
     templateComponents.push({
       type: "body",
-      parameters: params.bodyParams.map((text, i) =>
+      parameters: params.bodyParams.map(sanitizeTemplateParam).map((text, i) =>
         names?.[i] ? { type: "text", parameter_name: names[i], text } : { type: "text", text }
       ),
     });
@@ -104,8 +113,13 @@ export async function sendTemplateMessage(
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({}));
-    const message =
-      (errorBody as { error?: { message?: string } })?.error?.message ?? `Error HTTP ${res.status}`;
+    const err = (errorBody as { error?: { message?: string; error_data?: { details?: string } } })?.error;
+    // error_data.details dice QUÉ parámetro rechazó Meta; el message solo es genérico.
+    const message = err?.message
+      ? err.error_data?.details
+        ? `${err.message} — ${err.error_data.details}`
+        : err.message
+      : `Error HTTP ${res.status}`;
     throw new Error(message);
   }
 

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Trash2, Workflow, ExternalLink } from "lucide-react";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
+import { Select } from "@/app/components/ui/select";
 import { Switch } from "@/app/components/ui/switch";
 import { EntityList, EntityRow } from "@/app/components/ui/entity-list";
 import { EntityAvatar } from "@/app/components/ui/avatar";
@@ -40,6 +41,8 @@ export default function FacebookAdsPage() {
   const [sources, setSources] = useState<LeadSheetSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "paused">("all");
+  const [accountFilter, setAccountFilter] = useState("");
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const fetchSources = useCallback(async () => {
@@ -57,6 +60,22 @@ export default function FacebookAdsPage() {
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; fetchSources also used for manual refresh
   useEffect(() => { fetchSources(); }, [fetchSources]);
+
+  const accounts = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const s of sources) byId.set(s.waAccount.id, s.waAccount.name);
+    return [...byId].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [sources]);
+
+  const filtered = useMemo(
+    () =>
+      sources.filter(
+        (s) =>
+          (statusFilter === "all" || (statusFilter === "active") === s.enabled) &&
+          (!accountFilter || s.waAccount.id === accountFilter)
+      ),
+    [sources, statusFilter, accountFilter]
+  );
 
   async function handleToggle(source: LeadSheetSource) {
     setTogglingId(source.id);
@@ -102,18 +121,41 @@ export default function FacebookAdsPage() {
         description="Conecta la hoja de Google Sheets donde Facebook Lead Ads sincroniza tus leads y dispara la plantilla de WhatsApp automáticamente apenas aparece uno nuevo. Se revisa cada 5 minutos, dentro del horario laboral configurado en Configuración."
       />
 
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as "all" | "active" | "paused")}
+            aria-label="Filtrar por estado"
+            className="w-44"
+          >
+            <option value="all">Todas ({sources.length})</option>
+            <option value="active">Activas ({sources.filter((s) => s.enabled).length})</option>
+            <option value="paused">Pausadas ({sources.filter((s) => !s.enabled).length})</option>
+          </Select>
+          <Select
+            value={accountFilter}
+            onChange={(e) => setAccountFilter(e.target.value)}
+            aria-label="Filtrar por cuenta"
+            className="w-56"
+          >
+            <option value="">Todas las cuentas</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </Select>
+        </div>
         <Button href="/whatsapp/campanas/automatizacion/nueva" icon={Plus} size="sm" className="shrink-0">
           Nueva fuente
         </Button>
       </div>
 
       <EntityList
-        rows={sources}
+        rows={filtered}
         rowKey={(s) => s.id}
         loading={loading}
         emptyIcon={Workflow}
-        emptyTitle="Sin fuentes de leads"
+        emptyTitle={sources.length > 0 ? "Ninguna fuente coincide con el filtro" : "Sin fuentes de leads"}
         emptyDescription="Conecta una hoja de Google Sheets para disparar plantillas automáticamente a leads nuevos."
         onRowClick={(s) => router.push(`/whatsapp/campanas/automatizacion/${s.id}`)}
         renderRow={(s) => (

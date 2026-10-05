@@ -29,6 +29,9 @@ interface ImportOptions {
   // Reprocesa filas marcadas "seeded" (vistas al conectar la fuente, sin enviar) —
   // usado por el botón "Importar leads existentes".
   includeExisting?: boolean;
+  // Reintenta las filas que quedaron "failed" (el importador normal nunca las
+  // vuelve a tocar porque ya existen en LeadSheetImportedRow) — botón "Reintentar fallidos".
+  retryFailed?: boolean;
   limit?: number;
   // Solo marca las filas actuales como "seeded" sin enviar nada — usado al crear
   // una fuente, para que el primer tick automático solo dispare con leads nuevos.
@@ -144,7 +147,10 @@ export async function importNewLeadsForSource(
     const phone = normalizePhone(row[phoneIdx] ?? "");
     if (!phone) continue;
     const existing = existingByPhone.get(phone);
-    const isCandidate = !existing || (opts.includeExisting && existing.status === "seeded");
+    const isCandidate =
+      !existing ||
+      (opts.includeExisting && existing.status === "seeded") ||
+      (opts.retryFailed && existing.status === "failed");
     if (!isCandidate) continue;
     if (opts.dateFrom || opts.dateTo) {
       const { date } = parseLeadDate(dateIdx !== -1 ? row[dateIdx] : null);

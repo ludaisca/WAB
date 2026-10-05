@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, RefreshCw, History, CalendarRange, Trash2, ExternalLink, Pencil } from "lucide-react";
+import { ArrowLeft, RefreshCw, History, CalendarRange, RotateCcw, Trash2, ExternalLink, Pencil } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
@@ -95,6 +95,8 @@ export default function LeadSheetSourceDetailPage() {
   const [importing, setImporting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [importConfirmOpen, setImportConfirmOpen] = useState(false);
+  const [retryConfirmOpen, setRetryConfirmOpen] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [importByDateOpen, setImportByDateOpen] = useState(false);
   const [importingByDate, setImportingByDate] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
@@ -119,6 +121,11 @@ export default function LeadSheetSourceDetailPage() {
 
   const seededCount = useMemo(
     () => source?.rowCounts.find((c) => c.status === "seeded")?._count._all ?? 0,
+    [source]
+  );
+
+  const failedCount = useMemo(
+    () => source?.rowCounts.find((c) => c.status === "failed")?._count._all ?? 0,
     [source]
   );
 
@@ -230,6 +237,22 @@ export default function LeadSheetSourceDetailPage() {
       toastError(err instanceof Error ? err.message : "Error al importar histórico");
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function handleRetryFailed() {
+    setRetryConfirmOpen(false);
+    setRetrying(true);
+    try {
+      const res = await fetch(`/api/whatsapp/lead-sheet-sources/${id}/retry-failed`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      success(`Reintento: ${data.imported} enviado(s), ${data.failed} siguen fallando`);
+      fetchSource();
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al reintentar fallidos");
+    } finally {
+      setRetrying(false);
     }
   }
 
@@ -360,6 +383,9 @@ export default function LeadSheetSourceDetailPage() {
           </Button>
           <Button variant="secondary" size="sm" icon={importing ? undefined : History} onClick={() => setImportConfirmOpen(true)} disabled={importing || seededCount === 0}>
             {importing ? <Spinner /> : "Importar leads existentes"}
+          </Button>
+          <Button variant="secondary" size="sm" icon={retrying ? undefined : RotateCcw} onClick={() => setRetryConfirmOpen(true)} disabled={retrying || failedCount === 0}>
+            {retrying ? <Spinner /> : `Reintentar fallidos${failedCount > 0 ? ` (${failedCount})` : ""}`}
           </Button>
           <Button
             variant="secondary"
@@ -536,6 +562,15 @@ export default function LeadSheetSourceDetailPage() {
         confirmLabel="Enviar a todos"
         tone="danger"
         onConfirm={handleImportExisting}
+      />
+
+      <ConfirmDialog
+        open={retryConfirmOpen}
+        onClose={() => setRetryConfirmOpen(false)}
+        title="Reintentar fallidos"
+        description={`Se volverá a enviar la plantilla "${source.waTemplate.name}" a los ${failedCount} lead(s) cuyo envío falló (máximo 500 por intento). Los que salgan bien pasan a "Enviado"; los que vuelvan a fallar conservan el nuevo motivo de error.`}
+        confirmLabel="Reintentar"
+        onConfirm={handleRetryFailed}
       />
 
       <Modal
