@@ -48,7 +48,11 @@ export async function GET(req: Request) {
 
     const campaignIdParam = searchParams.get("campaignId");
     if (campaignIdParam) {
-      messageFilters.push({ messages: { some: { campaignId: campaignIdParam } } });
+      // El parámetro acepta tanto una campaña masiva como una fuente de Facebook Ads
+      // (LeadSheetSource) — ambas son "de dónde salió el chat" y sus ids (cuid) no chocan.
+      messageFilters.push({
+        messages: { some: { OR: [{ campaignId: campaignIdParam }, { leadSheetSourceId: campaignIdParam }] } },
+      });
     }
 
     const hasRepliedParam = searchParams.get("hasReplied");

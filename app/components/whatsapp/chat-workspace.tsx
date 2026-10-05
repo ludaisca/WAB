@@ -69,6 +69,8 @@ interface CannedResponseItem {
 interface CampaignOption {
   id: string;
   name: string;
+  // true = fuente de Facebook Ads (LeadSheetSource), no campaña masiva
+  source?: boolean;
 }
 
 const HAS_REPLIED_OPTIONS: Array<{ value: "" | "yes" | "no"; label: string }> = [
@@ -512,12 +514,19 @@ export function ChatWorkspace({
   // Campaign list for the filter dropdown — fetched once, doesn't depend on the
   // current chat filters.
   useEffect(() => {
-    fetch("/api/whatsapp/campaigns")
-      .then((r) => r.json())
-      .then((d) => {
-        if (Array.isArray(d)) setCampaigns(d.map((c: { id: string; name: string }) => ({ id: c.id, name: c.name })));
-      })
-      .catch(() => {});
+    // Campañas masivas + fuentes de Facebook Ads: el badge de cada chat ya muestra
+    // ambas, así que el filtro debe poder elegir ambas. Las fuentes 403 para el rol
+    // ejecutivo — ahí simplemente no aparece el grupo.
+    const load = (url: string, source: boolean) =>
+      fetch(url)
+        .then((r) => r.json())
+        .then((d): CampaignOption[] =>
+          Array.isArray(d) ? d.map((c: { id: string; name: string }) => ({ id: c.id, name: c.name, source })) : []
+        )
+        .catch((): CampaignOption[] => []);
+    Promise.all([load("/api/whatsapp/campaigns", false), load("/api/whatsapp/lead-sheet-sources", true)]).then(
+      ([manual, sources]) => setCampaigns([...manual, ...sources])
+    );
   }, []);
 
   // Cuentas para el selector — de la API, no derivadas de los chats cargados:
@@ -857,9 +866,18 @@ export function ChatWorkspace({
               className="text-xs"
             >
               <option value="">Todas las campañas</option>
-              {campaigns.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
+              <optgroup label="Campañas">
+                {campaigns.filter((c) => !c.source).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </optgroup>
+              {campaigns.some((c) => c.source) && (
+                <optgroup label="Facebook Ads">
+                  {campaigns.filter((c) => c.source).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </optgroup>
+              )}
             </Select>
             <Select
               value={hasRepliedFilter}
