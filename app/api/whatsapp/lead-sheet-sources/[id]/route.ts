@@ -22,7 +22,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       where: { id, waAccountId: { in: accountIds } },
       include: {
         waAccount: { select: { id: true, name: true } },
-        waTemplate: { select: { id: true, name: true, language: true } },
+        waTemplate: { select: { id: true, name: true, language: true, components: true } },
       },
     });
     if (!source) {

@@ -6,6 +6,7 @@ import { sendTemplateMessage } from "@/lib/whatsapp/send-template";
 import { saveMediaFromMeta, isImageMime, isVideoMime } from "@/lib/whatsapp/media-store";
 import { shouldUpdateName } from "@/lib/whatsapp/contact-name";
 import { autoAssignChat } from "@/lib/whatsapp/auto-assign";
+import { isExpiredMediaError, refreshHeaderMediaFromLocalCopy, HEADER_MEDIA_EXPIRED_MESSAGE } from "@/lib/google/lead-sheet-header";
 import { parseLeadDate } from "@/lib/google/parse-lead-date";
 import type { LeadSheetSource, WAAccount, WATemplate } from "@prisma/client";
 
@@ -174,6 +175,9 @@ export async function importNewLeadsForSource(
   }
 
   const templateVars = getTemplateVariables(source.waTemplate.components);
+  // `let`: si Meta reporta el media id caducado se re-sube y se reemplaza a mitad de corrida.
+  let headerParam = source.headerParam;
+  let headerRefreshTried = false;
   const templateName = source.waTemplate.name;
   const language = source.waTemplate.language;
 
@@ -249,17 +253,35 @@ export async function importNewLeadsForSource(
     }
 
     try {
-      const { wamid, waId } = await sendTemplateMessage(source.waAccount, {
-        to: phone,
-        templateName,
-        language,
-        bodyParams,
-        bodyParamNames: templateVars.bodyParamNames,
-        headerFormat: templateVars.header.format,
-        headerParam: source.headerParam,
-        buttonIndex: templateVars.buttonUrl?.index ?? null,
-        buttonParam: source.buttonParam,
-      });
+      const send = () =>
+        sendTemplateMessage(source.waAccount, {
+          to: phone,
+          templateName,
+          language,
+          bodyParams,
+          bodyParamNames: templateVars.bodyParamNames,
+          headerFormat: templateVars.header.format,
+          headerParam,
+          buttonIndex: templateVars.buttonUrl?.index ?? null,
+          buttonParam: source.buttonParam,
+        });
+      let sent: Awaited<ReturnType<typeof send>>;
+      try {
+        sent = await send();
+      } catch (sendErr) {
+        const msg = sendErr instanceof Error ? sendErr.message : "";
+        const isMediaHeader = !!templateVars.header.format && templateVars.header.format !== "TEXT";
+        if (!isMediaHeader || !isExpiredMediaError(msg)) throw sendErr;
+        // El media id de la cabecera caducó en Meta (~30 días). Se intenta una sola vez
+        // por corrida volver a subir la copia local; sin copia, falla con un motivo claro.
+        if (headerRefreshTried) throw new Error(HEADER_MEDIA_EXPIRED_MESSAGE);
+        headerRefreshTried = true;
+        const fresh = await refreshHeaderMediaFromLocalCopy(source, source.waAccount);
+        if (!fresh) throw new Error(HEADER_MEDIA_EXPIRED_MESSAGE);
+        headerParam = fresh;
+        sent = await send();
+      }
+      const { wamid, waId } = sent;
 
       // wa_id canónico de Meta, no el número tal cual vino de la hoja — evita
       // crear un chat "gemelo" del que recibirá la respuesta real del lead
@@ -269,7 +291,7 @@ export async function importNewLeadsForSource(
 
       const sentAt = new Date();
       const messageBody =
-        renderTemplateText(source.waTemplate.components, { bodyParams, headerParam: source.headerParam }) ||
+        renderTemplateText(source.waTemplate.components, { bodyParams, headerParam }) ||
         `Plantilla: ${templateName}`;
 
       const contactNameShouldUpdate = shouldUpdateName(contactName, contact?.name, phone);
@@ -310,7 +332,7 @@ export async function importNewLeadsForSource(
           direction: "OUTBOUND",
           messageType: headerMedia ? mediaMessageTypeFromMime(headerMedia.mimeType) : "template",
           body: messageBody,
-          mediaId: headerMedia ? source.headerParam : null,
+          mediaId: headerMedia ? headerParam : null,
           mediaUrl: headerMedia ? headerMedia.relativePath : null,
           mimeType: headerMedia ? headerMedia.mimeType : null,
           bytesSize: headerMedia ? headerMedia.bytesSize : null,

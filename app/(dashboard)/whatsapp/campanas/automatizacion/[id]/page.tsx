@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, RefreshCw, History, CalendarRange, RotateCcw, Trash2, ExternalLink, Pencil } from "lucide-react";
+import { ArrowLeft, RefreshCw, History, CalendarRange, ImageUp, RotateCcw, Trash2, ExternalLink, Pencil } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
@@ -19,6 +19,7 @@ import { Banner } from "@/app/components/ui/banner";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
 import { formatDateTime } from "@/lib/timezone";
+import { getTemplateVariables } from "@/lib/whatsapp/template-variables";
 
 interface SourceDetail {
   id: string;
@@ -40,7 +41,7 @@ interface SourceDetail {
   lastError: string | null;
   createdAt: string;
   waAccount: { id: string; name: string };
-  waTemplate: { id: string; name: string; language: string };
+  waTemplate: { id: string; name: string; language: string; components: unknown };
   rowCounts: { status: string; _count: { _all: number } }[];
   rotationCounts: { rotatedValue: string | null; _count: { _all: number } }[];
   recentRows: ImportedRow[];
@@ -95,6 +96,7 @@ export default function LeadSheetSourceDetailPage() {
   const [importing, setImporting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [importConfirmOpen, setImportConfirmOpen] = useState(false);
+  const [headerUploading, setHeaderUploading] = useState(false);
   const [retryConfirmOpen, setRetryConfirmOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [importByDateOpen, setImportByDateOpen] = useState(false);
@@ -128,6 +130,11 @@ export default function LeadSheetSourceDetailPage() {
     () => source?.rowCounts.find((c) => c.status === "failed")?._count._all ?? 0,
     [source]
   );
+
+  const hasMediaHeader = useMemo(() => {
+    const format = source ? getTemplateVariables(source.waTemplate.components).header.format : null;
+    return !!format && format !== "TEXT";
+  }, [source]);
 
   const rotationTotal = useMemo(
     () => (source?.rotationCounts ?? []).reduce((sum, r) => sum + r._count._all, 0),
@@ -237,6 +244,26 @@ export default function LeadSheetSourceDetailPage() {
       toastError(err instanceof Error ? err.message : "Error al importar histórico");
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function handleHeaderFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setHeaderUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`/api/whatsapp/lead-sheet-sources/${id}/header-media`, { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      success("Archivo de cabecera actualizado — ya puedes reintentar los fallidos");
+      fetchSource();
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error al subir el archivo");
+    } finally {
+      setHeaderUploading(false);
     }
   }
 
@@ -397,6 +424,16 @@ export default function LeadSheetSourceDetailPage() {
           >
             Importar por fecha
           </Button>
+          {hasMediaHeader && (
+            <label
+              className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface-light px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-surface"
+              title="Sube de nuevo la imagen/video de la cabecera (Meta borra los archivos a los ~30 días)"
+            >
+              {headerUploading ? <Spinner /> : <ImageUp size={14} />}
+              Reemplazar cabecera
+              <input type="file" accept="image/*,video/*,application/pdf" className="hidden" onChange={handleHeaderFile} disabled={headerUploading} />
+            </label>
+          )}
           <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setDeleteOpen(true)} className="text-muted-darker hover:text-danger" />
         </div>
       </div>
