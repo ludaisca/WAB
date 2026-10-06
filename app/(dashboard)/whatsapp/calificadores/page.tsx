@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Plus, Target, Trash2, Sparkles, Clock, Download, RefreshCw } from "lucide-react";
 import { Badge } from "@/app/components/ui/badge";
+import { Banner } from "@/app/components/ui/banner";
 import { Switch } from "@/app/components/ui/switch";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { DropdownItem } from "@/app/components/ui/dropdown";
@@ -263,6 +264,7 @@ function LeadsTab() {
   const [rows, setRows] = useState<LeadScoreRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const [scorerFilter, setScorerFilter] = useState("all");
   const [labelFilter, setLabelFilter] = useState("all");
   const [accountFilter, setAccountFilter] = useState("all");
@@ -279,20 +281,27 @@ function LeadsTab() {
     setLoading(true);
     setFetchError(null);
     try {
-      const res = await fetch("/api/whatsapp/lead-scores");
+      // El rango de fechas se filtra en el servidor: así el tope de filas
+      // recorta lo más viejo y no un estado completo de la escala.
+      const qs = new URLSearchParams();
+      if (dateFrom) qs.set("dateFrom", dateFrom);
+      if (dateTo) qs.set("dateTo", dateTo);
+      const res = await fetch(`/api/whatsapp/lead-scores?${qs}`);
       const data = await res.json();
-      if (Array.isArray(data)) setRows(data);
-      else throw new Error(data.error ?? "Error al cargar leads calificados");
+      if (Array.isArray(data)) {
+        setRows(data);
+        setTruncated(res.headers.get("X-Truncated") === "1");
+      } else throw new Error(data.error ?? "Error al cargar leads calificados");
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : "Error al cargar leads calificados");
       toastError(err instanceof Error ? err.message : "Error al cargar leads calificados");
     } finally {
       setLoading(false);
     }
-  }, [toastError]);
+  }, [toastError, dateFrom, dateTo]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / on date range change
     fetchRows();
   }, [fetchRows]);
 
@@ -313,15 +322,12 @@ function LeadsTab() {
       if (scorerFilter !== "all" && r.scorer.id !== scorerFilter) return false;
       if (labelFilter !== "all" && r.label !== labelFilter) return false;
       if (accountFilter !== "all" && r.chat.account.id !== accountFilter) return false;
-      const updatedDate = r.updatedAt.slice(0, 10);
-      if (dateFrom && updatedDate < dateFrom) return false;
-      if (dateTo && updatedDate > dateTo) return false;
       return true;
     });
-  }, [rows, scorerFilter, labelFilter, accountFilter, dateFrom, dateTo]);
+  }, [rows, scorerFilter, labelFilter, accountFilter]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- keeps pagination valid when filters narrow/widen the result set
-  useEffect(() => { setPage(1); }, [scorerFilter, labelFilter, accountFilter, dateFrom, dateTo]);
+  useEffect(() => { setPage(1); }, [rows, scorerFilter, labelFilter, accountFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / LEADS_PAGE_SIZE));
   const pageRows = useMemo(
@@ -487,6 +493,12 @@ function LeadsTab() {
             <DatePicker value={dateTo} onChange={setDateTo} placeholder="Hasta" min={dateFrom || undefined} />
           </div>
         </div>
+
+        {truncated && (
+          <Banner tone="warning">
+            Hay más calificaciones de las que se pueden mostrar a la vez; se muestran las más recientes. Acota el rango de fechas para ver el resto.
+          </Banner>
+        )}
 
         {selectedIds.size > 0 && (
           <p className="text-xs text-muted-darker">{selectedIds.size} lead(s) seleccionado(s).</p>

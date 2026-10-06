@@ -47,6 +47,67 @@ Responde ÚNICAMENTE con un bloque \`\`\`json ... \`\`\` sin texto adicional ant
 
 summary es un resumen narrativo de 3-5 líneas basado solo en lo explícito. reasons son 2-4 motivos breves y concretos (señales de compra u objeciones reales — "receptivo" o "cordial" no cuentan como motivo). senales_compra y objeciones_dudas: máximo 3 elementos cada una, listas vacías si no aplica. nivel_interaccion "medio" solo si hubo respuesta con continuidad o pregunta propia del lead; una confirmación breve sin siguiente paso es "bajo".`;
 
+// Textos de los botones de respuesta rápida (QUICK_REPLY) de una plantilla,
+// leídos del `components` crudo de Meta.
+function quickReplyTexts(components: unknown): string[] {
+  if (!Array.isArray(components)) return [];
+  const out: string[] = [];
+  for (const c of components as Array<{ type?: string; buttons?: Array<{ type?: string; text?: string }> }>) {
+    if (c.type !== "BUTTONS") continue;
+    for (const b of c.buttons ?? []) {
+      if (b.type === "QUICK_REPLY" && b.text?.trim()) out.push(b.text.trim());
+    }
+  }
+  return out;
+}
+
+const normalizeReply = (t: string) => t.trim().toLowerCase().replace(/\s+/g, " ");
+
+// Respuestas predefinidas de las plantillas con que se contactó a este chat
+// (campañas masivas / fuentes de Facebook Ads). Un chat puede haber recibido
+// varias plantillas; se juntan los botones de todas. El chat es uno solo, así
+// que las consultas están acotadas — no aplica el límite de Prisma del
+// CHAT_ATTRIBUTION_MESSAGE_QUERY anidado.
+async function getTemplateQuickReplies(chatId: string): Promise<string[]> {
+  const sent = await prisma.wAMessage.findMany({
+    where: {
+      chatId,
+      direction: "OUTBOUND",
+      OR: [{ campaignId: { not: null } }, { leadSheetSourceId: { not: null } }],
+    },
+    distinct: ["campaignId", "leadSheetSourceId"],
+    take: 10,
+    select: {
+      campaign: { select: { waTemplate: { select: { components: true } } } },
+      leadSheetSource: { select: { waTemplate: { select: { components: true } } } },
+    },
+  });
+  const texts = new Set<string>();
+  for (const m of sent) {
+    const components = m.campaign?.waTemplate.components ?? m.leadSheetSource?.waTemplate.components;
+    for (const t of quickReplyTexts(components)) texts.add(t);
+  }
+  return Array.from(texts);
+}
+
+const PREDEFINED_TAG = "[BOTÓN PREDEFINIDO DE LA PLANTILLA]";
+
+// Un toque en el botón "Me interesa" de una plantilla masiva no es una
+// redacción del lead: es un clic de un solo paso que el propio mensaje le
+// ofrece. Sin esta instrucción el modelo lo leía como interés genuino y
+// disparaba la calificación (prioridad alta) de leads que solo tocaron el botón.
+function templateRepliesNote(quickReplies: string[]): string {
+  const list = quickReplies.length
+    ? `Los botones de respuesta rápida que ofrecía la plantilla son: ${quickReplies.map((t) => `«${t}»`).join(", ")}.`
+    : "";
+  return `CONTEXTO DE PLANTILLA: esta conversación empezó con un mensaje de plantilla de una campaña (marcado "Agente:" al inicio de la transcripción). ${list}
+Los mensajes del lead marcados ${PREDEFINED_TAG} son un toque en uno de esos botones (respuesta predefinida), NO palabras propias del lead. Reglas estrictas:
+- NO los cuentes como interés genuino, necesidad, intención de compra, urgencia ni como senales_compra, y no los cites en "reasons" como motivo para subir la calificación. El lead solo pulsó una opción que el propio mensaje le puso enfrente.
+- Evalúa la fase únicamente con lo que el lead escribió con sus propias palabras (mensajes sin esa marca).
+- Si TODOS los mensajes del lead son de ese tipo (no escribió nada propio), la fase es "frio" (score 1-15) y nivel_interaccion "bajo"; di en el summary que solo respondió con el botón predefinido.
+- Excepción: si el botón es un rechazo explícito (ej. "No me interesa", "Dejar de recibir mensajes"), aplica la regla de "descartado".`;
+}
+
 export class LeadScoringError extends Error {}
 
 // Shared by the manual "Calificar" button (score/route.ts) and the scheduled
@@ -92,10 +153,29 @@ export async function scoreChatWithScorer(chatId: string, scorer: WALeadScorerBo
     throw new LeadScoringError("Falta configurar la clave de Google IA");
   }
 
+  // Respuestas predefinidas de plantilla: Meta manda el toque de un botón
+  // QUICK_REPLY como messageType "button" (o "interactive" si vino de una
+  // respuesta interactiva); además se compara el texto contra los botones de
+  // las plantillas enviadas a este chat, por si el tipo no vino marcado.
+  const quickReplies = await getTemplateQuickReplies(chatId);
+  const quickReplyKeys = new Set(quickReplies.map(normalizeReply));
+  const isPredefined = (m: (typeof messages)[number]) =>
+    m.direction === "INBOUND" &&
+    (m.messageType === "button" ||
+      ((m.messageType === "text" || m.messageType === "interactive") &&
+        quickReplyKeys.has(normalizeReply(m.body ?? ""))));
+
+  const inboundMessages = messages.filter((m) => m.direction === "INBOUND");
+  const predefinedCount = inboundMessages.filter(isPredefined).length;
+  const onlyPredefined = predefinedCount > 0 && predefinedCount === inboundMessages.length;
+
   const transcript = messages
     .map((m) => {
       const text = m.caption ?? m.body ?? `[${m.messageType}]`;
-      return `${m.direction === "INBOUND" ? "Lead" : "Agente"}: ${text}`;
+      if (m.direction === "INBOUND") {
+        return isPredefined(m) ? `Lead ${PREDEFINED_TAG}: ${text}` : `Lead: ${text}`;
+      }
+      return `Agente: ${text}`;
     })
     .join("\n");
 
@@ -107,6 +187,9 @@ export async function scoreChatWithScorer(chatId: string, scorer: WALeadScorerBo
     messages: [
       { role: "system", content: wrapUserPrompt(scorer.systemPrompt) },
       { role: "system", content: JSON_CONTRACT },
+      ...(predefinedCount > 0 || quickReplies.length > 0
+        ? [{ role: "system" as const, content: templateRepliesNote(quickReplies) }]
+        : []),
       // slice(-12000): si hay que recortar, se pierde el inicio de la
       // conversación, nunca el final (lo más reciente).
       { role: "user", content: transcript.slice(-12000) },
@@ -116,6 +199,18 @@ export async function scoreChatWithScorer(chatId: string, scorer: WALeadScorerBo
   const parsed = parseScoreResponse(result.content);
   if (!parsed) {
     throw new LeadScoringError("La IA no devolvió un resultado válido");
+  }
+
+  // Red de seguridad: la instrucción del prompt no es infalible. Si lo único
+  // que el lead hizo fue tocar botones predefinidos de la plantilla, ninguna
+  // fase por encima de "frio" es defendible (ni "interesado", que exige
+  // conversación real) — se baja aquí en vez de confiar solo en el modelo.
+  if (onlyPredefined && parsed.label !== "descartado" && parsed.label !== "frio") {
+    parsed.label = "frio";
+    parsed.score = Math.min(parsed.score, 10);
+  }
+  if (onlyPredefined && parsed.label === "frio") {
+    parsed.score = Math.max(1, Math.min(parsed.score, 15));
   }
 
   const leadScore = await prisma.wALeadScore.upsert({
