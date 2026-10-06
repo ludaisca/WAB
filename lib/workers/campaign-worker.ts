@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { campaignQueue } from "@/lib/queue";
 import { getTemplateVariables, renderTemplateText } from "@/lib/whatsapp/template-variables";
-import { saveMediaFromMeta, isImageMime, isVideoMime } from "@/lib/whatsapp/media-store";
+import { isImageMime, isVideoMime } from "@/lib/whatsapp/media-store";
+import { getOrSaveHeaderMedia } from "@/lib/whatsapp/header-media-cache";
 import { sendTemplateMessage } from "@/lib/whatsapp/send-template";
 import { shouldUpdateName } from "@/lib/whatsapp/contact-name";
 import { estimateMessageCostUsd } from "@/lib/whatsapp/campaign-pricing";
@@ -133,12 +134,11 @@ export async function processCampaignJob(job: CampaignJob) {
   let headerMedia: { relativePath: string; mimeType: string; bytesSize: number } | null = null;
   if (campaign.headerParam && templateVars.header.format && templateVars.header.format !== "TEXT") {
     try {
-      const stored = await saveMediaFromMeta(
+      headerMedia = await getOrSaveHeaderMedia(
         campaign.waAccountId,
         campaign.headerParam,
         campaign.waAccount.accessToken!
       );
-      headerMedia = { relativePath: stored.relativePath, mimeType: stored.remoteMimeType, bytesSize: stored.bytesSize };
     } catch {
       headerMedia = null;
     }

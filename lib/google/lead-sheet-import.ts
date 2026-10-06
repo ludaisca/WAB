@@ -3,7 +3,8 @@ import { getGoogleSheetsClientForUser } from "@/lib/google/sheets-client";
 import { readSheetValues } from "@/lib/google/sheets-read";
 import { getTemplateVariables, renderTemplateText } from "@/lib/whatsapp/template-variables";
 import { sendTemplateMessage } from "@/lib/whatsapp/send-template";
-import { saveMediaFromMeta, isImageMime, isVideoMime } from "@/lib/whatsapp/media-store";
+import { isImageMime, isVideoMime } from "@/lib/whatsapp/media-store";
+import { getOrSaveHeaderMedia } from "@/lib/whatsapp/header-media-cache";
 import { shouldUpdateName } from "@/lib/whatsapp/contact-name";
 import { autoAssignChat } from "@/lib/whatsapp/auto-assign";
 import { isExpiredMediaError, refreshHeaderMediaFromLocalCopy, HEADER_MEDIA_EXPIRED_MESSAGE } from "@/lib/google/lead-sheet-header";
@@ -187,8 +188,7 @@ export async function importNewLeadsForSource(
   let headerMedia: { relativePath: string; mimeType: string; bytesSize: number } | null = null;
   if (source.headerParam && templateVars.header.format && templateVars.header.format !== "TEXT") {
     try {
-      const stored = await saveMediaFromMeta(source.waAccountId, source.headerParam, source.waAccount.accessToken!);
-      headerMedia = { relativePath: stored.relativePath, mimeType: stored.remoteMimeType, bytesSize: stored.bytesSize };
+      headerMedia = await getOrSaveHeaderMedia(source.waAccountId, source.headerParam, source.waAccount.accessToken!);
     } catch {
       headerMedia = null;
     }

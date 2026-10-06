@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
-import { execFile } from "child_process";
+import { execFile, spawn } from "child_process";
+import { createHash } from "crypto";
 import { promisify } from "util";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -21,6 +22,37 @@ const execFileAsync = promisify(execFile);
 
 const BACKUP_ROOT = process.env.BACKUP_ROOT || "/app/backups";
 const BACKUP_TIMEOUT_MS = Number(process.env.BACKUP_TIMEOUT_MS) || 30 * 60 * 1000;
+
+// Hash (sha256) de un miembro del .tar leído en streaming con `tar xOf` — sin
+// extraer nada a disco.
+function sha256TarMember(tarPath: string, member: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash("sha256");
+    const child = spawn("tar", ["xOf", tarPath, member]);
+    let stderr = "";
+    child.stdout.on("data", (chunk) => hash.update(chunk));
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve(hash.digest("hex"));
+      else reject(new Error(`tar xOf ${member} falló (${code}): ${stderr.slice(0, 500)}`));
+    });
+  });
+}
+
+// Con retención de UNA sola copia, un respaldo corrupto que reemplace al
+// bueno sería irrecuperable. Antes de marcarlo COMPLETED (y por tanto antes de
+// que la rotación borre el anterior) se relee el .tar FINAL y se compara con
+// los checksums del manifest.
+async function verifyFinalArchive(finalPath: string, manifest: BackupManifest): Promise<void> {
+  const [dbSha, mediaSha] = await Promise.all([
+    sha256TarMember(finalPath, "db.dump"),
+    sha256TarMember(finalPath, "media.tar.gz"),
+  ]);
+  if (dbSha !== manifest.dbDumpSha256 || mediaSha !== manifest.mediaArchiveSha256) {
+    throw new Error("Verificación del respaldo fallida: el .tar final no coincide con los checksums del manifest");
+  }
+}
 
 async function runPgDump(dumpPath: string): Promise<void> {
   const conn = parseDatabaseUrl();
@@ -118,6 +150,14 @@ export async function runBackupPipeline(backupId: string): Promise<void> {
     await execFileAsync("tar", ["cf", finalPath, "-C", tmpDir, "manifest.json", "db.dump", "media.tar.gz"], {
       maxBuffer: 10 * 1024 * 1024,
     });
+
+    try {
+      await verifyFinalArchive(finalPath, manifest);
+    } catch (err) {
+      // Un .tar que no verifica no debe quedar en disco ni compararse como válido.
+      await fs.rm(finalPath, { force: true }).catch(() => {});
+      throw err;
+    }
 
     const finalStat = await fs.stat(finalPath);
 
