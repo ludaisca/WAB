@@ -90,6 +90,27 @@ export function formatTime(value: Date | string, opts: Intl.DateTimeFormatOption
   return toDate(value).toLocaleTimeString("es-MX", { ...opts, timeZone });
 }
 
+/**
+ * Componentes de reloj de pared en timeZone (CDMX por default), sin depender
+ * de la zona del proceso. Base para convertir a los seriales de fecha/hora de
+ * Google Sheets, que son "hora de pared" por definición.
+ */
+export function wallClockInTz(date: Date, timeZone: string = MEXICO_CITY_TZ): {
+  year: number; month: number; day: number; hour: number; minute: number;
+} {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone, hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+  }).formatToParts(date);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? "0");
+  // h23 puede devolver "24" a medianoche en algunos runtimes — se normaliza.
+  return {
+    year: get("year"), month: get("month"), day: get("day"),
+    hour: get("hour") % 24, minute: get("minute"),
+  };
+}
+
 /** Formatea fecha+hora (es-MX), explícitamente en timeZone (CDMX por default). */
 export function formatDateTime(value: Date | string, opts: Intl.DateTimeFormatOptions = DEFAULT_DATETIME_OPTS, timeZone: string = MEXICO_CITY_TZ): string {
   return toDate(value).toLocaleString("es-MX", { ...opts, timeZone });

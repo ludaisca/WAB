@@ -9,9 +9,9 @@ import type { GoogleAccount, SheetExport } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
 import { getGoogleSheetsClientForUser } from "@/lib/google/sheets-client";
-import { listSheetTabs } from "@/lib/google/sheets-read";
+import { listSheetTabs, quoteTabTitle } from "@/lib/google/sheets-read";
 import { isRevokedGrantError } from "@/lib/google/errors";
-import { EXPORT_COLUMNS, CAMPAIGN_EXPORT_COLUMNS, EXPORT_COLUMNS_BY_DATASET, type ExportColumnDef, type SheetExportDataset } from "@/lib/whatsapp/export-columns";
+import { EXPORT_COLUMNS, CAMPAIGN_EXPORT_COLUMNS, EXPORT_COLUMNS_BY_DATASET, expandLegacyColumnKeys, type ExportColumnDef, type SheetExportDataset } from "@/lib/whatsapp/export-columns";
 import { canUseDataset } from "@/lib/whatsapp/sheet-export-access";
 import {
   buildLeadScoreRows,
@@ -72,49 +72,61 @@ async function migrateLegacySyncIfNeeded(account: GoogleAccount): Promise<void> 
 // Exportada (no solo de uso interno) — la ruta POST de creación la llama para
 // fallar rápido si la cuenta de Google conectada no tiene permiso de edición
 // sobre la hoja pegada, ANTES de crear el registro en DB.
-export async function ensureSheetTab(sheets: sheets_v4.Sheets, spreadsheetId: string, tabTitle: string): Promise<void> {
+//
+// Devuelve el sheetId numérico (GridRange de batchUpdate no acepta notación
+// A1): writeSheetTab lo necesita para aplicar el formato de fecha/hora.
+export async function ensureSheetTab(sheets: sheets_v4.Sheets, spreadsheetId: string, tabTitle: string): Promise<number | null> {
   const tabs = await listSheetTabs(sheets, spreadsheetId);
-  if (tabs.some((t) => t.title === tabTitle)) return;
+  const existing = tabs.find((t) => t.title === tabTitle);
+  if (existing) return existing.sheetId;
 
   try {
-    await sheets.spreadsheets.batchUpdate({
+    const { data } = await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       requestBody: { requests: [{ addSheet: { properties: { title: tabTitle } } }] },
     });
+    return data.replies?.[0]?.addSheet?.properties?.sheetId ?? null;
   } catch (err) {
     // sync-now corre fuera de la cola BullMQ — dos ejecuciones concurrentes del
     // mismo export recién creado pueden competir por crear la misma pestaña.
     // Google responde 400 "A sheet with the name ... already exists" en ese caso;
-    // se trata como éxito silencioso, cualquier otro error se propaga.
+    // se re-lee el sheetId en vez de fallar, cualquier otro error se propaga.
     const message = err instanceof Error ? err.message : String(err);
     if (!message.toLowerCase().includes("already exists")) throw err;
+    const after = await listSheetTabs(sheets, spreadsheetId);
+    return after.find((t) => t.title === tabTitle)?.sheetId ?? null;
   }
-}
-
-// Notación A1: una comilla simple dentro de un nombre de pestaña entrecomillado
-// se escapa duplicándola (regla del propio grammar de Sheets) — sin esto, un
-// sheetName con apóstrofe (ej. "Leads Q1's", tab title es texto libre en el
-// formulario) produce un rango inválido y la sincronización falla en cada tick.
-function quoteTabTitle(tabTitle: string): string {
-  return `'${tabTitle.replace(/'/g, "''")}'`;
 }
 
 async function writeSheetTab<T>(
   sheets: sheets_v4.Sheets,
   spreadsheetId: string,
+  sheetId: number | null,
   tabTitle: string,
   columns: ExportColumnDef<T>[],
   rows: T[]
 ): Promise<void> {
-  const values = [columns.map((c) => c.label), ...rows.map((r) => columns.map((c) => c.get(r)))];
+  const values = [
+    columns.map((c) => c.label),
+    // Las columnas con getSheetValue escriben el valor tipado (serial), no el
+    // texto: es lo que permite que Sheets las trate como fecha/hora real.
+    ...rows.map((r) =>
+      columns.map((c) => {
+        if (!c.getSheetValue) return c.get(r);
+        const typed = c.getSheetValue(r);
+        return typed === null ? "" : typed;
+      })
+    ),
+  ];
   const quotedTitle = quoteTabTitle(tabTitle);
 
-  // Rango fijo y generoso: se limpia primero para no dejar "filas fantasma" si
-  // el dataset actual es más corto que el de la sincronización anterior, luego
-  // se escribe todo de nuevo en una sola llamada.
+  // Se limpia la pestaña completa (el nombre de pestaña a secas es un rango
+  // válido y queda acotado a la grilla real). El viejo A1:Z100000 dejaba fuera
+  // de la limpieza cualquier columna más allá de la Z — con 29 columnas eso ya
+  // era AA-AC, y si el export se recorta quedarían datos fantasma.
   await sheets.spreadsheets.values.clear({
     spreadsheetId,
-    range: `${quotedTitle}!A1:Z100000`,
+    range: quotedTitle,
   });
 
   await sheets.spreadsheets.values.update({
@@ -123,6 +135,38 @@ async function writeSheetTab<T>(
     valueInputOption: "RAW",
     requestBody: { values },
   });
+
+  // El formato de número es lo que hace visible el serial como fecha/hora. Se
+  // reaplica en cada sync (idempotente) para que sobreviva a que alguien
+  // reformatee la columna o recree la pestaña. Sin sheetId resuelto no se toca
+  // ningún formato: repetir la petición con un id inventado formatearía otra
+  // pestaña del libro.
+  const formatRequests = sheetId === null
+    ? []
+    : columns.flatMap((c, index) =>
+        c.sheetFormat
+          ? [
+              {
+                repeatCell: {
+                  range: { sheetId, startRowIndex: 1, startColumnIndex: index, endColumnIndex: index + 1 },
+                  cell: {
+                    userEnteredFormat: {
+                      numberFormat: { type: c.sheetFormat.type, pattern: c.sheetFormat.pattern },
+                    },
+                  },
+                  fields: "userEnteredFormat.numberFormat",
+                },
+              },
+            ]
+          : []
+      );
+
+  if (formatRequests.length > 0) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: formatRequests },
+    });
+  }
 }
 
 function intersect(base: string[], subset: string[] | undefined): string[] {
@@ -174,9 +218,10 @@ async function runExport(
       break;
   }
 
-  await ensureSheetTab(sheets, row.spreadsheetId, row.sheetName);
-  const columns = EXPORT_COLUMNS_BY_DATASET[dataset].filter((c) => row.columns.includes(c.key));
-  await writeSheetTab(sheets, row.spreadsheetId, row.sheetName, columns, rows);
+  const sheetId = await ensureSheetTab(sheets, row.spreadsheetId, row.sheetName);
+  const selected = expandLegacyColumnKeys(row.columns);
+  const columns = EXPORT_COLUMNS_BY_DATASET[dataset].filter((c) => selected.includes(c.key));
+  await writeSheetTab(sheets, row.spreadsheetId, sheetId, row.sheetName, columns, rows);
 
   await prisma.sheetExport.update({
     where: { id: row.id },

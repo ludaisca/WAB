@@ -4,12 +4,22 @@
 // "cómo se entrega" para no duplicar la lista de columnas en dos lugares.
 
 import { formatLeadId } from "./lead-id";
-import { formatDateTime } from "@/lib/timezone";
+// formatDate del módulo de timezone se importa con alias: abajo hay un helper
+// local del mismo nombre que formatea una fecha ya con el formato por default.
+import { formatDate as formatDateInTz, formatDateTime, formatTime, wallClockInTz } from "@/lib/timezone";
 
 export interface ExportColumnDef<T> {
   key: string;
   label: string;
+  // Valor de texto: CSV del navegador, XLSX de reportes y vista previa.
   get: (row: T) => string;
+  // Solo lo usa la sync a Google Sheets: cuando existe, la celda se escribe con
+  // este número (serial de fecha / fracción de día) en vez del texto de get(),
+  // y la columna recibe `sheetFormat` para que Sheets la muestre como fecha u
+  // hora real — ordenable, filtrable y con aritmética de fechas — sin pasar por
+  // USER_ENTERED, que interpretaría como fórmula cualquier texto del export.
+  getSheetValue?: (row: T) => number | null;
+  sheetFormat?: { type: "DATE" | "TIME"; pattern: string };
 }
 
 // Convención de nombre de campaña/automatización: segmentos separados por "_"
@@ -126,6 +136,39 @@ function formatDate(value: string): string {
   return formatDateTime(value);
 }
 
+// "Última respuesta del prospecto" se exporta partida en dos columnas desde
+// 2026-08: antes era una sola ("21/07/26, 8:53 a.m.") y el operador la
+// necesita separada para poder ordenar/filtrar por fecha. dd/mm/aa y 24h,
+// ambas en CDMX.
+function formatLastInboundDate(value: string | null): string {
+  return value ? formatDateInTz(value, { day: "2-digit", month: "2-digit", year: "2-digit" }) : "";
+}
+
+function formatLastInboundTime(value: string | null): string {
+  // hourCycle h23 explícito: el default de es-MX es 12h ("08:53 a.m.") y esta
+  // columna es 24h por spec.
+  return value ? formatTime(value, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : "";
+}
+
+// Serial de fecha de Google Sheets: días transcurridos desde 1899-12-30 (epoch
+// de la hoja de cálculo). Se calcula sobre la fecha de reloj de pared en CDMX,
+// no sobre la medianoche UTC del instante — en CDMX esa medianoche cae el día
+// anterior y la fecha se correría un día.
+const SHEETS_EPOCH_MS = Date.UTC(1899, 11, 30);
+const MS_PER_DAY = 86_400_000;
+
+function sheetsDateSerial(iso: string): number {
+  const { year, month, day } = wallClockInTz(new Date(iso));
+  return Math.round((Date.UTC(year, month - 1, day) - SHEETS_EPOCH_MS) / MS_PER_DAY);
+}
+
+// Fracción del día (0 = 00:00, 0.5 = 12:00) — con formato TIME, Sheets la
+// muestra y opera como hora real.
+function sheetsTimeFraction(iso: string): number {
+  const { hour, minute } = wallClockInTz(new Date(iso));
+  return (hour * 60 + minute) / 1440;
+}
+
 export const EXPORT_COLUMNS: ExportColumnDef<LeadScoreRow>[] = [
   {
     key: "leadId",
@@ -158,9 +201,18 @@ export const EXPORT_COLUMNS: ExportColumnDef<LeadScoreRow>[] = [
   { key: "nivel_interaccion", label: "Nivel de interacción", get: (r) => r.details?.nivel_interaccion ?? "" },
   { key: "updatedAt", label: "Actualizado", get: (r) => formatDate(r.updatedAt) },
   {
-    key: "lastInboundAt",
-    label: "Última respuesta del prospecto",
-    get: (r) => formatDateOrEmpty(r.chat.lastInboundAt),
+    key: "lastInboundDate",
+    label: "Fecha",
+    get: (r) => formatLastInboundDate(r.chat.lastInboundAt),
+    getSheetValue: (r) => (r.chat.lastInboundAt ? sheetsDateSerial(r.chat.lastInboundAt) : null),
+    sheetFormat: { type: "DATE", pattern: "dd/mm/yy" },
+  },
+  {
+    key: "lastInboundTime",
+    label: "Hora",
+    get: (r) => formatLastInboundTime(r.chat.lastInboundAt),
+    getSheetValue: (r) => (r.chat.lastInboundAt ? sheetsTimeFraction(r.chat.lastInboundAt) : null),
+    sheetFormat: { type: "TIME", pattern: "hh:mm" },
   },
   { key: "publicLink", label: "Link público del chat", get: (r) => r.chat.publicLink },
 ];
@@ -292,6 +344,24 @@ export const CONTACTS_EXPORT_COLUMNS: ExportColumnDef<ContactExportRow>[] = [
 ];
 
 export type SheetExportDataset = "LEAD_SCORES" | "CAMPAIGN_RESULTS" | "CHATS" | "CONTACTS";
+
+// Compat de configuración ya guardada: antes del split la columna se llamaba
+// `lastInboundAt`, y así quedó en SheetExport.columns de los exports
+// existentes. Se expande al leer (runner y PATCH) para que esas filas sigan
+// sincronizando sin que nadie tenga que volver a editar la exportación.
+const LEGACY_COLUMN_KEYS: Record<string, string[]> = {
+  lastInboundAt: ["lastInboundDate", "lastInboundTime"],
+};
+
+export function expandLegacyColumnKeys(keys: string[]): string[] {
+  const expanded = new Set<string>();
+  for (const key of keys) {
+    const replacements = LEGACY_COLUMN_KEYS[key];
+    if (replacements) replacements.forEach((k) => expanded.add(k));
+    else expanded.add(key);
+  }
+  return Array.from(expanded);
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 4 formas de fila distintas, unificadas solo para poder indexar por dataset
 export const EXPORT_COLUMNS_BY_DATASET: Record<SheetExportDataset, ExportColumnDef<any>[]> = {

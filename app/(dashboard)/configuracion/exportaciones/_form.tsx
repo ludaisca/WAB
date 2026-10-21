@@ -14,6 +14,7 @@ import { Banner } from "@/app/components/ui/banner";
 import { Spinner } from "@/app/components/ui/spinner";
 import { useToast } from "@/app/components/ui/toast";
 import { DATASET_LABELS } from "@/lib/whatsapp/sheet-export-access";
+import { expandLegacyColumnKeys } from "@/lib/whatsapp/export-columns";
 
 type Dataset = "LEAD_SCORES" | "CAMPAIGN_RESULTS" | "CHATS" | "CONTACTS";
 
@@ -141,7 +142,10 @@ export function SheetExportFormModal({ open, onClose, editId, initialData, onSav
       setExistingTabs([]);
       setSheetName(initialData.sheetName);
       setDataset(initialData.dataset);
-      setColumns(new Set(initialData.columns));
+      // Un export guardado antes de partir "Última respuesta del prospecto"
+      // trae la key vieja `lastInboundAt`; se expande para que el form muestre
+      // Fecha y Hora marcadas y "Todas/Ninguna" cuente bien.
+      setColumns(new Set(expandLegacyColumnKeys(initialData.columns)));
 
       const f = initialData.filters ?? {};
       setAccountIds(asStringArray(f.accountIds));

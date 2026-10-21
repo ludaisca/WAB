@@ -6,6 +6,13 @@ export interface SheetTab {
   sheetId: number;
 }
 
+// Notación A1: una comilla simple dentro de un nombre de pestaña entrecomillado
+// se escapa duplicándola (regla del propio grammar de Sheets) — sin esto, un
+// tab title con apóstrofe (ej. "Leads Q1's") produce un rango inválido.
+export function quoteTabTitle(tabTitle: string): string {
+  return `'${tabTitle.replace(/'/g, "''")}'`;
+}
+
 export async function listSheetTabs(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<SheetTab[]> {
   const { data } = await sheets.spreadsheets.get({
     spreadsheetId,
@@ -16,8 +23,9 @@ export async function listSheetTabs(sheets: sheets_v4.Sheets, spreadsheetId: str
     .filter((t) => t.title);
 }
 
-// Rango fijo y generoso (mismo criterio que writeSheetTab en sheets-sync.ts) — una
-// sola llamada trae toda la pestaña sin necesitar saber de antemano cuántas filas tiene.
+// El nombre de pestaña a secas = toda la pestaña, acotado por la grilla real de
+// la hoja. Antes era "A1:Z100000": una hoja con más de 26 columnas dejaba las
+// últimas fuera de la lectura.
 export async function readSheetValues(
   sheets: sheets_v4.Sheets,
   spreadsheetId: string,
@@ -25,7 +33,7 @@ export async function readSheetValues(
 ): Promise<string[][]> {
   const { data } = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: `'${tabTitle}'!A1:Z100000`,
+    range: quoteTabTitle(tabTitle),
   });
   return (data.values ?? []).map((row) => row.map((cell) => String(cell ?? "")));
 }

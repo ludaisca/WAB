@@ -6,7 +6,7 @@ import { getUserAccountIds } from "@/lib/shared-accounts";
 import { getGoogleSheetsClientForUser } from "@/lib/google/sheets-client";
 import { ensureSheetTab } from "@/lib/google/sheet-export-runner";
 import { canUseDataset } from "@/lib/whatsapp/sheet-export-access";
-import { EXPORT_COLUMNS_BY_DATASET, type SheetExportDataset } from "@/lib/whatsapp/export-columns";
+import { EXPORT_COLUMNS_BY_DATASET, expandLegacyColumnKeys, type SheetExportDataset } from "@/lib/whatsapp/export-columns";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -75,11 +75,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     // dataset EXISTENTE (no vienen en un discriminated union en el update).
     if (parsed.data.columns !== undefined) {
       const validKeys = new Set(EXPORT_COLUMNS_BY_DATASET[dataset].map((c) => c.key));
-      const invalid = parsed.data.columns.filter((k) => !validKeys.has(k));
+      // Un export viejo trae la key `lastInboundAt` (columna partida en Fecha +
+      // Hora) — se expande antes de validar para que guardar el formulario sin
+      // tocar esa sección no falle, y queda persistida ya normalizada.
+      const expanded = expandLegacyColumnKeys(parsed.data.columns);
+      const invalid = expanded.filter((k) => !validKeys.has(k));
       if (invalid.length > 0) {
         return NextResponse.json({ error: `Columnas inválidas para este dataset: ${invalid.join(", ")}` }, { status: 400 });
       }
-      data.columns = parsed.data.columns;
+      data.columns = expanded;
     }
 
     if (parsed.data.filters !== undefined) {
