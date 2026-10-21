@@ -23,6 +23,10 @@ const execFileAsync = promisify(execFile);
 const BACKUP_ROOT = process.env.BACKUP_ROOT || "/app/backups";
 const BACKUP_TIMEOUT_MS = Number(process.env.BACKUP_TIMEOUT_MS) || 30 * 60 * 1000;
 
+// Nombre fijo del respaldo automático: se reescribe cada día (ver create-backup.ts),
+// así que en BACKUP_ROOT hay una sola copia programada además de las manuales.
+export const SCHEDULED_BACKUP_FILENAME = "backup-scheduled.tar";
+
 // Hash (sha256) de un miembro del .tar leído en streaming con `tar xOf` — sin
 // extraer nada a disco.
 function sha256TarMember(tarPath: string, member: string): Promise<string> {
@@ -142,24 +146,32 @@ export async function runBackupPipeline(backupId: string): Promise<void> {
     const manifestPath = path.join(tmpDir, "manifest.json");
     await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
 
-    const filename = `backup-${manifest.createdAt.replace(/[:.]/g, "-")}-${backup.type.toLowerCase()}-${backupId}.tar`;
+    // El respaldo automático usa nombre fijo y se sobrescribe a diario: en
+    // disco nunca hay más de una copia suya. MANUAL/PRE_RESTORE conservan el
+    // nombre con timestamp para que su historial sea distinguible.
+    const filename =
+      backup.type === "SCHEDULED"
+        ? SCHEDULED_BACKUP_FILENAME
+        : `backup-${manifest.createdAt.replace(/[:.]/g, "-")}-${backup.type.toLowerCase()}-${backupId}.tar`;
     const finalPath = path.join(BACKUP_ROOT, filename);
+
     // Paquete final: un solo .tar SIN comprimir en la capa externa — db.dump y
     // media.tar.gz ya van comprimidos por separado, y así manifest.json queda
     // legible ("peekable") sin descomprimir todo el archivo.
-    await execFileAsync("tar", ["cf", finalPath, "-C", tmpDir, "manifest.json", "db.dump", "media.tar.gz"], {
+    //
+    // Se empaqueta y se verifica DENTRO de tmp/ y solo entonces se publica con
+    // un rename atómico sobre el destino: si el respaldo falla a mitad, la
+    // copia anterior sigue intacta. Con una sola copia retenida, sobrescribir
+    // en sitio antes de verificar dejaría al sistema sin ningún respaldo válido.
+    const stagedPath = path.join(tmpDir, "backup.tar");
+    await execFileAsync("tar", ["cf", stagedPath, "-C", tmpDir, "manifest.json", "db.dump", "media.tar.gz"], {
       maxBuffer: 10 * 1024 * 1024,
     });
 
-    try {
-      await verifyFinalArchive(finalPath, manifest);
-    } catch (err) {
-      // Un .tar que no verifica no debe quedar en disco ni compararse como válido.
-      await fs.rm(finalPath, { force: true }).catch(() => {});
-      throw err;
-    }
+    await verifyFinalArchive(stagedPath, manifest);
 
-    const finalStat = await fs.stat(finalPath);
+    const finalStat = await fs.stat(stagedPath);
+    await fs.rename(stagedPath, finalPath);
 
     await prisma.systemBackup.update({
       where: { id: backupId },

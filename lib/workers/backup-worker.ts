@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { runBackupPipeline } from "@/lib/backup/create-backup";
+import { purgeOldBackups } from "@/lib/backup/retention";
+import { dateKeyInTz } from "@/lib/timezone";
 
 interface AttemptInfo {
   attemptsMade: number;
@@ -59,7 +61,42 @@ export async function processBackupJob(
   }
 }
 
+// Un respaldo automático por día (calendario CDMX). El cron ya es diario
+// (2:00 am), pero BullMQ puede re-ejecutar el tick al perder el lock (visto en
+// producción el 18 y 19 de octubre: dos corridas el mismo día, +2.5 GB de
+// disco cada una). Se compara por día y no por ventana de 24h a propósito: una
+// corrida que termina a las 2:03 am bloquearía la del día siguiente a las 2:00.
 export async function processScheduledBackupTick(): Promise<void> {
-  const backup = await prisma.systemBackup.create({ data: { type: "SCHEDULED", status: "PENDING" } });
+  const existing = await prisma.systemBackup.findFirst({
+    where: { type: "SCHEDULED" },
+    orderBy: { startedAt: "desc" },
+  });
+
+  // Ya hay uno corriendo → no hacer nada.
+  if (existing && (existing.status === "PENDING" || existing.status === "RUNNING")) return;
+  // Ya se generó hoy (mismo día en CDMX) → no hacer nada.
+  if (existing?.status === "COMPLETED" && dateKeyInTz(existing.startedAt) === dateKeyInTz(new Date())) return;
+
+  // Purga preventiva: libera las copias programadas heredadas del esquema
+  // anterior (una por día, ~2.5 GB cada una) antes de necesitar el espacio
+  // para la nueva. Nunca borra la más reciente, así que siempre queda una
+  // copia válida en disco.
+  await purgeOldBackups();
+
+  // Una sola fila para el programado: se reutiliza y se actualiza en vez de
+  // acumular una fila por día. El archivo también es uno solo (nombre fijo).
+  const backup = existing
+    ? await prisma.systemBackup.update({
+        where: { id: existing.id },
+        data: {
+          status: "PENDING",
+          startedAt: new Date(),
+          completedAt: null,
+          errorMessage: null,
+          s3UploadError: null,
+        },
+      })
+    : await prisma.systemBackup.create({ data: { type: "SCHEDULED", status: "PENDING" } });
+
   await processBackupJob({ backupId: backup.id });
 }

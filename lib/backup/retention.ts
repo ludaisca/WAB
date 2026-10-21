@@ -4,25 +4,34 @@ import { prisma } from "@/lib/prisma";
 import { deleteBackupFromS3 } from "./s3-storage";
 
 const BACKUP_ROOT = process.env.BACKUP_ROOT || "/app/backups";
-// Una sola copia por defecto: cada respaldo pesa ~1.7 GB (97 % multimedia) y
-// 7 copias diarias ocupaban ~11 GB. La purga corre DESPUÉS de que el respaldo
-// nuevo quedó COMPLETED y verificado (ver create-backup.ts), así que nunca hay
-// un momento sin ninguna copia válida. BACKUP_RETENTION_COUNT sigue siendo
-// override explícito si algún día se quiere más historial.
+// Retención de respaldos MANUALES. El programado no usa este número: hay
+// exactamente uno, con nombre fijo, que se sobrescribe cada 24h (ver
+// create-backup.ts y backup-worker.ts). Antes este valor gobernaba el pool
+// MANUAL+SCHEDULED, y con 7 en producción se acumulaban ~18 GB de copias
+// diarias de ~2.5 GB (98 % multimedia).
 const RETENTION_COUNT = Number(process.env.BACKUP_RETENTION_COUNT) || 1;
 // Respaldos de seguridad previos a una restauración: solo el más reciente.
 const PRE_RESTORE_RETENTION_COUNT = 1;
 const STALE_UPLOAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-// Pool compartido MANUAL+SCHEDULED: se conservan los N más recientes (por
-// completedAt) y se purgan archivo+fila del resto. Los PRE_RESTORE (red de
-// seguridad automática antes de una restauración) tienen su propio pool: se
-// conserva solo el más reciente — antes nunca se purgaban y cada restauración
-// dejaba un respaldo completo para siempre.
+// Tres pools independientes:
+// - SCHEDULED: siempre 1 (el archivo vigente, que se reescribe a diario). Purga
+//   cualquier copia programada anterior — incluida la de esquemas viejos donde
+//   se acumulaba una por día — así el primer respaldo tras este cambio limpia
+//   los ~18 GB heredados.
+// - MANUAL: los N más recientes (BACKUP_RETENTION_COUNT), sin tocar al programado.
+// - PRE_RESTORE: solo el más reciente — antes nunca se purgaban y cada
+//   restauración dejaba un respaldo completo para siempre.
 export async function purgeOldBackups(): Promise<void> {
-  const [regular, preRestore] = await Promise.all([
+  const [scheduled, manual, preRestore] = await Promise.all([
     prisma.systemBackup.findMany({
-      where: { type: { in: ["MANUAL", "SCHEDULED"] }, status: "COMPLETED" },
+      where: { type: "SCHEDULED", status: "COMPLETED" },
+      orderBy: { completedAt: "desc" },
+      select: { id: true, filename: true, s3Key: true },
+      skip: 1,
+    }),
+    prisma.systemBackup.findMany({
+      where: { type: "MANUAL", status: "COMPLETED" },
       orderBy: { completedAt: "desc" },
       select: { id: true, filename: true, s3Key: true },
       skip: RETENTION_COUNT,
@@ -34,7 +43,7 @@ export async function purgeOldBackups(): Promise<void> {
       skip: PRE_RESTORE_RETENTION_COUNT,
     }),
   ]);
-  const toPurge = [...regular, ...preRestore];
+  const toPurge = [...scheduled, ...manual, ...preRestore];
 
   if (toPurge.length > 0) {
     for (const backup of toPurge) {

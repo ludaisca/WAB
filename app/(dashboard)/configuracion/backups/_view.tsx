@@ -297,8 +297,9 @@ export function BackupsView() {
           }
         />
         <p className="text-xs text-muted-darker -mt-2">
-          Se genera automáticamente todos los días a las 2:00 am. Los respaldos más antiguos se eliminan solos
-          para no llenar el disco — usa &quot;Descargar&quot; si quieres guardar una copia fuera del servidor.
+          Se genera automáticamente todos los días a las 2:00 am y sobrescribe el mismo archivo, así que siempre hay
+          una sola copia automática. Los respaldos manuales conservan las últimas copias según la retención
+          configurada. Usa &quot;Descargar&quot; si quieres guardar una copia fuera del servidor.
         </p>
 
         <Table
