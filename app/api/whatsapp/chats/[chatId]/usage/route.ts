@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -20,7 +21,7 @@ interface UsageEntry {
   createdAt: string;
 }
 
-export async function GET(
+async function handleGET(
   _req: Request,
   { params }: { params: Promise<{ chatId: string }> }
 ) {
@@ -109,3 +110,5 @@ export async function GET(
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);

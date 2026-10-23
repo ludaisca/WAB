@@ -1,4 +1,6 @@
 import { Worker } from "bullmq";
+import type { Processor, WorkerOptions } from "bullmq";
+import { isMaintenanceMode } from "@/lib/system-maintenance";
 import { processBotMessageJob } from "./bot-worker";
 import { processCampaignJob, processScheduledCampaignsTick, processStuckCampaignsTick } from "./campaign-worker";
 import { processRagJob } from "./rag-worker";
@@ -17,7 +19,7 @@ import { processCrmEjecutivosSyncTick } from "./crm-ejecutivos-sync-worker";
 import { processBackupJob, processScheduledBackupTick } from "./backup-worker";
 import { processRestoreJob } from "./restore-worker";
 import { processReportJob } from "./report-worker";
-import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue, campaignQueue, sheetsSyncQueue, leadSheetImportQueue, templateSyncQueue, agentActionExpiryQueue, systemDiagnosticsQueue, backupQueue } from "@/lib/queue";
+import { mediaCleanupQueue, leadScoringQueue, leadRecoveryQueue, campaignQueue, sheetsSyncQueue, leadSheetImportQueue, templateSyncQueue, agentActionExpiryQueue, systemDiagnosticsQueue, backupQueue, restoreQueue } from "@/lib/queue";
 // crmEjecutivosSyncQueue NO se importa aquí — el tick automático está
 // desactivado (ver el bloque comentado más abajo), y app/api/crm-ejecutivos/
 // sync-now/route.ts ya la importa directo de lib/queue.ts para el trigger manual.
@@ -30,18 +32,30 @@ const connection = {
 let started = false;
 const workers: Worker[] = [];
 
+function createGuardedWorker(name: string, processor: Processor, options: WorkerOptions): Worker {
+  return new Worker(name, async (job, token) => {
+    if (name !== "system-restore" && await isMaintenanceMode()) {
+      throw new Error("Sistema en mantenimiento: el trabajo no puede modificar datos");
+    }
+    return processor(job, token);
+  }, options);
+}
+
 export function startWorkers() {
   if (started) return;
   started = true;
+  // También serializa entre varias réplicas/procesos de Next.
+  void backupQueue.setGlobalConcurrency(1).catch((error) => console.error("[workers] backup concurrency:", error));
+  void restoreQueue.setGlobalConcurrency(1).catch((error) => console.error("[workers] restore concurrency:", error));
 
-  const botWorker = new Worker("bot-messages", async (job) => {
+  const botWorker = createGuardedWorker("bot-messages", async (job) => {
     await processBotMessageJob(job.data, {
       attemptsMade: job.attemptsMade,
       maxAttempts: job.opts.attempts ?? 1,
     });
   }, { connection, concurrency: 3 });
 
-  const campaignWorker = new Worker("campaign-send", async (job) => {
+  const campaignWorker = createGuardedWorker("campaign-send", async (job) => {
     // La misma cola lleva los envíos ("send"), el tick que reclama campañas
     // SCHEDULED vencidas ("scheduled-tick") y el tick que reclama campañas
     // atoradas en SENDING ("stuck-tick") — concurrency 1 garantiza que ninguno
@@ -57,32 +71,32 @@ export function startWorkers() {
     await processCampaignJob(job.data);
   }, { connection, concurrency: 1 });
 
-  const ragWorker = new Worker("rag-index", async (job) => {
+  const ragWorker = createGuardedWorker("rag-index", async (job) => {
     await processRagJob(job.data);
   }, { connection, concurrency: 2 });
 
-  const mediaWorker = new Worker("media-download", async (job) => {
+  const mediaWorker = createGuardedWorker("media-download", async (job) => {
     await processMediaDownloadJob(job.data);
   }, { connection, concurrency: 5 });
 
-  const mediaCleanupWorker = new Worker("media-cleanup", async () => {
+  const mediaCleanupWorker = createGuardedWorker("media-cleanup", async () => {
     await processMediaCleanupJob();
   }, { connection, concurrency: 1 });
 
   // Transcribe notas de voz entrantes (Google Gemini, modelo por defecto del
   // usuario) — los jobs llegan de media-worker.ts ya con el archivo en disco.
-  const audioTranscribeWorker = new Worker("audio-transcribe", async (job) => {
+  const audioTranscribeWorker = createGuardedWorker("audio-transcribe", async (job) => {
     await processAudioTranscribeJob(job.data);
   }, { connection, concurrency: 3 });
 
-  const botSendWorker = new Worker("bot-message-send", async (job) => {
+  const botSendWorker = createGuardedWorker("bot-message-send", async (job) => {
     await processBotSendJob(job.data, {
       attemptsMade: job.attemptsMade,
       maxAttempts: job.opts.attempts ?? 1,
     });
   }, { connection, concurrency: 5 });
 
-  const leadScoringWorker = new Worker("lead-scoring", async (job) => {
+  const leadScoringWorker = createGuardedWorker("lead-scoring", async (job) => {
     // Misma cola lleva el tick repetible y la recalificación masiva a petición
     // (ver "Recalificar todos los leads" en /whatsapp/calificadores) —
     // concurrency 1 evita que ambas corran en paralelo sobre el mismo calificador.
@@ -93,35 +107,35 @@ export function startWorkers() {
     await processLeadScoringTick();
   }, { connection, concurrency: 1 });
 
-  const leadRecoveryWorker = new Worker("lead-recovery", async () => {
+  const leadRecoveryWorker = createGuardedWorker("lead-recovery", async () => {
     await processLeadRecoveryTick();
   }, { connection, concurrency: 1 });
 
-  const sheetsSyncWorker = new Worker("sheets-sync", async () => {
+  const sheetsSyncWorker = createGuardedWorker("sheets-sync", async () => {
     await processSheetsSyncTick();
   }, { connection, concurrency: 1 });
 
-  const leadSheetImportWorker = new Worker("lead-sheet-import", async () => {
+  const leadSheetImportWorker = createGuardedWorker("lead-sheet-import", async () => {
     await processLeadSheetImportTick();
   }, { connection, concurrency: 1 });
 
-  const templateSyncWorker = new Worker("template-sync", async () => {
+  const templateSyncWorker = createGuardedWorker("template-sync", async () => {
     await processTemplateSyncTick();
   }, { connection, concurrency: 1 });
 
-  const agentActionExpiryWorker = new Worker("agent-action-expiry", async () => {
+  const agentActionExpiryWorker = createGuardedWorker("agent-action-expiry", async () => {
     await processAgentActionExpiryTick();
   }, { connection, concurrency: 1 });
 
-  const systemDiagnosticsWorker = new Worker("system-diagnostics", async () => {
+  const systemDiagnosticsWorker = createGuardedWorker("system-diagnostics", async () => {
     await processSystemDiagnosticsTick();
   }, { connection, concurrency: 1 });
 
-  const crmEjecutivosSyncWorker = new Worker("crm-ejecutivos-sync", async () => {
+  const crmEjecutivosSyncWorker = createGuardedWorker("crm-ejecutivos-sync", async () => {
     await processCrmEjecutivosSyncTick();
   }, { connection, concurrency: 1 });
 
-  const backupWorker = new Worker("system-backup", async (job) => {
+  const backupWorker = createGuardedWorker("system-backup", async (job) => {
     // Misma cola lleva el tick diario ("scheduled-tick") y los backups
     // manuales disparados desde la UI ("manual") — concurrency 1 evita que dos
     // pg_dump corran en paralelo sobre la misma DB.
@@ -135,14 +149,14 @@ export function startWorkers() {
     });
   }, { connection, concurrency: 1 });
 
-  const restoreWorker = new Worker("system-restore", async (job) => {
+  const restoreWorker = createGuardedWorker("system-restore", async (job) => {
     await processRestoreJob(job.data);
   }, { connection, concurrency: 1 });
 
   // Sin tick repetible — v1 de Reportes solo tiene generación manual por
   // botón. concurrency:2 es seguro (a diferencia de pg_dump, generar dos
   // .xlsx en paralelo son solo lecturas, sin estado compartido que corromper).
-  const reportWorker = new Worker("report-generate", async (job) => {
+  const reportWorker = createGuardedWorker("report-generate", async (job) => {
     await processReportJob(job.data, {
       attemptsMade: job.attemptsMade,
       maxAttempts: job.opts.attempts ?? 1,

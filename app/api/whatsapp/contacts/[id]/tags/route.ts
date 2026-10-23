@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -10,7 +11,7 @@ async function getOwnedContact(userId: string, contactId: string) {
   });
 }
 
-export async function POST(
+async function handlePOST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -51,7 +52,7 @@ export async function POST(
   }
 }
 
-export async function DELETE(
+async function handleDELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -82,3 +83,6 @@ export async function DELETE(
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const POST = withMaintenanceGuard(handlePOST);
+export const DELETE = withMaintenanceGuard(handleDELETE);

@@ -14,7 +14,7 @@ import { validateManifest, encryptionKeyFingerprint, type BackupManifest } from 
 import { runBackupPipeline } from "./create-backup";
 import { purgeOrphanedBackupFiles } from "./retention";
 import { ensureLocalBackupFile } from "./s3-storage";
-import { enterMaintenanceMode, exitMaintenanceMode } from "@/lib/system-maintenance";
+import { enterMaintenanceMode, exitMaintenanceMode, handleFailedRestore } from "@/lib/system-maintenance";
 
 const execFileAsync = promisify(execFile);
 
@@ -257,6 +257,7 @@ export async function runRestorePipeline(restoreLogId: string): Promise<void> {
   const oldDir = path.join(MEDIA_ROOT, `.restore-old-${restoreLogId}`);
 
   let enteredMaintenance = false;
+  let destructiveStarted = false;
   let safetyBackupId: string | null = null;
   let safetyBackupFinal: SystemBackup | null = null;
 
@@ -297,6 +298,7 @@ export async function runRestorePipeline(restoreLogId: string): Promise<void> {
 
     // 5. pg_restore atómico. Antes, soltar cualquier tabla del schema actual
     // que el dump no conozca — ver el comentario de dropTablesNotInDump().
+    destructiveStarted = true;
     await dropTablesNotInDump(path.join(workDir, "db.dump"));
     await runPgRestore(path.join(workDir, "db.dump"));
 
@@ -412,8 +414,11 @@ export async function runRestorePipeline(restoreLogId: string): Promise<void> {
 
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    // Tras tocar la BD, un fallo puede dejar BD y medios de momentos distintos.
+    // Se mantiene la barrera; solo se reabre la cola de restore para permitir
+    // una recuperación explícita desde las rutas administrativas disponibles.
     if (enteredMaintenance) {
-      await exitMaintenanceMode().catch(() => {});
+      await handleFailedRestore(destructiveStarted).catch(() => {});
     }
     // Si dropTablesNotInDump() ya corrió pero pg_restore (u otro paso) falló
     // después, esas tablas quedaron dropeadas sin recrear — reconcilia el

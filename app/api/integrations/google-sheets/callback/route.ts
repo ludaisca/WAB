@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { auth } from "@/lib/auth";
@@ -21,7 +22,7 @@ function absoluteUrl(path: string, req: Request): URL {
   return new URL(path, req.url);
 }
 
-export async function GET(req: Request) {
+async function handleGET(req: Request) {
   const { searchParams } = new URL(req.url);
   const error = searchParams.get("error");
   if (error) {
@@ -117,3 +118,5 @@ export async function GET(req: Request) {
     return NextResponse.redirect(absoluteUrl(`${CONFIG_URL}?google_error=failed`, req));
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);

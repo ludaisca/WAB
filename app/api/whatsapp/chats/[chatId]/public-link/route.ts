@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -12,7 +13,7 @@ async function getOwnedChat(userId: string, role: string | undefined, chatId: st
 }
 
 // GET: estado actual (existe o no un link activo) sin generarlo.
-export async function GET(
+async function handleGET(
   _req: Request,
   { params }: { params: Promise<{ chatId: string }> }
 ) {
@@ -38,7 +39,7 @@ export async function GET(
 }
 
 // POST: genera el link si no existe (idempotente — reutiliza el token vigente).
-export async function POST(
+async function handlePOST(
   _req: Request,
   { params }: { params: Promise<{ chatId: string }> }
 ) {
@@ -64,7 +65,7 @@ export async function POST(
 
 // DELETE: revoca el link vigente — cualquiera con la URL vieja pierde acceso
 // de inmediato. Un POST posterior genera un token nuevo, distinto al revocado.
-export async function DELETE(
+async function handleDELETE(
   _req: Request,
   { params }: { params: Promise<{ chatId: string }> }
 ) {
@@ -87,3 +88,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);
+export const POST = withMaintenanceGuard(handlePOST);
+export const DELETE = withMaintenanceGuard(handleDELETE);

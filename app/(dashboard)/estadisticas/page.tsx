@@ -10,7 +10,7 @@ export default async function EstadisticasPage() {
   // se mantiene el redirect defensivo por consistencia.
   if (session.user.role === "ejecutivo") redirect("/whatsapp/chat");
 
-  const stats = await getEstadisticas(session.user.id);
+  const stats = await getEstadisticas(session.user.id, session.user.role);
 
   return <EstadisticasView stats={stats} />;
 }

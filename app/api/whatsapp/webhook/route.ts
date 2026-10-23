@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { createHmac, createHash, timingSafeEqual } from "crypto";
 import type { RecipientStatus } from "@prisma/client";
@@ -20,6 +21,7 @@ interface WebhookMessage {
   image?: { id: string; mime_type: string; caption?: string };
   video?: { id: string; mime_type: string; caption?: string };
   audio?: { id: string; mime_type: string };
+  sticker?: { id: string; mime_type?: string };
   document?: { id: string; mime_type: string; caption?: string; filename?: string };
   location?: WebhookLocation;
   // type === "contacts": tarjeta(s) de contacto compartida(s) por el lead.
@@ -126,6 +128,12 @@ function getMediaInfo(msg: WebhookMessage): {
   if (msg.audio) return {
     mediaId: msg.audio.id,
     mimeType: msg.audio.mime_type ?? null,
+    filename: null,
+    caption: null,
+  };
+  if (msg.sticker) return {
+    mediaId: msg.sticker.id,
+    mimeType: msg.sticker.mime_type ?? "image/webp",
     filename: null,
     caption: null,
   };
@@ -410,7 +418,7 @@ async function applyUserPreferences(value: UserPreferencesValue) {
   }
 }
 
-export async function GET(req: Request) {
+async function handleGET(req: Request) {
   const { searchParams } = new URL(req.url);
   const mode = searchParams.get("hub.mode");
   const token = searchParams.get("hub.verify_token");
@@ -435,7 +443,7 @@ export async function GET(req: Request) {
   });
 }
 
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   try {
     // Restauración de backup en curso — se responde 503 para que Meta
     // reintregue la entrega más tarde (best-effort, no garantizado) en vez de
@@ -591,3 +599,6 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);
+export const POST = withMaintenanceGuard(handlePOST);

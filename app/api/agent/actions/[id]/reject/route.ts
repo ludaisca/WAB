@@ -1,9 +1,10 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function handlePOST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (session?.user?.role !== "admin") {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
@@ -32,3 +33,5 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   return NextResponse.json({ success: true });
 }
+
+export const POST = withMaintenanceGuard(handlePOST);

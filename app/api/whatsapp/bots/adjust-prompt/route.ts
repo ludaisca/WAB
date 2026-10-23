@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { adjustBotPromptSchema } from "@/lib/validations";
@@ -75,7 +76,7 @@ function truncateToProductionLimit(text: string): { text: string; truncated: boo
   return { text: text.slice(0, safeCut).trimEnd(), truncated: true };
 }
 
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -140,3 +141,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const POST = withMaintenanceGuard(handlePOST);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useId, useRef } from "react";
 import { cn } from "./cn";
 
 // Un solo archivo para las dos pieles de tab que el app necesita — misma API
@@ -49,8 +49,9 @@ function useRovingTabs(items: TabItem[], onChange: (value: string) => void) {
 
 export function Tabs({ items, value, onChange, className, ...aria }: TabsBaseProps) {
   const { refs, handleKeyDown } = useRovingTabs(items, onChange);
+  const prefix = useId();
   return (
-    <div role="tablist" aria-label={aria["aria-label"]} className={cn("flex items-center gap-1 border-b border-border", className)}>
+    <div role="tablist" aria-label={aria["aria-label"]} className={cn("flex items-center gap-1 border-b border-border overflow-x-auto", className)}>
       {items.map((item, i) => {
         const active = item.value === value;
         return (
@@ -61,14 +62,13 @@ export function Tabs({ items, value, onChange, className, ...aria }: TabsBasePro
             }}
             role="tab"
             type="button"
-            id={`tab-${item.value}`}
+            id={`${prefix}-tab-${item.value}`}
             aria-selected={active}
-            aria-controls={`tabpanel-${item.value}`}
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(item.value)}
             onKeyDown={(e) => handleKeyDown(e, i)}
             className={cn(
-              "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+              "shrink-0 whitespace-nowrap -mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
               active ? "border-accent text-accent" : "border-transparent text-muted hover:text-foreground"
             )}
           >
@@ -108,7 +108,7 @@ export function SegmentedControl({ items, value, onChange, className, ...aria }:
             onClick={() => onChange(item.value)}
             onKeyDown={(e) => handleKeyDown(e, i)}
             className={cn(
-              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              "shrink-0 whitespace-nowrap rounded-md min-h-9 px-3 py-1.5 text-xs font-medium transition-colors",
               active ? "bg-surface text-foreground shadow-xs" : "text-muted hover:text-foreground"
             )}
           >

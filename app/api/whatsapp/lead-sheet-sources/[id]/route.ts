@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -6,7 +7,7 @@ import { getUserAccountIds } from "@/lib/shared-accounts";
 import { deleteSource } from "@/lib/whatsapp/lead-sheet-sources";
 import { NotFoundError } from "@/lib/errors";
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function handleGET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -59,7 +60,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }
 }
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function handlePATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -94,7 +95,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function handleDELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -117,3 +118,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);
+export const PATCH = withMaintenanceGuard(handlePATCH);
+export const DELETE = withMaintenanceGuard(handleDELETE);

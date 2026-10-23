@@ -20,6 +20,11 @@ import {
   Maximize2,
   Copy,
 } from "lucide-react";
+import { Textarea } from "@/app/components/ui/textarea";
+import { Banner } from "@/app/components/ui/banner";
+import { useChatDraft } from "./chat-drafts";
+import { useChatList, chatJson } from "./use-chat-list";
+import { useChatThread } from "./use-chat-thread";
 import { Input } from "@/app/components/ui/input";
 import { Select } from "@/app/components/ui/select";
 import { Button } from "@/app/components/ui/button";
@@ -299,9 +304,9 @@ function MessageBubble({
           <div className={`flex items-center justify-end gap-1 mt-1 ${
             isInbound ? "text-muted-darker" : "text-on-accent/70"
           }`}>
-            <span className="text-[10px]">{formatBubbleTime(msg.timestamp)}</span>
+            <span className="text-xs">{formatBubbleTime(msg.timestamp)}</span>
             {!isInbound && msg.status && (
-              <span className="text-[10px]">
+              <span className="text-xs">
                 {msg.status === "sent" && <Check size={10} />}
                 {msg.status === "delivered" && <CheckCheck size={10} />}
                 {/* El salto entregado→leído monta un elemento nuevo, así que el
@@ -366,6 +371,7 @@ interface ChatWorkspaceProps {
   initialCampaignId?: string;
   initialHasReplied?: "" | "yes" | "no";
   initialSearch?: string;
+  initialTriage?: string;
 }
 
 export function ChatWorkspace({
@@ -374,22 +380,20 @@ export function ChatWorkspace({
   initialCampaignId,
   initialHasReplied,
   initialSearch,
+  initialTriage,
 }: ChatWorkspaceProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { success, error: toastError } = useToast();
 
-  const [chats, setChats] = useState<ChatItem[]>([]);
-  const [loadingChats, setLoadingChats] = useState(true);
-  const [loadingMoreChats, setLoadingMoreChats] = useState(false);
-  const [chatsTotal, setChatsTotal] = useState(0);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(initialChatId || null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loadingMessages, setLoadingMessages] = useState(false);
-  const [hasOlderMessages, setHasOlderMessages] = useState(false);
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const [newMessage, setNewMessage] = useState("");
-  const [sending, setSending] = useState(false);
+  const drafts = useChatDraft(selectedChatId);
+  const { draft, send } = drafts;
+  const newMessage = draft.text;
+  const attachment = draft.attachment;
+  const sending = !!send?.stage;
+  const setNewMessage = (text: string) => { if (selectedChatId) drafts.update(selectedChatId, { text }); };
+  const [triageFilter, setTriageFilter] = useState(initialTriage || "");
   const [search, setSearch] = useState(initialSearch || "");
   // La búsqueda va al servidor (la lista está paginada — filtrar solo lo
   // cargado escondía chats antiguos); el debounce evita un fetch por tecla.
@@ -407,7 +411,6 @@ export function ChatWorkspace({
   const [cannedIndex, setCannedIndex] = useState(0);
 
   // Media attachments state
-  const [attachment, setAttachment] = useState<File | null>(null);
   const [attachmentPreview, setAttachmentPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -423,43 +426,29 @@ export function ChatWorkspace({
 
   const buildChatsParams = useCallback((page: number, pageSize: number): URLSearchParams => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (triageFilter) params.set("triage", triageFilter);
     if (campaignFilter) params.set("campaignId", campaignFilter);
     if (hasRepliedFilter) params.set("hasReplied", hasRepliedFilter);
     if (accountFilter) params.set("accountId", accountFilter);
     if (debouncedSearch) params.set("search", debouncedSearch);
     return params;
-  }, [campaignFilter, hasRepliedFilter, accountFilter, debouncedSearch]);
+  }, [campaignFilter, hasRepliedFilter, accountFilter, debouncedSearch, triageFilter]);
 
-  const refreshChats = useCallback(async () => {
-    try {
-      const pageSize = Math.min(Math.max(chats.length, CHATS_PAGE_SIZE), 100);
-      const res = await fetch(`/api/whatsapp/chats?${buildChatsParams(1, pageSize)}`);
-      const data = await res.json();
-      if (Array.isArray(data.items)) {
-        setChats(data.items);
-        setChatsTotal(data.total ?? 0);
-      }
-    } catch {
-      toastError("Error al cargar chats");
-    }
-  }, [chats.length, buildChatsParams, toastError]);
-
-  const loadMoreChats = useCallback(async () => {
-    setLoadingMoreChats(true);
-    try {
-      const nextPage = Math.floor(chats.length / CHATS_PAGE_SIZE) + 1;
-      const res = await fetch(`/api/whatsapp/chats?${buildChatsParams(nextPage, CHATS_PAGE_SIZE)}`);
-      const data = await res.json();
-      if (Array.isArray(data.items)) {
-        setChats((prev) => [...prev, ...data.items]);
-        setChatsTotal(data.total ?? 0);
-      }
-    } catch {
-      toastError("Error al cargar más chats");
-    } finally {
-      setLoadingMoreChats(false);
-    }
-  }, [chats.length, buildChatsParams, toastError]);
+  const { chats, setChats, total: chatsTotal, loading: loadingChats, loadingMore: loadingMoreChats, error: chatsError, refresh: refreshChats, more: loadMoreChats } = useChatList<ChatItem>(buildChatsParams, CHATS_PAGE_SIZE);
+  const { messages, loading: loadingMessages, older: hasOlderMessages, loadingOlder, error: messagesError, append: appendMessage, loadOlder: loadOlderMessages, retry: retryMessages } = useChatThread<Message>(selectedChatId, refreshChats, () => {
+    prependHeightRef.current = messagesContainerRef.current?.scrollHeight ?? null;
+  });
+  const mounted = useRef(false);
+  const refreshRef = useRef(refreshChats);
+  useEffect(() => { refreshRef.current = refreshChats; }, [refreshChats]);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronize the selected File with its revocable browser object URL.
+    if (!attachment) { setAttachmentPreview(null); return; }
+    const url = URL.createObjectURL(attachment);
+    setAttachmentPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [attachment]);
 
   // Handle URL changes to update state — tracked via a "previous prop" render-time
   // comparison (same idiom as Modal/Drawer's open/prevOpen) instead of an effect,
@@ -470,6 +459,8 @@ export function ChatWorkspace({
   const [prevInitialCampaignId, setPrevInitialCampaignId] = useState(initialCampaignId);
   const [prevInitialHasReplied, setPrevInitialHasReplied] = useState(initialHasReplied);
   const [prevInitialSearch, setPrevInitialSearch] = useState(initialSearch);
+  const [prevInitialTriage, setPrevInitialTriage] = useState(initialTriage);
+  if (initialTriage !== prevInitialTriage) { setPrevInitialTriage(initialTriage); setTriageFilter(initialTriage || ""); }
   if (initialChatId !== prevInitialChatId) {
     setPrevInitialChatId(initialChatId);
     if (initialChatId) setSelectedChatId(initialChatId);
@@ -499,17 +490,18 @@ export function ChatWorkspace({
   const buildFilterSearchParams = useCallback((): URLSearchParams => {
     const params = new URLSearchParams();
     if (accountFilter) params.set("accountId", accountFilter);
+    if (triageFilter) params.set("triage", triageFilter);
     if (campaignFilter) params.set("campaignId", campaignFilter);
     if (hasRepliedFilter) params.set("hasReplied", hasRepliedFilter);
     if (debouncedSearch) params.set("search", debouncedSearch);
     return params;
-  }, [accountFilter, campaignFilter, hasRepliedFilter, debouncedSearch]);
+  }, [accountFilter, campaignFilter, hasRepliedFilter, debouncedSearch, triageFilter]);
 
   useEffect(() => {
     const qs = buildFilterSearchParams().toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo resincroniza cuando cambian los filtros, no en cada render por pathname/router
-  }, [accountFilter, campaignFilter, hasRepliedFilter, debouncedSearch]);
+  }, [accountFilter, campaignFilter, hasRepliedFilter, debouncedSearch, triageFilter]);
 
   // Campaign list for the filter dropdown — fetched once, doesn't depend on the
   // current chat filters.
@@ -545,85 +537,37 @@ export function ChatWorkspace({
       .catch(() => {});
   }, []);
 
-  // Load initial chats list
-  useEffect(() => {
-    async function reset() {
-      setLoadingChats(true);
-      try {
-        const res = await fetch(`/api/whatsapp/chats?${buildChatsParams(1, CHATS_PAGE_SIZE)}`);
-        const data = await res.json();
-        if (Array.isArray(data.items)) {
-          setChats(data.items);
-          setChatsTotal(data.total ?? 0);
-        }
-      } catch {
-        toastError("Error al cargar chats");
-      } finally {
-        setLoadingChats(false);
-      }
-    }
-    reset();
-  }, [buildChatsParams, toastError]);
-
-  // Derived, not its own state — chats stays the single source of truth so every
-  // mutation site only needs to update one place instead of keeping two in sync.
-  const selectedChat = chats.find((c) => c.id === selectedChatId) ?? null;
-
-  // Fetch canned responses
-  useEffect(() => {
-    if (!selectedChat) return;
-    fetch(`/api/whatsapp/canned-responses?waAccountId=${selectedChat.accountId}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (Array.isArray(d)) setCannedResponses(d);
-      })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally narrowed to accountId so this doesn't refire on every chats[] update, only when the conversation's own account actually changes
-  }, [selectedChat?.accountId]);
-
-  // Fetch messages
+  // Resolve deep links independently from the loaded or filtered rail.
+  const [chatDetail, setChatDetail] = useState<ChatItem | null>(null);
+  const [chatDetailError, setChatDetailError] = useState<string | null>(null);
+  const [detailRetry, setDetailRetry] = useState(0);
   useEffect(() => {
     if (!selectedChatId) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-chat-change
-    setLoadingMessages(true);
+    const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- discard errors from the previous route before requesting this chat.
+    setChatDetailError(null);
+    chatJson<{ items: ChatItem[] }>(`/api/whatsapp/chats?page=1&pageSize=1&chatId=${encodeURIComponent(selectedChatId)}`, { signal: controller.signal })
+      .then((data) => { if (!controller.signal.aborted) {
+        if (!data.items[0]) throw new Error("Esta conversación ya no está disponible para tu cuenta.");
+        setChatDetail(data.items[0]);
+      } })
+      .catch((err) => { if (!controller.signal.aborted) setChatDetailError(err instanceof Error ? err.message : "No se pudo cargar la conversación"); });
+    return () => controller.abort();
+  }, [selectedChatId, detailRetry]);
+  const selectedChat = chats.find((c) => c.id === selectedChatId) ?? (chatDetail?.id === selectedChatId ? chatDetail : null);
 
-    async function load() {
-      try {
-        const res = await fetch(`/api/whatsapp/chats/${selectedChatId}/messages?limit=50`);
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          setMessages(data);
-          setHasOlderMessages(data.length >= 50);
-        }
-      } catch {
-        toastError("Error al cargar mensajes");
-      } finally {
-        setLoadingMessages(false);
-      }
+  // Scope quick replies to the current account, including late responses.
+  useEffect(() => {
+    const controller = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- never offer quick replies from a different account while its request is pending.
+    setCannedResponses([]);
+    if (selectedChat?.accountId) {
+      chatJson<CannedResponseItem[]>(`/api/whatsapp/canned-responses?waAccountId=${selectedChat.accountId}`, { signal: controller.signal })
+        .then((data) => { if (!controller.signal.aborted && Array.isArray(data)) setCannedResponses(data); })
+        .catch((err) => { if (!controller.signal.aborted) console.warn("No se pudieron cargar las respuestas rápidas", err); });
     }
-    load();
-  }, [selectedChatId, toastError]);
-
-  const loadOlderMessages = useCallback(async () => {
-    const oldest = messages[0];
-    if (!selectedChatId || !oldest) return;
-    setLoadingOlder(true);
-    try {
-      const res = await fetch(
-        `/api/whatsapp/chats/${selectedChatId}/messages?limit=50&before=${encodeURIComponent(oldest.timestamp)}`
-      );
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        prependHeightRef.current = messagesContainerRef.current?.scrollHeight ?? null;
-        setMessages((prev) => [...data, ...prev]);
-        setHasOlderMessages(data.length >= 50);
-      }
-    } catch {
-      toastError("Error al cargar mensajes anteriores");
-    } finally {
-      setLoadingOlder(false);
-    }
-  }, [selectedChatId, messages, toastError]);
+    return () => controller.abort();
+  }, [selectedChat?.accountId]);
 
   // Scroll to bottom on new messages — but only if the user was already near the
   // bottom, so the 5s poll below doesn't yank someone reading older history back
@@ -644,46 +588,6 @@ export function ChatWorkspace({
     }
   }, [messages]);
 
-  // Message polling
-  useEffect(() => {
-    if (!selectedChatId) return;
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/whatsapp/chats/${selectedChatId}/messages?limit=50`);
-        const data = (await res.json()) as Message[];
-        if (Array.isArray(data) && data.length > 0) {
-          let anyChange = false;
-          setMessages((prev) => {
-            // Merge en lugar de reemplazo: el reemplazo total descartaba el
-            // historial cargado con "Ver anteriores". Se actualizan status y
-            // mediaUrl de los conocidos y se anexan solo los nuevos.
-            const byId = new Map(data.map((m) => [m.id, m]));
-            let changed = false;
-            const merged = prev.map((m) => {
-              const fresh = byId.get(m.id);
-              if (fresh && (fresh.status !== m.status || fresh.mediaUrl !== m.mediaUrl || fresh.transcription !== m.transcription || fresh.reaction !== m.reaction)) {
-                changed = true;
-                return fresh;
-              }
-              return m;
-            });
-            const known = new Set(prev.map((m) => m.id));
-            const appended = data.filter((m) => !known.has(m.id));
-            if (!changed && appended.length === 0) return prev;
-            anyChange = true;
-            return [...merged, ...appended];
-          });
-          if (anyChange) refreshChats();
-        }
-      } catch (err) {
-        // Poll de 5s: un toast por cada blip de red sería spam — el siguiente
-        // tick reintenta solo. Se registra para no perder el diagnóstico.
-        console.warn("Fallo el poll de mensajes, se reintenta en 5s", err);
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [selectedChatId, refreshChats]);
-
   // Route updates on selection
   const handleChatSelect = useCallback((chat: ChatItem) => {
     setSelectedChatId(chat.id);
@@ -691,13 +595,9 @@ export function ChatWorkspace({
     router.push(`/whatsapp/chat/${chat.accountId}/${chat.id}${qs ? `?${qs}` : ""}`);
   }, [router, buildFilterSearchParams]);
 
-  const clearAttachment = useCallback(() => {
-    setAttachment(null);
-    setAttachmentPreview((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return null;
-    });
-  }, []);
+  const clearAttachment = () => {
+    if (selectedChatId) drafts.update(selectedChatId, { attachment: null });
+  };
 
   const copyLeadPhone = useCallback(async (phone: string) => {
     try {
@@ -710,10 +610,9 @@ export function ChatWorkspace({
 
   const handleCloseChat = useCallback(() => {
     setSelectedChatId(null);
-    clearAttachment();
     const qs = buildFilterSearchParams().toString();
     router.push(`/whatsapp/chat${qs ? `?${qs}` : ""}`);
-  }, [router, clearAttachment, buildFilterSearchParams]);
+  }, [router, buildFilterSearchParams]);
 
   function detectMessageType(file: File): "image" | "audio" | "video" | "document" | "sticker" {
     if (isImageMime(file.type)) return "image";
@@ -734,66 +633,34 @@ export function ChatWorkspace({
       e.target.value = "";
       return;
     }
-    setAttachment(file);
-    setAttachmentPreview(URL.createObjectURL(file));
+    if (selectedChatId) drafts.update(selectedChatId, { attachment: file });
     e.target.value = "";
   }
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
-    if (!newMessage.trim() && !attachment) return;
-    if (!selectedChatId || !selectedChat) return;
-    setSending(true);
+    if ((!newMessage.trim() && !attachment) || !selectedChatId || !selectedChat || !drafts.ready) return;
+    const targetId = selectedChatId;
+    const snapshot = draft;
+    if (!drafts.begin(targetId, attachment ? "uploading" : "sending")) return;
     try {
-      if (attachment) {
+      let payload: Record<string, unknown> = { type: "text", body: snapshot.text.trim() };
+      if (snapshot.attachment) {
         const uploadForm = new FormData();
-        uploadForm.append("file", attachment);
+        uploadForm.append("file", snapshot.attachment);
         uploadForm.append("accountId", selectedChat.accountId);
-
-        const upRes = await fetch(`/api/whatsapp/media`, {
-          method: "POST",
-          body: uploadForm,
-        });
-        const upData = await upRes.json();
-        if (!upRes.ok) throw new Error(upData.error ?? "Error al subir el medio");
-
-        const type = detectMessageType(attachment);
-        const caption = newMessage.trim() || undefined;
-        const res = await fetch(`/api/whatsapp/chats/${selectedChatId}/send`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type,
-            mediaId: upData.mediaId,
-            mimeType: upData.mimeType,
-            filename: upData.filename,
-            caption,
-            localMediaPath: upData.localMediaPath,
-            bytesSize: upData.bytesSize,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Error al enviar");
-        setMessages((prev) => [...prev, data]);
-        setNewMessage("");
-        clearAttachment();
-        refreshChats();
-      } else {
-        const res = await fetch(`/api/whatsapp/chats/${selectedChatId}/send`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "text", body: newMessage.trim() }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Error al enviar");
-        setMessages((prev) => [...prev, data]);
-        setNewMessage("");
-        refreshChats();
+        const upData = await chatJson<{ mediaId: string; mimeType: string; filename: string; localMediaPath: string; bytesSize: number }>("/api/whatsapp/media", { method: "POST", body: uploadForm });
+        drafts.stage(targetId, "sending");
+        payload = { type: detectMessageType(snapshot.attachment), ...upData, caption: snapshot.text.trim() || undefined };
       }
+      const data = await chatJson<Message>(`/api/whatsapp/chats/${targetId}/send`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      drafts.clearSent(targetId, snapshot);
+      drafts.finish(targetId);
+      if (mounted.current) { appendMessage(targetId, data); void refreshRef.current(); }
     } catch (err) {
-      toastError(err instanceof Error ? err.message : "Error al enviar");
-    } finally {
-      setSending(false);
+      drafts.finish(targetId, err instanceof Error ? err.message : "No se pudo confirmar el envío. Revisa la conversación antes de intentar de nuevo.");
     }
   }
 
@@ -840,6 +707,13 @@ export function ChatWorkspace({
       <div className={`${selectedChatId ? "hidden md:flex" : "flex"} md:flex flex-col w-full md:w-80 lg:w-96 border-r border-border shrink-0`}>
         <div className="p-4 border-b border-border space-y-2">
           <h1 className="text-lg font-bold tracking-tight mb-1">Chats</h1>
+          {chatsError && <Banner tone="warning"><span>{chatsError}</span> <Button variant="link" size="sm" onClick={refreshChats}>Reintentar</Button></Banner>}
+          <Select aria-label="Pendientes de la bandeja" value={triageFilter} onChange={(e) => setTriageFilter(e.target.value)}>
+            <option value="">Toda la bandeja</option>
+            <option value="unread">Conversaciones sin leer</option>
+            <option value="pending">En seguimiento</option>
+            <option value="failed">Con envíos fallidos · últimos 7 días</option>
+          </Select>
           {accountOptions.length > 1 && (
             <Select
               value={accountFilter}
@@ -909,7 +783,7 @@ export function ChatWorkspace({
             <div>
               {Object.entries(groupedChats).map(([accountId, accountChats]) => (
                 <div key={accountId}>
-                  <div className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-darker bg-surface/50 border-b border-border ${hueClassFor(accountId)}`}>
+                  <div className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-darker bg-surface/50 border-b border-border ${hueClassFor(accountId)}`}>
                     <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-entity animate-pulse-live" />
                     {accountChats[0]?.account?.name ?? accountId}
                   </div>
@@ -955,12 +829,12 @@ export function ChatWorkspace({
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
                           {chat.lastMessageAt && (
-                            <span className="text-[10px] text-muted-darker">
+                            <span className="text-xs text-muted-darker">
                               {formatTime(chat.lastMessageAt)}
                             </span>
                           )}
                           {chat.unreadCount > 0 && (
-                            <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-accent text-on-accent text-[10px] font-bold">
+                            <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-accent text-on-accent text-xs font-bold">
                               {chat.unreadCount > 99 ? "99+" : chat.unreadCount}
                             </span>
                           )}
@@ -1028,6 +902,7 @@ export function ChatWorkspace({
                           onClick={() => copyLeadPhone(selectedChat.remoteJid.split("@")[0])}
                           className="text-muted-darker hover:text-foreground transition-colors"
                           title="Copiar número"
+                          aria-label="Copiar número del lead"
                         >
                           <Copy size={12} />
                         </button>
@@ -1040,7 +915,7 @@ export function ChatWorkspace({
                     )}
                   </div>
                   {selectedChat?.account.phoneNumber && (
-                    <p className="text-[11px] text-muted-darker truncate">
+                    <p className="text-xs text-muted-darker truncate">
                       {selectedChat.account.phoneNumber}
                     </p>
                   )}
@@ -1050,6 +925,7 @@ export function ChatWorkspace({
                     onClick={() => setContactDrawerOpen(true)}
                     className="text-muted-darker hover:text-foreground transition-colors shrink-0"
                     title="Ver contacto"
+                    aria-label="Ver contacto"
                   >
                     <User size={18} />
                   </button>
@@ -1076,6 +952,10 @@ export function ChatWorkspace({
               )}
             </div>
 
+            {(messagesError || chatDetailError) && <div className="px-4 pt-3"><Banner tone="warning">
+              {chatDetailError || messagesError}
+              <Button variant="link" size="sm" onClick={() => { retryMessages(); setDetailRetry((prev) => prev + 1); }}>Reintentar</Button>
+            </Banner></div>}
             <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
               {loadingMessages ? (
                 // Burbujas fantasma alternando lado, para que el hilo no salte
@@ -1116,7 +996,7 @@ export function ChatWorkspace({
                     <div key={msg.id}>
                       {showDivider && (
                         <div className="flex justify-center my-3">
-                          <span className="text-[11px] font-medium text-muted-darker bg-surface border border-border px-2.5 py-1 rounded-full">
+                          <span className="text-xs font-medium text-muted-darker bg-surface border border-border px-2.5 py-1 rounded-full">
                             {formatDayDivider(msg.timestamp)}
                           </span>
                         </div>
@@ -1135,6 +1015,7 @@ export function ChatWorkspace({
             </div>
 
             <form onSubmit={handleSend} className="flex flex-col gap-2 px-4 py-3 border-t border-border bg-surface shrink-0 relative">
+              {send?.error && <Banner tone="danger">{send.error} Tu borrador sigue disponible.</Banner>}
               {cannedSuggestions.length > 0 && (
                 <div className="absolute bottom-full left-4 right-4 mb-1.5 rounded-lg border border-border bg-surface shadow-lg overflow-hidden z-20">
                   {cannedSuggestions.map((c, i) => (
@@ -1168,7 +1049,7 @@ export function ChatWorkspace({
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-xs truncate">{attachment.name}</p>
-                    <p className="text-[11px] text-muted-darker">{formatBytes(attachment.size)}</p>
+                    <p className="text-xs text-muted-darker">{formatBytes(attachment.size)}</p>
                   </div>
                   <button
                     type="button"
@@ -1200,7 +1081,12 @@ export function ChatWorkspace({
                 >
                   <Paperclip size={20} />
                 </button>
-                <input
+                <Textarea
+                  autoGrow
+                  rows={1}
+                  aria-label="Mensaje"
+                  aria-describedby="composer-help"
+                  className="flex-1 min-w-0"
                   value={newMessage}
                   onChange={(e) => { setNewMessage(e.target.value); setCannedIndex(0); }}
                   onKeyDown={(e) => {
@@ -1224,23 +1110,27 @@ export function ChatWorkspace({
                         return;
                       }
                     }
-                    if (e.key === "Enter" && !e.shiftKey) {
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                       e.preventDefault();
                       handleSend(e as unknown as React.FormEvent);
                     }
                   }}
                   placeholder={attachment ? "Añadir comentario (opcional)..." : "Escribe un mensaje... (usa /atajo para respuestas rápidas)"}
-                  className="flex-1 bg-background border border-border rounded-lg px-3 py-2.5 text-sm placeholder:text-muted-darker focus:outline-none focus:ring-2 focus:ring-accent/40 transition-colors"
-                  disabled={sending}
+                  disabled={sending || !drafts.ready || !selectedChat}
                 />
                 <Button
                   type="submit"
-                  icon={sending ? undefined : Send}
-                  size="sm"
-                  disabled={(!newMessage.trim() && !attachment) || sending}
+                  icon={Send}
+                  loading={sending}
+                  aria-label="Enviar mensaje"
+                  disabled={(!newMessage.trim() && !attachment) || sending || !drafts.ready || !selectedChat}
                 >
-                  {sending ? <Spinner /> : ""}
+                  <span className="hidden sm:inline">Enviar</span>
                 </Button>
+              </div>
+              <div id="composer-help" className="flex flex-wrap items-center justify-between gap-1 text-xs text-muted-darker" aria-live="polite">
+                <span>{send?.stage === "uploading" ? "Subiendo adjunto…" : sending ? "Enviando mensaje…" : "Enter para enviar · Mayús + Enter para nueva línea"}</span>
+                {(newMessage || attachment) && <span>Borrador de esta conversación</span>}
               </div>
             </form>
           </>

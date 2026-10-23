@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
 import { getPublicChatData } from "@/lib/whatsapp/public-chat-data";
@@ -7,7 +8,7 @@ import { getPublicChatData } from "@/lib/whatsapp/public-chat-data";
 // El token en sí es el único control de acceso: 24 bytes aleatorios, no
 // adivinable por fuerza bruta razonable, pero por eso mismo se limita la tasa
 // de intentos por IP igual que cualquier otro endpoint sin sesión.
-export async function GET(
+async function handleGET(
   req: Request,
   { params }: { params: Promise<{ token: string }> }
 ) {
@@ -31,3 +32,5 @@ export async function GET(
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);

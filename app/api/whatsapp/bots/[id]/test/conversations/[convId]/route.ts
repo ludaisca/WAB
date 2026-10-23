@@ -1,8 +1,9 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string; convId: string }> }) {
+async function handleGET(_req: Request, { params }: { params: Promise<{ id: string; convId: string }> }) {
   const session = await auth();
   if (session?.user?.role !== "admin") {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
@@ -21,7 +22,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json(conversation);
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string; convId: string }> }) {
+async function handleDELETE(_req: Request, { params }: { params: Promise<{ id: string; convId: string }> }) {
   const session = await auth();
   if (session?.user?.role !== "admin") {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
@@ -37,3 +38,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   await prisma.wABotTestConversation.delete({ where: { id: convId } });
   return NextResponse.json({ success: true });
 }
+
+export const GET = withMaintenanceGuard(handleGET);
+export const DELETE = withMaintenanceGuard(handleDELETE);

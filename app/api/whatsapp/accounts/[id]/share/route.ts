@@ -1,8 +1,9 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-export async function POST(
+async function handlePOST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -50,7 +51,7 @@ export async function POST(
   }
 }
 
-export async function DELETE(
+async function handleDELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -79,7 +80,7 @@ export async function DELETE(
   }
 }
 
-export async function GET(
+async function handleGET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -106,3 +107,7 @@ export async function GET(
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const POST = withMaintenanceGuard(handlePOST);
+export const DELETE = withMaintenanceGuard(handleDELETE);
+export const GET = withMaintenanceGuard(handleGET);

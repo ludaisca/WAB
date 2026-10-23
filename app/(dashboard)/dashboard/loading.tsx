@@ -4,7 +4,7 @@ import { Skeleton, SkeletonRow } from "@/app/components/ui/skeleton";
 export default function DashboardLoading() {
   return (
     <div className="space-y-10">
-      <PageHeader title="Panel" description="Resumen de tu actividad en WhatsApp" />
+      <PageHeader title="Panel" description="Tus pendientes, el estado de tus cuentas y la actividad de tu equipo." />
 
       {/* Franja KPI */}
       <div className="flex flex-wrap gap-x-12 gap-y-4">
@@ -17,6 +17,12 @@ export default function DashboardLoading() {
         ))}
       </div>
 
+      <section className="space-y-4" aria-label="Cargando pendientes">
+        <Skeleton className="h-6 w-40" />
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}
+        </div>
+      </section>
       <div className="grid gap-10 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-3">
           <Skeleton className="h-6 w-40" />
@@ -25,6 +31,10 @@ export default function DashboardLoading() {
               <SkeletonRow key={i} cols={3} />
             ))}
           </div>
+          <Skeleton className="h-6 w-40 mt-8" />
+          <Skeleton className="h-44 w-full rounded-xl" />
+          <Skeleton className="h-6 w-40 mt-8" />
+          <Skeleton className="h-64 w-full rounded-xl" />
         </div>
 
         <div className="space-y-3">

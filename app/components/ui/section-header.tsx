@@ -15,7 +15,7 @@ interface SectionHeaderProps {
 
 export function SectionHeader({ title, eyebrow, action, className }: SectionHeaderProps) {
   return (
-    <div className={cn("flex items-end justify-between gap-3", className)}>
+    <div className={cn("flex flex-wrap items-end justify-between gap-3", className)}>
       <div className="min-w-0">
         {eyebrow && (
           <p className="text-eyebrow font-medium uppercase tracking-wider text-muted-darker">

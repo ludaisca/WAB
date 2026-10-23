@@ -28,8 +28,9 @@ export function Pagination({ currentPage, totalPages, onPageChange, className }:
   }
 
   return (
-    <div className={cn("flex items-center gap-2", className)}>
+    <nav aria-label="Paginación" className={cn("flex items-center gap-2", className)}>
       <button
+        type="button" aria-label="Página anterior"
         onClick={() => onPageChange(currentPage - 1)}
         disabled={currentPage === 1}
         className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm font-medium text-muted hover:bg-surface-light hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -38,7 +39,8 @@ export function Pagination({ currentPage, totalPages, onPageChange, className }:
         <span className="hidden sm:inline">Anterior</span>
       </button>
 
-      <div className="flex items-center gap-1">
+      <span className="sm:hidden font-mono text-xs text-muted px-2" aria-live="polite">{currentPage} / {totalPages}</span>
+      <div className="hidden sm:flex items-center gap-1">
         {pages.map((page, i) =>
           page === "…" ? (
             <span key={`dots-${i}`} className="px-2 py-2 text-sm text-muted-darker select-none">
@@ -47,6 +49,9 @@ export function Pagination({ currentPage, totalPages, onPageChange, className }:
           ) : (
             <button
               key={page}
+              type="button"
+              aria-label={`Página ${page}`}
+              aria-current={page === currentPage ? "page" : undefined}
               onClick={() => onPageChange(page as number)}
               className={cn(
                 "min-w-[36px] px-3 py-2 rounded-lg text-sm font-medium transition-colors",
@@ -62,6 +67,7 @@ export function Pagination({ currentPage, totalPages, onPageChange, className }:
       </div>
 
       <button
+        type="button" aria-label="Página siguiente"
         onClick={() => onPageChange(currentPage + 1)}
         disabled={currentPage === totalPages}
         className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm font-medium text-muted hover:bg-surface-light hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -69,6 +75,6 @@ export function Pagination({ currentPage, totalPages, onPageChange, className }:
         <span className="hidden sm:inline">Siguiente</span>
         <ChevronRight size={14} />
       </button>
-    </div>
+    </nav>
   );
 }

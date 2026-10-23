@@ -1,10 +1,11 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { encrypt } from "@/lib/crypto";
 import { createGoogleOAuthClient, GOOGLE_SHEETS_SCOPES } from "@/lib/google/oauth-client";
 
-export async function GET() {
+async function handleGET() {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -29,3 +30,5 @@ export async function GET() {
 
   return NextResponse.redirect(authUrl);
 }
+
+export const GET = withMaintenanceGuard(handleGET);

@@ -1,9 +1,10 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getGoogleSheetsClientForUser } from "@/lib/google/sheets-client";
 import { readSheetValues } from "@/lib/google/sheets-read";
 
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -37,3 +38,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
+
+export const POST = withMaintenanceGuard(handlePOST);

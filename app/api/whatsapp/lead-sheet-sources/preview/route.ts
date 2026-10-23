@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { resolveSpreadsheetTabs } from "@/lib/google/sheets-read";
@@ -5,7 +6,7 @@ import { resolveSpreadsheetTabs } from "@/lib/google/sheets-read";
 // Usado por el formulario de alta de una fuente: recibe la URL (o el ID crudo) de
 // una hoja de Google Sheets pegada por el usuario y devuelve sus pestañas, para
 // construir el resto del formulario de mapeo sin que el usuario tenga que adivinar.
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -27,3 +28,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
+
+export const POST = withMaintenanceGuard(handlePOST);

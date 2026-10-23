@@ -21,6 +21,7 @@ function ChatDetailPageContent() {
       initialCampaignId={campaignId}
       initialHasReplied={hasReplied === "yes" || hasReplied === "no" ? hasReplied : ""}
       initialSearch={search}
+      initialTriage={searchParams.get("triage") || undefined}
     />
   );
 }

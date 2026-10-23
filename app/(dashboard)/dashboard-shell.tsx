@@ -21,6 +21,8 @@ import {
   Workflow,
 } from "lucide-react";
 import { AppShell, type NavItem, type NavGroup } from "@/app/components/ui/app-shell";
+import { Banner } from "@/app/components/ui/banner";
+import { ChatDraftProvider } from "@/app/components/whatsapp/chat-drafts";
 import { NotificationBell } from "@/app/components/ui/notification-bell";
 
 export function DashboardShell({
@@ -149,13 +151,9 @@ export function DashboardShell({
 
   return (
     <>
-      {maintenanceMode && (
-        <div className="fixed top-0 inset-x-0 z-[60] bg-warning text-on-accent text-center text-xs sm:text-sm font-medium py-1.5 px-4">
-          Sistema en mantenimiento: restaurando un respaldo. Los datos pueden verse incompletos hasta que termine.
-        </div>
-      )}
-      <AppShell nav={NAV} accent="accent" collapsible brand={businessName || undefined} headerRight={<NotificationBell />}>
-        {children}
+      <AppShell nav={NAV} accent="accent" collapsible brand={businessName || undefined} headerRight={<NotificationBell />}
+        statusBanner={maintenanceMode ? <Banner tone="warning" title="Sistema en mantenimiento">Las operaciones están en pausa mientras se restaura el respaldo. Conservamos tus borradores para que puedas continuar al terminar.</Banner> : undefined}>
+        <ChatDraftProvider key={session?.user?.id ?? "anonymous"} userId={session?.user?.id ?? "anonymous"}>{children}</ChatDraftProvider>
       </AppShell>
     </>
   );

@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { createReadStream, promises as fs } from "fs";
 import path from "path";
@@ -6,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 
 const REPORTS_ROOT = process.env.REPORTS_ROOT || "/app/reports";
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function handleGET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   if (session.user.role !== "admin") return NextResponse.json({ error: "No autorizado" }, { status: 403 });
@@ -33,3 +34,5 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   return new Response(stream as unknown as ReadableStream, { headers });
 }
+
+export const GET = withMaintenanceGuard(handleGET);

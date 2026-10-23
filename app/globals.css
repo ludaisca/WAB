@@ -14,7 +14,7 @@
 
   /* Text */
   --muted:         #a69f92;
-  --muted-darker:  #7c7568;
+  --muted-darker:  #a09888;
 
   /* Brand — WhatsApp green, refined */
   --accent:        #22C55E;
@@ -113,7 +113,7 @@
   --surface-light: #ebe6db;
   --border:        #ded7c8;
   --muted:         #5d574b;
-  --muted-darker:  #8f8878;
+  --muted-darker:  #706958;
 
   --accent:        #15803D;
   --accent-hover:  #14532D;
@@ -452,3 +452,6 @@ body {
     animation: none !important;
   }
 }
+
+/* Composer grows with its content and keeps long drafts scrollable. */
+.field-sizing-content { field-sizing: content; }

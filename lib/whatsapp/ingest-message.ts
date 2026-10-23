@@ -51,75 +51,80 @@ export async function ingestInboundMessage(
     if (existing) return null;
   }
 
-  const [existingContact, existingChat] = await Promise.all([
-    prisma.contact.findUnique({
+  // Contacto, chat, contador y mensaje se confirman juntos. Si una entrega
+  // concurrente gana el wamid, el rollback también revierte unreadCount.
+  const ingested = await prisma.$transaction(async (tx) => {
+    const [existingContact, existingChat] = await Promise.all([
+      tx.contact.findUnique({
+        where: { accountId_remoteJid: { accountId, remoteJid: msg.remoteJid } },
+        select: { name: true, blockedAt: true },
+      }),
+      tx.wAChat.findUnique({
+        where: { accountId_remoteJid: { accountId, remoteJid: msg.remoteJid } },
+        select: { name: true },
+      }),
+    ]);
+
+    const contactNameShouldUpdate = shouldUpdateName(msg.contactName, existingContact?.name, msg.remoteJid);
+    const chatNameShouldUpdate = shouldUpdateName(msg.contactName, existingChat?.name, msg.remoteJid);
+
+    const contactRecord = await tx.contact.upsert({
       where: { accountId_remoteJid: { accountId, remoteJid: msg.remoteJid } },
-      select: { name: true, blockedAt: true },
-    }),
-    prisma.wAChat.findUnique({
+      create: { accountId, remoteJid: msg.remoteJid, name: msg.contactName },
+      update: contactNameShouldUpdate ? { name: msg.contactName } : {},
+    });
+
+    const chat = await tx.wAChat.upsert({
       where: { accountId_remoteJid: { accountId, remoteJid: msg.remoteJid } },
-      select: { name: true },
-    }),
-  ]);
-
-  const contactNameShouldUpdate = shouldUpdateName(msg.contactName, existingContact?.name, msg.remoteJid);
-  const chatNameShouldUpdate = shouldUpdateName(msg.contactName, existingChat?.name, msg.remoteJid);
-
-  const contactRecord = await prisma.contact.upsert({
-    where: { accountId_remoteJid: { accountId, remoteJid: msg.remoteJid } },
-    create: { accountId, remoteJid: msg.remoteJid, name: msg.contactName },
-    update: contactNameShouldUpdate ? { name: msg.contactName } : {},
-  });
-
-  const chat = await prisma.wAChat.upsert({
-    where: { accountId_remoteJid: { accountId, remoteJid: msg.remoteJid } },
-    create: {
-      accountId,
-      remoteJid: msg.remoteJid,
-      name: msg.contactName,
-      isGroup: msg.isGroup,
-      lastMessage: msg.body.slice(0, 500),
-      lastMessageAt: msg.timestamp,
-      unreadCount: 1,
-      contactId: contactRecord.id,
-    },
-    update: {
-      ...(chatNameShouldUpdate ? { name: msg.contactName } : {}),
-      isGroup: msg.isGroup,
-      lastMessage: msg.body.slice(0, 500),
-      lastMessageAt: msg.timestamp,
-      unreadCount: { increment: 1 },
-      contactId: contactRecord.id,
-    },
-  });
-
-  let createdMessage;
-  try {
-    createdMessage = await prisma.wAMessage.create({
-      data: {
-        wamid: msg.wamid,
-        chatId: chat.id,
-        direction: "INBOUND",
-        messageType: msg.type,
-        body: msg.body,
-        caption: msg.caption ?? null,
-        mediaId: msg.mediaId ?? null,
-        mediaUrl: msg.localMediaPath ?? null,
-        mimeType: msg.mimeType ?? null,
-        filename: msg.filename ?? null,
-        bytesSize: msg.bytesSize ?? null,
-        timestamp: msg.timestamp,
+      create: {
+        accountId,
+        remoteJid: msg.remoteJid,
+        name: msg.contactName,
+        isGroup: msg.isGroup,
+        lastMessage: msg.body.slice(0, 500),
+        lastMessageAt: msg.timestamp,
+        unreadCount: 1,
+        contactId: contactRecord.id,
+      },
+      update: {
+        ...(chatNameShouldUpdate ? { name: msg.contactName } : {}),
+        isGroup: msg.isGroup,
+        lastMessage: msg.body.slice(0, 500),
+        lastMessageAt: msg.timestamp,
+        unreadCount: { increment: 1 },
+        contactId: contactRecord.id,
       },
     });
-  } catch (err) {
-    // Carrera entre entregas duplicadas del webhook: el findFirst de arriba no
-    // vio el duplicado pero el @@unique([chatId, wamid]) sí — tratarlo como el
-    // dedupe normal en lugar de reventar con un 500.
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      return null;
+
+    const createdMessage = await tx.wAMessage.create({
+        data: {
+          wamid: msg.wamid,
+          chatId: chat.id,
+          direction: "INBOUND",
+          messageType: msg.type,
+          body: msg.body,
+          caption: msg.caption ?? null,
+          mediaId: msg.mediaId ?? null,
+          mediaUrl: msg.localMediaPath ?? null,
+          mimeType: msg.mimeType ?? null,
+          filename: msg.filename ?? null,
+          bytesSize: msg.bytesSize ?? null,
+          timestamp: msg.timestamp,
+        },
+      });
+    return { contactRecord, chat, createdMessage };
+  }).catch(async (err) => {
+    if (msg.wamid && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const duplicate = await prisma.wAMessage.findFirst({
+        where: { wamid: msg.wamid, chat: { accountId, remoteJid: msg.remoteJid } },
+        select: { id: true },
+      });
+      if (duplicate) return null;
     }
     throw err;
-  }
+  });
+  if (!ingested) return null;
+  const { contactRecord, chat, createdMessage } = ingested;
 
   // Media entrante de Meta llega solo como mediaId — los bytes se descargan async.
   if (msg.mediaId && !msg.localMediaPath && msg.type !== "text") {

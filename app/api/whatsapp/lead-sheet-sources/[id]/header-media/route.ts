@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -9,7 +10,7 @@ import { getTemplateVariables } from "@/lib/whatsapp/template-variables";
 // Reemplaza el archivo de la cabecera (imagen/video/documento) de la fuente: sube
 // el archivo nuevo a Meta con la cuenta de la fuente y guarda el media id nuevo.
 // Necesario cuando el anterior caducó (Meta los borra a los ~30 días).
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function handlePOST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -61,3 +62,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const POST = withMaintenanceGuard(handlePOST);

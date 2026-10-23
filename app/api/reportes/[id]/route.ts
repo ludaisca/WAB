@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
@@ -6,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 
 const REPORTS_ROOT = process.env.REPORTS_ROOT || "/app/reports";
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function handleDELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     if (!session?.user?.id) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -30,3 +31,5 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const DELETE = withMaintenanceGuard(handleDELETE);

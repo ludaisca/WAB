@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { randomBytes } from "crypto";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
@@ -22,7 +23,7 @@ async function generateUniqueLeadPrefix(name: string): Promise<string> {
   return candidate;
 }
 
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -91,7 +92,7 @@ export async function POST(req: Request) {
   }
 }
 
-export async function GET(req: Request) {
+async function handleGET(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -147,3 +148,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const POST = withMaintenanceGuard(handlePOST);
+export const GET = withMaintenanceGuard(handleGET);

@@ -1,13 +1,15 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import { resolveAbsolutePath, mediaReadStream } from "@/lib/whatsapp/media-store";
+import { assertAccountMediaPath } from "@/lib/whatsapp/media-path";
 
 // Espejo sin auth de /api/whatsapp/messages/[messageId]/media — el gate de
 // acceso es que `messageId` pertenezca a un chat cuyo publicShareToken sea
 // exactamente `token` (ambos se validan en un único where, no por separado,
 // para que un token revocado o de otro chat nunca sirva un archivo).
-export async function GET(
+async function handleGET(
   req: Request,
   { params }: { params: Promise<{ token: string; messageId: string }> }
 ) {
@@ -23,7 +25,7 @@ export async function GET(
 
     const message = await prisma.wAMessage.findFirst({
       where: { id: messageId, chat: { publicShareToken: token } },
-      select: { mediaUrl: true, mimeType: true, filename: true, messageType: true },
+      select: { mediaUrl: true, mimeType: true, filename: true, messageType: true, chat: { select: { accountId: true } } },
     });
 
     if (!message) {
@@ -35,6 +37,7 @@ export async function GET(
 
     let stat;
     try {
+      assertAccountMediaPath(message.chat.accountId, message.mediaUrl);
       const { promises: fs } = await import("fs");
       stat = await fs.stat(resolveAbsolutePath(message.mediaUrl));
     } catch {
@@ -60,3 +63,5 @@ export async function GET(
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);

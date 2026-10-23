@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -34,7 +35,7 @@ function serializeMatch(match: ContactMatch | null) {
   return { primary: serializeMatchEntry(match.primary), all: match.all.map(serializeMatchEntry) };
 }
 
-export async function GET(req: Request) {
+async function handleGET(req: Request) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   if (session.user.role !== "admin") return NextResponse.json({ error: "No autorizado" }, { status: 403 });
@@ -191,3 +192,5 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);

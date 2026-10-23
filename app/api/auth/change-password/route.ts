@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -14,7 +15,7 @@ const changePasswordSchema = z.object({
   path: ["confirmPassword"],
 });
 
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -77,3 +78,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export const POST = withMaintenanceGuard(handlePOST);

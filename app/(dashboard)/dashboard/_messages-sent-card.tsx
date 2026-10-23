@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Megaphone, SendHorizonal } from "lucide-react";
+import { Card } from "@/app/components/ui/card";
+import { Banner } from "@/app/components/ui/banner";
 import { SectionHeader } from "@/app/components/ui/section-header";
 import { FormField } from "@/app/components/ui/form-field";
 import { Select } from "@/app/components/ui/select";
@@ -48,12 +50,19 @@ export function MessagesSentCard({
   const [accountId, setAccountId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [fetchedStats, setFetchedStats] = useState<MessagesSentStats | null>(null);
+  const [fetchedStats, setFetchedStats] = useState<{ key: string; data: MessagesSentStats } | null>(null);
+  const [fetchError, setFetchError] = useState<{ key: string; message: string } | null>(null);
+  const [retry, setRetry] = useState(0);
   const [loading, setLoading] = useState(false);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
 
   const hasFilter = accountId !== "" || dateFrom !== "" || dateTo !== "";
-  const stats = hasFilter && fetchedStats ? fetchedStats : initialStats;
+  const partialRange = !!dateFrom !== !!dateTo;
+  const query = new URLSearchParams({ ...(accountId ? { accountId } : {}), ...(dateFrom && dateTo ? { dateFrom, dateTo } : {}) }).toString();
+  const currentError = fetchError?.key === query ? fetchError.message : null;
+  const statsReady = !hasFilter || (!partialRange && fetchedStats?.key === query);
+  const stats = hasFilter && fetchedStats?.key === query ? fetchedStats.data : initialStats;
+  const isLoading = hasFilter && !partialRange && (loading || (!statsReady && !currentError));
 
   useEffect(() => {
     if (!hasFilter) return;
@@ -66,24 +75,25 @@ export function MessagesSentCard({
       params.set("dateTo", dateTo);
     }
 
+    const controller = new AbortController();
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- refetch al cambiar el filtro; el loading debe reflejarse antes de que la respuesta llegue
     setLoading(true);
-    fetch(`/api/dashboard/messages-sent?${params.toString()}`)
+    fetch(`/api/dashboard/messages-sent?${params.toString()}`, { signal: controller.signal })
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
-        if (!cancelled) setFetchedStats(data);
+        if (!cancelled) { setFetchedStats({ key: query, data }); setFetchError(null); }
       })
       .catch((err) => {
-        if (!cancelled) toastError(err instanceof Error ? err.message : "Error al filtrar mensajes enviados");
+        if (!cancelled) { const message = err instanceof Error ? err.message : "Error al filtrar mensajes enviados"; setFetchError({ key: query, message }); toastError(message); }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
 
-    return () => { cancelled = true; };
-  }, [accountId, dateFrom, dateTo, hasFilter, toastError]);
+    return () => { cancelled = true; controller.abort(); };
+  }, [accountId, dateFrom, dateTo, hasFilter, toastError, query, retry]);
 
   const filterLabel = `${accountId ? accounts.find((a) => a.id === accountId)?.name ?? "Cuenta" : "Todas las cuentas"} · ${
     dateFrom && dateTo
@@ -125,16 +135,18 @@ export function MessagesSentCard({
         )}
       </div>
 
-      <div className="mt-4 flex items-center gap-4 rounded-lg border border-border bg-surface-light px-4 py-4">
+      {partialRange && <p className="mt-3 text-sm text-muted">Selecciona desde y hasta para consultar el periodo.</p>}
+      {currentError && hasFilter && <Banner tone="warning" className="mt-3" action={<Button variant="secondary" size="sm" onClick={() => setRetry((prev) => prev + 1)}>Reintentar</Button>}>{currentError}</Banner>}
+      <Card padding="sm" className="mt-4 flex flex-wrap items-center gap-4">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-bubble bg-accent/10 text-accent">
           <SendHorizonal size={18} />
         </div>
         <div className="min-w-0">
           <p className="font-mono text-hero leading-none">
-            {loading ? "…" : <AnimatedNumber value={stats.messagesSent} />}
+            {isLoading ? "…" : statsReady ? <AnimatedNumber value={stats.messagesSent} /> : "—"}
           </p>
           <p className="mt-1.5 text-xs text-muted-darker">
-            {loading ? "Actualizando…" : `${stats.conversations} conversación${stats.conversations === 1 ? "" : "es"}`}
+            {isLoading ? "Actualizando…" : statsReady ? `${stats.conversations.toLocaleString("es-MX")} conversación${stats.conversations === 1 ? "" : "es"}` : "Sin resultado para este filtro"}
             {" · "}
             {filterLabel}
           </p>
@@ -144,12 +156,12 @@ export function MessagesSentCard({
           size="sm"
           icon={Megaphone}
           onClick={() => setBreakdownOpen(true)}
-          disabled={loading}
-          className="ml-auto shrink-0"
+          disabled={isLoading || !statsReady}
+          className="w-full sm:w-auto sm:ml-auto shrink-0"
         >
           Desglose por campaña
         </Button>
-      </div>
+      </Card>
 
       <Modal
         open={breakdownOpen}

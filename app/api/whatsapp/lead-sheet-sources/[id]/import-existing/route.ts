@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -10,7 +11,7 @@ import { rateLimit } from "@/lib/rate-limit";
 // histórico de una fuente en particular. Body opcional { dateFrom?, dateTo? }
 // (fechas "YYYY-MM-DD") para acotar el reenvío a la fecha de registro del lead
 // en vez de todo el histórico — ver "Importar por fecha" en el detalle de la fuente.
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function handlePOST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -70,3 +71,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const POST = withMaintenanceGuard(handlePOST);

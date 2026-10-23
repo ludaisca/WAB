@@ -5,6 +5,7 @@ import { wrapUserPrompt, SCOPE_GUARDRAIL } from "@/lib/ai/prompt-sanitizer";
 import { buildPriceLookupTool, PRICE_LOOKUP_TOOL_NAME } from "./price-lookup";
 import { buildQualifiedDataTool } from "./qualified-data";
 import { completeWithBotTools, type BotTool } from "./run-tool-loop";
+import { BOT_REPLY_INSTRUCTIONS, containsInternalBotContent, SAFE_BOT_REPLY } from "./reply-safety";
 import type { AIMessage, ContentPart } from "@/lib/ai/types";
 
 // Backstop contra alucinación de precios: ningún bot puede enviar un precio en
@@ -174,6 +175,8 @@ export interface GenerateBotReplyParams {
   // esto. Se inyecta como system note y se le da al modelo la tool para
   // seguir completándolo — ver qualified-data.ts.
   qualifiedData?: Record<string, string> | null;
+  // Los seguimientos proactivos no son datos nuevos del prospecto.
+  allowTools?: boolean;
 }
 
 export interface GenerateBotReplyResult {
@@ -205,6 +208,15 @@ export async function generateBotReply(params: GenerateBotReplyParams): Promise<
   const messages: AIMessage[] = [];
   messages.push({ role: "system", content: wrapUserPrompt(bot.systemPrompt) });
   messages.push({ role: "system", content: SCOPE_GUARDRAIL });
+  messages.push({ role: "system", content: BOT_REPLY_INSTRUCTIONS });
+
+  // Un envío afectado ya persistido no debe enseñarle al modelo a repetir el
+  // formato interno ni contaminar la búsqueda RAG. No se altera el historial
+  // guardado en la BD ni se descartan mensajes del prospecto.
+  const safeHistory = history.filter((message) =>
+    message.role !== "assistant" || typeof message.content !== "string" ||
+    !containsInternalBotContent(message.content)
+  );
 
   if (Object.keys(qualifiedData).length > 0) {
     const lines = Object.entries(qualifiedData)
@@ -231,7 +243,7 @@ export async function generateBotReply(params: GenerateBotReplyParams): Promise<
   // de la tool en su definición no bastaba para que el modelo la llamara de
   // forma consistente turno a turno — verificado en vivo, algunas corridas la
   // ignoraron por completo pese a que el prospecto sí dio datos nuevos.
-  messages.push({
+  if (params.allowTools !== false) messages.push({
     role: "system",
     content:
       "Si el prospecto te acaba de dar algún dato de sondeo o calificación nuevo o distinto al de arriba (nombre, interés, cantidad, presupuesto, fecha, ciudad, tipo de institución, quién decide, etc.), usa la tool registrar_dato_prospecto para guardarlo antes de responder — no lo dejes solo en tu respuesta de texto.",
@@ -253,7 +265,7 @@ export async function generateBotReply(params: GenerateBotReplyParams): Promise<
     // una ventana corta del historial reciente (texto plano únicamente) para
     // anclar la búsqueda al tema de la conversación sin diluirla con turnos
     // muy viejos.
-    const recentContext = history
+    const recentContext = safeHistory
       .slice(-6)
       .map((m) => (typeof m.content === "string" ? m.content : ""))
       .filter(Boolean)
@@ -275,11 +287,11 @@ export async function generateBotReply(params: GenerateBotReplyParams): Promise<
     messages.push({ role: "system", content: note });
   }
 
-  messages.push(...history);
+  messages.push(...safeHistory);
   messages.push({ role: "user", content: userContent });
 
   const client = getAIProvider(apiKey);
-  const tools: BotTool[] = [buildPriceLookupTool(bot), buildQualifiedDataTool(qualifiedData)].filter(
+  const tools: BotTool[] = params.allowTools === false ? [] : [buildPriceLookupTool(bot), buildQualifiedDataTool(qualifiedData)].filter(
     (t): t is BotTool => t !== null
   );
   const loopResult = await completeWithBotTools(client, {
@@ -291,6 +303,10 @@ export async function generateBotReply(params: GenerateBotReplyParams): Promise<
   });
 
   let content = loopResult.content;
+  if (containsInternalBotContent(content)) {
+    console.warn(`[generate-reply] Contenido interno bloqueado — bot "${bot.name}"`);
+    content = SAFE_BOT_REPLY;
+  }
   groundingSources.push(...loopResult.toolResultTexts);
 
   // Un precio real ya no es "sin respaldo" si vino de una consulta en vivo

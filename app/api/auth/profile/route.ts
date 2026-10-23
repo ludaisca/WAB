@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -7,7 +8,7 @@ const profileSchema = z.object({
   name: z.string().min(1, "El nombre es requerido").max(100, "Nombre demasiado largo"),
 });
 
-export async function PATCH(req: Request) {
+async function handlePATCH(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -38,3 +39,5 @@ export async function PATCH(req: Request) {
     );
   }
 }
+
+export const PATCH = withMaintenanceGuard(handlePATCH);

@@ -1,3 +1,4 @@
+import { getChatVisibilityFilter } from "@/lib/whatsapp/chat-visibility";
 import { prisma } from "@/lib/prisma";
 import { getMonthlyAiCost } from "@/lib/ai/budget";
 import { getUserAccountIds } from "@/lib/shared-accounts";
@@ -101,14 +102,15 @@ export interface Estadisticas {
   }>;
 }
 
-export async function getEstadisticas(userId: string): Promise<Estadisticas> {
-  const cached = statsCache.get(userId);
+export async function getEstadisticas(userId: string, role?: string): Promise<Estadisticas> {
+  const cached = statsCache.get(`${userId}:${role}`);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.data;
   }
 
   const accountIds = await getUserAccountIds(userId);
 
+  const visibility = await getChatVisibilityFilter(userId, role, accountIds);
   const now = new Date();
   const today = startOfDayInTz(now);
   const chartStart = new Date(today.getTime() - 13 * 86400000);
@@ -142,10 +144,10 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     leadScores,
   ] = await Promise.all([
     prisma.wAAccount.count({ where: accountWhere }),
-    countChats(accountIds),
-    countMessages(accountIds),
+    countChats(accountIds, visibility),
+    countMessages(accountIds, visibility),
     countBots(userId),
-    countCampaigns(userId),
+    countCampaigns(accountIds),
     prisma.wABotUsage.aggregate({
       where: { bot: { userId } },
       _sum: { totalTokens: true, estimatedCost: true },
@@ -176,7 +178,7 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
       take: 5000,
     }),
     countActiveBots(userId),
-    countCompletedCampaigns(userId),
+    countCompletedCampaigns(accountIds),
     prisma.wABot.findMany({
       where: { userId },
       select: { id: true, name: true, status: true, isActive: true },
@@ -193,7 +195,7 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     }),
     prisma.wAChat.groupBy({
       by: ["accountId"],
-      where: { accountId: { in: accountIds } },
+      where: { accountId: { in: accountIds }, ...(visibility ? { AND: [visibility] } : {}) },
       _count: { _all: true },
     }),
     // Misma función que usan bot-worker/lead-scoring/lead-recovery para decidir
@@ -325,7 +327,7 @@ export async function getEstadisticas(userId: string): Promise<Estadisticas> {
     qualifiedChatsByCampaign,
   };
 
-  statsCache.set(userId, { data: payload, expiresAt: Date.now() + STATS_TTL_MS });
+  statsCache.set(`${userId}:${role}`, { data: payload, expiresAt: Date.now() + STATS_TTL_MS });
 
   return payload;
 }

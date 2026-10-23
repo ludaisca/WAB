@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -5,7 +6,7 @@ import { getUserAccountIds } from "@/lib/shared-accounts";
 import { deleteTemplateFully } from "@/lib/whatsapp/templates";
 import { NotFoundError, ValidationError } from "@/lib/errors";
 
-export async function GET(
+async function handleGET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -41,7 +42,7 @@ export async function GET(
   }
 }
 
-export async function DELETE(
+async function handleDELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -69,3 +70,6 @@ export async function DELETE(
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);
+export const DELETE = withMaintenanceGuard(handleDELETE);

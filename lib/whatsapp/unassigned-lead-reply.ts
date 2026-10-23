@@ -3,11 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
 import { sendWhatsAppMessage } from "@/lib/whatsapp/send";
 import { isWithinServiceWindow } from "@/lib/whatsapp/service-window";
-import { getAIProvider } from "@/lib/ai/factory";
 import { getUserApiKey } from "@/lib/ai/settings";
 import { estimateCost } from "@/lib/ai/pricing";
-import { searchKnowledge } from "@/lib/ai/rag";
-import { wrapUserPrompt, SCOPE_GUARDRAIL } from "@/lib/ai/prompt-sanitizer";
+import { generateBotReply } from "@/lib/whatsapp/bot-tools/generate-reply";
 import { summarizeText } from "@/lib/ai/summarize";
 import { splitReply, computeTypingDelay } from "@/lib/whatsapp/humanize";
 import { botSendQueue } from "@/lib/queue";
@@ -185,21 +183,7 @@ export async function sendManualBotReply(chat: ManualReplyChat, bot: WABot, now:
     update: {},
   });
 
-  const messages: AIMessage[] = [
-    { role: "system", content: wrapUserPrompt(bot.systemPrompt) },
-    { role: "system", content: SCOPE_GUARDRAIL },
-  ];
-
-  if (bot.ragEnabled) {
-    const ragQuery = lastInbound.caption ?? lastInbound.body ?? "";
-    const knowledge = await searchKnowledge(bot.id, ragQuery, apiKey);
-    if (knowledge) {
-      messages.push({
-        role: "system",
-        content: `Información relevante de la base de conocimiento:\n\n${knowledge}`,
-      });
-    }
-  }
+  const messages: AIMessage[] = [];
 
   // Igual que bot-worker.ts:176-192 — si el chat arrancó desde una campaña,
   // el bot debe saber a qué mensaje exacto está reaccionando el lead.
@@ -249,14 +233,12 @@ export async function sendManualBotReply(chat: ManualReplyChat, bot: WABot, now:
   }
 
   const userText = lastInbound.caption ?? lastInbound.body ?? "";
-  messages.push({ role: "user", content: userText || "[mensaje sin texto]" });
-
-  const client = getAIProvider(apiKey);
-  const result = await client.complete({
-    model: bot.model,
-    messages,
-    temperature: bot.temperature,
-    maxTokens: bot.maxTokens,
+  const result = await generateBotReply({
+    bot, apiKey, ragQuery: userText,
+    history: messages.filter((message) => message.role !== "system"),
+    extraSystemNotes: messages.filter((message) => message.role === "system").map((message) => String(message.content)),
+    userContent: userText || "[mensaje sin texto]",
+    qualifiedData: conversation.qualifiedData as Record<string, string> | null,
   });
 
   // La llamada a la IA toma varios segundos — revalida justo antes de enviar
@@ -284,7 +266,7 @@ export async function sendManualBotReply(chat: ManualReplyChat, bot: WABot, now:
       cumulativeDelay += computeTypingDelay(chunk);
       await botSendQueue.add(
         "send-chunk",
-        { accountId: chat.account.id, waChatId: chat.id, remoteJid: chat.remoteJid, chunk },
+        { accountId: chat.account.id, waChatId: chat.id, remoteJid: chat.remoteJid, chunk, botId: bot.id, botRevision: bot.updatedAt.toISOString(), turnStartedAt: now.toISOString(), mode: "manual" },
         { delay: cumulativeDelay }
       );
     }
@@ -313,14 +295,15 @@ export async function sendManualBotReply(chat: ManualReplyChat, bot: WABot, now:
     });
   }
 
-  if (bot.memoryType === "SUMMARY") {
-    await prisma.wABotConversation.update({
-      where: { id: conversation.id },
-      data: {
+  await prisma.wABotConversation.update({
+    where: { id: conversation.id },
+    data: {
+      qualifiedData: result.qualifiedData,
+      ...(bot.memoryType === "SUMMARY" ? {
         summary: summarizeText(`Cliente: ${userText}\nAsistente: ${result.content}`, conversation.summary),
-      },
-    });
-  }
+      } : {}),
+    },
+  });
 
   const promptTokens = result.usage?.promptTokens ?? 0;
   const completionTokens = result.usage?.completionTokens ?? 0;

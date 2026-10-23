@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 import { rateLimit } from "./rate-limit";
+import { credentialRevision } from "./auth-session";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -37,6 +38,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.name,
           role: user.role,
           createdAt: user.createdAt.toISOString(),
+          credentialRevision: credentialRevision(user.password, user.role),
         };
       },
     }),
@@ -47,7 +49,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.id = user.id;
         token.role = (user as { role?: string }).role ?? "user";
         token.createdAt = (user as { createdAt?: string }).createdAt;
+        token.credentialRevision = (user as { credentialRevision?: string }).credentialRevision;
       }
+      // Se revalida también en sesiones existentes: bajas, cambios de rol y
+      // contraseña invalidan los JWT anteriores. Las sesiones legacy sin
+      // revisión requieren iniciar sesión una vez tras esta actualización.
+      if (typeof token.id !== "string" || typeof token.credentialRevision !== "string") return null;
+      const current = await prisma.user.findUnique({
+        where: { id: token.id },
+        select: { password: true, role: true, name: true, email: true },
+      });
+      if (!current?.password || credentialRevision(current.password, current.role) !== token.credentialRevision) return null;
+      token.role = current.role;
+      token.name = current.name;
+      token.email = current.email;
       return token;
     },
     async session({ session, token }) {

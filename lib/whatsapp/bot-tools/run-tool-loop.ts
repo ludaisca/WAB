@@ -1,5 +1,6 @@
 import type { getAIProvider } from "@/lib/ai/factory";
 import type { AIMessage, AIToolCall, AIToolDefinition, AIToolResult } from "@/lib/ai/types";
+import { BOT_REPLY_REPAIR_INSTRUCTIONS, containsInternalBotContent, SAFE_BOT_REPLY } from "./reply-safety";
 
 export interface BotTool {
   definition: AIToolDefinition;
@@ -41,21 +42,24 @@ export async function completeWithBotTools(
   let promptTokens = 0;
   let completionTokens = 0;
   let hasUsage = false;
+  let toolIterations = 0;
+  let repairAttempted = false;
 
-  for (let iteration = 1; ; iteration++) {
-    const forceFinal = iteration >= BOT_MAX_TOOL_ITERATIONS;
-    const useTools = params.tools.length > 0 && !forceFinal;
+  // Hasta tres rondas de herramientas, una respuesta final y, como máximo,
+  // una reparación adicional. Una respuesta inválida nunca se reinyecta al
+  // historial ni se interpreta/ejecuta como código.
+  for (;;) {
+    const forceFinal = params.tools.length === 0 || toolIterations >= BOT_MAX_TOOL_ITERATIONS - 1;
 
     const res = await client.complete({
       model: params.model,
       messages,
       temperature: params.temperature,
       maxTokens: params.maxTokens,
-      // Sin ninguna tool configurada esto es exactamente la misma llamada que
-      // hacía bot-worker.ts antes de este cambio — cero comportamiento nuevo
-      // para los bots que no activaron ninguna capacidad de tool-calling.
-      tools: useTools ? params.tools.map((t) => t.definition) : undefined,
-      toolChoice: useTools ? "auto" : undefined,
+      // Se conservan las declaraciones incluso al forzar la respuesta final:
+      // así Google recibe explícitamente NONE y reconoce los tools previos.
+      tools: params.tools.length ? params.tools.map((t) => t.definition) : undefined,
+      toolChoice: params.tools.length ? (forceFinal ? "none" : "auto") : undefined,
     });
 
     if (res.usage) {
@@ -64,16 +68,31 @@ export async function completeWithBotTools(
       hasUsage = true;
     }
 
-    if (!res.toolCalls?.length) {
+    if (!res.toolCalls?.length || forceFinal) {
+      const unsafe = Boolean(res.toolCalls?.length) || !res.content.trim() ||
+        containsInternalBotContent(res.content, [...toolByName.keys()]);
+      if (unsafe) {
+        // No se loguea la respuesta: puede contener datos del prospecto o
+        // instrucciones privadas. Los resultados de tools reales se conservan.
+        console.warn("[bot-tools] Respuesta interna, vacía o inválida bloqueada");
+        if (!repairAttempted) {
+          repairAttempted = true;
+          messages.push({ role: "system", content: BOT_REPLY_REPAIR_INSTRUCTIONS });
+          continue;
+        }
+      }
       return {
-        content: res.content,
+        content: unsafe ? SAFE_BOT_REPLY : res.content,
         totalUsage: hasUsage ? { promptTokens, completionTokens } : null,
         toolResultTexts,
         toolCallLog,
       };
     }
 
-    messages.push({ role: "assistant", content: res.content, toolCalls: res.toolCalls });
+    toolIterations++;
+    // En un turno de herramientas solo se reproducen las llamadas reales;
+    // cualquier texto intermedio se descarta, incluido razonamiento interno.
+    messages.push({ role: "assistant", content: "", toolCalls: res.toolCalls });
 
     const toolResults: AIToolResult[] = await Promise.all(
       res.toolCalls.map(async (call: AIToolCall) => {

@@ -1,10 +1,12 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { chatAccessWhere } from "@/lib/whatsapp/chat-visibility";
 import { resolveAbsolutePath, mediaReadStream } from "@/lib/whatsapp/media-store";
+import { assertAccountMediaPath } from "@/lib/whatsapp/media-path";
 
-export async function GET(
+async function handleGET(
   _req: Request,
   { params }: { params: Promise<{ messageId: string }> }
 ) {
@@ -41,6 +43,7 @@ export async function GET(
 
     let stat;
     try {
+      assertAccountMediaPath(message.chat.accountId, message.mediaUrl);
       const { promises: fs } = await import("fs");
       stat = await fs.stat(resolveAbsolutePath(message.mediaUrl));
     } catch {
@@ -73,3 +76,5 @@ export async function GET(
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);

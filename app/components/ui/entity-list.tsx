@@ -78,6 +78,10 @@ export function EntityList<T>({
       {rows.map((row, i) => (
         <div
           key={rowKey(row)}
+          tabIndex={onRowClick ? 0 : undefined}
+          onKeyDown={onRowClick ? (e) => {
+            if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onRowClick(row); }
+          } : undefined}
           onClick={onRowClick ? () => onRowClick(row) : undefined}
           // Entrada escalonada: cap a 8 filas para que las últimas no esperen de
           // más. React reutiliza el DOM por rowKey, así que al refiltrar solo
@@ -85,7 +89,7 @@ export function EntityList<T>({
           style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
           className={cn(
             "group relative flex items-center gap-3 px-4 py-3 transition-colors animate-fade-in-up",
-            onRowClick && "cursor-pointer hover:bg-surface-light/60"
+            onRowClick && "cursor-pointer hover:bg-surface-light/60 focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2"
           )}
         >
           {renderRow(row)}
@@ -99,7 +103,7 @@ export function EntityList<T>({
               <Dropdown
                 align="right"
                 trigger={
-                  <button className="rounded-md p-1.5 text-muted-darker transition-colors hover:bg-surface-light hover:text-foreground">
+                  <button type="button" aria-label="Más acciones" className="min-h-10 min-w-10 inline-flex items-center justify-center rounded-md p-1.5 text-muted-darker transition-colors hover:bg-surface-light hover:text-foreground">
                     <MoreVertical size={15} />
                   </button>
                 }
@@ -127,7 +131,7 @@ interface EntityRowProps {
 
 export function EntityRow({ leading, title, subtitle, badges, meta }: EntityRowProps) {
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-3">
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
       {leading}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -137,7 +141,7 @@ export function EntityRow({ leading, title, subtitle, badges, meta }: EntityRowP
         {subtitle && <div className="truncate text-xs text-muted-darker">{subtitle}</div>}
       </div>
       {meta && (
-        <div className="hidden shrink-0 items-center gap-4 text-right text-xs text-muted sm:flex">
+        <div className="flex w-full flex-wrap shrink-0 items-center gap-x-4 gap-y-1 text-xs text-muted sm:w-auto sm:text-right">
           {meta}
         </div>
       )}

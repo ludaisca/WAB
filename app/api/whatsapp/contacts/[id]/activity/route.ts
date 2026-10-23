@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -56,7 +57,7 @@ export interface ContactActivity {
 // ya protege /api/whatsapp/chats/[chatId]/* y respeta `hideUnattributedChats`.
 // Sin este segundo check, un rol con esa opción activada podría ver por este
 // endpoint datos que su inbox le oculta a propósito (ver AGENTS.md).
-export async function GET(
+async function handleGET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -220,3 +221,5 @@ export async function GET(
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);

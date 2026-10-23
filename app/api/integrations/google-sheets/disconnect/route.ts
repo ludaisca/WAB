@@ -1,10 +1,11 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { decrypt } from "@/lib/crypto";
 import { createGoogleOAuthClient } from "@/lib/google/oauth-client";
 
-export async function POST() {
+async function handlePOST() {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -28,3 +29,5 @@ export async function POST() {
 
   return NextResponse.json({ success: true });
 }
+
+export const POST = withMaintenanceGuard(handlePOST);

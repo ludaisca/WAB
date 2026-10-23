@@ -3,10 +3,11 @@ import { cn } from "./cn";
 
 export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   error?: string;
+  autoGrow?: boolean;
 }
 
 export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ error, className, ...props }, ref) => {
+  ({ error, autoGrow, className, ...props }, ref) => {
     return (
       <div className={cn("relative", className)}>
         <textarea
@@ -14,7 +15,8 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           aria-invalid={!!error}
           className={cn(
             "w-full rounded-lg border bg-surface-light px-4 py-2.5 text-sm text-foreground",
-            "transition-colors placeholder:text-muted-darker resize-y min-h-[80px]",
+            "transition-colors placeholder:text-muted-darker",
+            autoGrow ? "resize-none min-h-11 max-h-48 overflow-y-auto field-sizing-content" : "resize-y min-h-[80px]",
             "focus:outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30",
             error ? "border-danger-border" : "border-border"
           )}

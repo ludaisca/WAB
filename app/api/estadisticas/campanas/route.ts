@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
@@ -12,7 +13,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // de rol admin: /estadisticas ya es accesible a user/ejecutivo (no está en
 // PROTECTED/EXECUTIVE_BLOCKED/USER_BLOCKED de proxy.ts), esta ruta sigue esa
 // misma regla.
-export async function GET(req: Request) {
+async function handleGET(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -62,3 +63,5 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);

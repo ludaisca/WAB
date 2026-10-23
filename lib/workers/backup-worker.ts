@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { runBackupPipeline } from "@/lib/backup/create-backup";
 import { purgeOldBackups } from "@/lib/backup/retention";
 import { dateKeyInTz } from "@/lib/timezone";
+import { getRedisClient } from "@/lib/redis";
+import { randomUUID } from "node:crypto";
 
 interface AttemptInfo {
   attemptsMade: number;
@@ -67,36 +69,54 @@ export async function processBackupJob(
 // disco cada una). Se compara por día y no por ventana de 24h a propósito: una
 // corrida que termina a las 2:03 am bloquearía la del día siguiente a las 2:00.
 export async function processScheduledBackupTick(): Promise<void> {
-  const existing = await prisma.systemBackup.findFirst({
-    where: { type: "SCHEDULED" },
-    orderBy: { startedAt: "desc" },
-  });
+  // La marca de la BD no prueba que el proceso siga vivo. Este lease se
+  // renueva mientras trabaja y expira tras una caída; otro tick puede recuperar
+  // el mismo registro sin quedar bloqueado para siempre en RUNNING.
+  const redis = getRedisClient();
+  const key = "wab:scheduled-backup-lock";
+  const owner = randomUUID();
+  if (!(await redis.set(key, owner, "PX", 120_000, "NX"))) return;
+  const heartbeat = setInterval(() => {
+    void redis.eval("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('pexpire', KEYS[1], ARGV[2]) else return 0 end", 1, key, owner, 120_000)
+      .catch((err) => console.error("[backup] No se pudo renovar el lock:", err));
+  }, 30_000);
+  heartbeat.unref();
+  try {
+    const existing = await prisma.systemBackup.findFirst({
+      where: { type: "SCHEDULED" },
+      orderBy: { startedAt: "desc" },
+    });
 
-  // Ya hay uno corriendo → no hacer nada.
-  if (existing && (existing.status === "PENDING" || existing.status === "RUNNING")) return;
-  // Ya se generó hoy (mismo día en CDMX) → no hacer nada.
-  if (existing?.status === "COMPLETED" && dateKeyInTz(existing.startedAt) === dateKeyInTz(new Date())) return;
+    // Ya se generó hoy (mismo día en CDMX) → no hacer nada.
+    if (existing?.status === "COMPLETED" && dateKeyInTz(existing.startedAt) === dateKeyInTz(new Date())) return;
 
-  // Purga preventiva: libera las copias programadas heredadas del esquema
-  // anterior (una por día, ~2.5 GB cada una) antes de necesitar el espacio
-  // para la nueva. Nunca borra la más reciente, así que siempre queda una
-  // copia válida en disco.
-  await purgeOldBackups();
+    // Purga preventiva: libera las copias programadas heredadas del esquema
+    // anterior (una por día, ~2.5 GB cada una) antes de necesitar el espacio
+    // para la nueva. Nunca borra la más reciente, así que siempre queda una
+    // copia válida en disco.
+    if (existing && (existing.status === "PENDING" || existing.status === "RUNNING")) {
+      console.warn("[backup] Recuperando un respaldo programado interrumpido");
+    }
+    await purgeOldBackups();
 
-  // Una sola fila para el programado: se reutiliza y se actualiza en vez de
-  // acumular una fila por día. El archivo también es uno solo (nombre fijo).
-  const backup = existing
-    ? await prisma.systemBackup.update({
-        where: { id: existing.id },
-        data: {
-          status: "PENDING",
-          startedAt: new Date(),
-          completedAt: null,
-          errorMessage: null,
-          s3UploadError: null,
-        },
-      })
-    : await prisma.systemBackup.create({ data: { type: "SCHEDULED", status: "PENDING" } });
+    // Una sola fila para el programado: se reutiliza y se actualiza en vez de
+    // acumular una fila por día. El archivo también es uno solo (nombre fijo).
+    const backup = existing
+      ? await prisma.systemBackup.update({
+          where: { id: existing.id },
+          data: {
+            status: "PENDING",
+            startedAt: new Date(),
+            completedAt: null,
+            errorMessage: null,
+            s3UploadError: null,
+          },
+        })
+      : await prisma.systemBackup.create({ data: { type: "SCHEDULED", status: "PENDING" } });
 
-  await processBackupJob({ backupId: backup.id });
+    await processBackupJob({ backupId: backup.id });
+  } finally {
+    clearInterval(heartbeat);
+    await redis.eval("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end", 1, key, owner);
+  }
 }

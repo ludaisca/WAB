@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -8,7 +9,7 @@ import { rateLimit } from "@/lib/rate-limit";
 // Acción manual explícita — reenvía la plantilla a las filas de la fuente que
 // quedaron "failed" (el tick automático nunca las reintenta). Cada fila que sale
 // bien pasa a "sent"; las que vuelven a fallar conservan el nuevo errorMessage.
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function handlePOST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -52,3 +53,5 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const POST = withMaintenanceGuard(handlePOST);

@@ -1,3 +1,5 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
+import type { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -16,7 +18,7 @@ import { ensurePublicChatTokensForChats, publicChatUrl } from "@/lib/whatsapp/ch
 const MAX_ROWS = 5000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-export async function GET(req: Request) {
+async function handleGET(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -30,22 +32,46 @@ export async function GET(req: Request) {
     const params = new URL(req.url).searchParams;
     const dateFrom = params.get("dateFrom") ?? "";
     const dateTo = params.get("dateTo") ?? "";
-    // Fechas CDMX (lo que el usuario ve en el selector), convertidas a un
-    // [gte, lt) UTC exacto — mismo helper que Reportes.
-    let updatedAt: { gte?: Date; lt?: Date } | undefined;
-    if (DATE_RE.test(dateFrom) && DATE_RE.test(dateTo)) {
-      updatedAt = reportRangeToUtc(dateFrom, dateTo);
-    } else if (DATE_RE.test(dateFrom)) {
-      updatedAt = { gte: reportRangeToUtc(dateFrom, dateFrom).gte };
-    } else if (DATE_RE.test(dateTo)) {
-      updatedAt = { lt: reportRangeToUtc(dateTo, dateTo).lt };
+    for (const date of [dateFrom, dateTo]) {
+      if (date && (!DATE_RE.test(date) || !Number.isFinite(Date.parse(date)) || new Date(`${date}T12:00:00Z`).toISOString().slice(0, 10) !== date)) {
+        return NextResponse.json({ error: "Fecha inválida" }, { status: 400 });
+      }
     }
+    if (dateFrom && dateTo && dateFrom > dateTo) return NextResponse.json({ error: "El rango de fechas no es válido" }, { status: 400 });
+    let updatedAt: { gte?: Date; lt?: Date } | undefined;
+    if (dateFrom && dateTo) updatedAt = reportRangeToUtc(dateFrom, dateTo);
+    else if (dateFrom) updatedAt = { gte: reportRangeToUtc(dateFrom, dateFrom).gte };
+    else if (dateTo) updatedAt = { lt: reportRangeToUtc(dateTo, dateTo).lt };
+    const scope = await chatAccessWhere(session.user.id, session.user.role);
+    const baseWhere: Prisma.WALeadScoreWhereInput = { chat: scope, ...(updatedAt ? { updatedAt } : {}) };
+    const accountId = params.get("accountId");
+    const scorerId = params.get("scorerId");
+    const label = params.get("label");
+    const ids = params.get("ids")?.split(",").filter(Boolean);
+    if (ids && ids.length > 100) return NextResponse.json({ error: "Máximo 100 selecciones por solicitud" }, { status: 400 });
+    const where: Prisma.WALeadScoreWhereInput = {
+      ...baseWhere,
+      ...(accountId ? { chat: { AND: [scope, { accountId }] } } : {}),
+      ...(scorerId ? { scorerId } : {}), ...(label ? { label } : {}), ...(ids ? { id: { in: ids } } : {}),
+    };
+    const paginate = params.has("page");
+    const numberParam = (key: string, fallback: number) => {
+      const value = Number(params.get(key) ?? fallback);
+      return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+    };
+    const page = numberParam("page", 1);
+    const pageSize = Math.min(numberParam("pageSize", 25), 100);
+    // Catalogs ignore the currently selected label/account, but honor the date
+    // range and visibility. Options cannot disappear on a sparse result page.
+    const includeOptions = paginate && params.get("options") === "1";
+    const [total, scorers, accounts] = await Promise.all([
+      paginate ? prisma.wALeadScore.count({ where }) : Promise.resolve(0),
+      includeOptions ? prisma.wALeadScorerBot.findMany({ where: { scores: { some: baseWhere } }, select: { id: true, name: true }, orderBy: { name: "asc" } }) : Promise.resolve([]),
+      includeOptions ? prisma.wAAccount.findMany({ where: { chats: { some: { AND: [scope, { leadScores: { some: { ...(updatedAt ? { updatedAt } : {}) } } }] } } }, select: { id: true, name: true }, orderBy: { name: "asc" } }) : Promise.resolve([]),
+    ]);
 
     const found = await prisma.wALeadScore.findMany({
-      where: {
-        chat: await chatAccessWhere(session.user.id, session.user.role),
-        ...(updatedAt ? { updatedAt } : {}),
-      },
+      where,
       include: {
         scorer: { select: { id: true, name: true } },
         chat: {
@@ -63,10 +89,10 @@ export async function GET(req: Request) {
       },
       // Lo más reciente primero: si se llega al tope, lo que se corta es lo
       // más viejo, no un estado completo de la escala.
-      orderBy: { updatedAt: "desc" },
-      take: MAX_ROWS + 1,
+      orderBy: paginate ? [{ score: "desc" }, { updatedAt: "desc" }, { id: "asc" }] : [{ updatedAt: "desc" }, { id: "asc" }],
+      ...(paginate ? { skip: (page - 1) * pageSize, take: pageSize } : { take: MAX_ROWS + 1 }),
     });
-    const truncated = found.length > MAX_ROWS;
+    const truncated = !paginate && found.length > MAX_ROWS;
     const scores = (truncated ? found.slice(0, MAX_ROWS) : found).sort((a, b) => b.score - a.score);
 
     // Un token por chat, no por score — un mismo chat puede tener varios
@@ -95,9 +121,12 @@ export async function GET(req: Request) {
       };
     });
 
+    if (paginate) return NextResponse.json({ items: rows, total, page, pageSize, ...(includeOptions ? { options: { scorers, accounts } } : {}) });
     return NextResponse.json(rows, { headers: { "X-Truncated": truncated ? "1" : "0" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error interno del servidor";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);

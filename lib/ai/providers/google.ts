@@ -185,7 +185,20 @@ export function createGoogleClient(apiKey: string) {
     let text: string;
     let toolCalls: AIToolCall[] | undefined;
     try {
-      text = result.response.text();
+      // Mantiene la validación de bloqueos del SDK, pero NO usa su texto:
+      // .text() concatena también partes thought:true y código ejecutable.
+      // Solo las partes de texto público pueden salir del proveedor.
+      result.response.text();
+      const rawParts = (result.response.candidates?.[0]?.content?.parts ?? []) as Array<{
+        text?: string;
+        thought?: boolean;
+        functionCall?: unknown;
+        thoughtSignature?: string;
+      }>;
+      text = rawParts
+        .filter((part) => part.thought !== true && typeof part.text === "string")
+        .map((part) => part.text)
+        .join("");
 
       // Gemini no da un id por function call — se sintetiza `${name}_${index}`
       // (único dentro de la respuesta, que es todo lo que necesita el orchestrator
@@ -197,10 +210,6 @@ export function createGoogleClient(apiKey: string) {
       // filtrando solo las que traen functionCall), así que emparejar por índice
       // es seguro. Campo nuevo de Gemini 3 (ver AIToolCall.thoughtSignature) — el
       // SDK instalado no lo tipa todavía, de ahí el cast.
-      const rawParts = (result.response.candidates?.[0]?.content?.parts ?? []) as Array<{
-        functionCall?: unknown;
-        thoughtSignature?: string;
-      }>;
       const signatures = rawParts.filter((p) => p.functionCall).map((p) => p.thoughtSignature);
       toolCalls = calls?.length
         ? calls.map((c, i) => ({

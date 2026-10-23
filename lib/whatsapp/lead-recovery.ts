@@ -1,9 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { sendWhatsAppMessage } from "@/lib/whatsapp/send";
-import { getAIProvider } from "@/lib/ai/factory";
 import { getUserApiKey } from "@/lib/ai/settings";
 import { estimateCost } from "@/lib/ai/pricing";
-import { wrapUserPrompt, SCOPE_GUARDRAIL } from "@/lib/ai/prompt-sanitizer";
+import { generateBotReply } from "@/lib/whatsapp/bot-tools/generate-reply";
 import { isWithinServiceWindow } from "@/lib/whatsapp/service-window";
 import { localHourInTz } from "@/lib/timezone";
 import type { AIMessage } from "@/lib/ai/types";
@@ -70,10 +69,7 @@ export async function sendRecoveryMessage(
     select: { direction: true, body: true, caption: true, messageType: true },
   });
 
-  const messages: AIMessage[] = [
-    { role: "system", content: wrapUserPrompt(bot.systemPrompt) },
-    { role: "system", content: SCOPE_GUARDRAIL },
-  ];
+  const messages: AIMessage[] = [];
 
   for (const msg of history.reverse()) {
     const text = msg.caption ?? msg.body;
@@ -81,14 +77,11 @@ export async function sendRecoveryMessage(
     messages.push({ role: msg.direction === "INBOUND" ? "user" : "assistant", content: text });
   }
 
-  messages.push({ role: "user", content: ATTEMPT_INSTRUCTION[attemptNumber] });
-
-  const client = getAIProvider(apiKey);
-  const result = await client.complete({
-    model: bot.model,
-    messages,
-    temperature: bot.temperature,
-    maxTokens: bot.maxTokens,
+  const result = await generateBotReply({
+    bot, apiKey, history: messages,
+    ragQuery: messages.filter((m) => m.role === "user").map((m) => m.content).join("\n"),
+    userContent: ATTEMPT_INSTRUCTION[attemptNumber],
+    allowTools: false,
   });
 
   const sendResult = await sendWhatsAppMessage(waAccount, {

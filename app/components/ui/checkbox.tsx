@@ -4,6 +4,8 @@ import React from "react";
 import { cn } from "./cn";
 
 interface CheckboxProps {
+  "aria-label"?: string;
+  "aria-describedby"?: string;
   checked?: boolean;
   onChange?: (checked: boolean) => void;
   label?: string;
@@ -23,13 +25,17 @@ export function Checkbox({
   id,
   className,
   error,
+  ...aria
 }: CheckboxProps) {
+  const generatedId = React.useId();
+  const inputId = id ?? generatedId;
   return (
     <div className={cn("flex items-start gap-3", className)}>
       <div className="relative mt-0.5">
         <input
           type="checkbox"
-          id={id}
+          {...aria}
+          id={inputId}
           checked={checked}
           onChange={(e) => onChange?.(e.target.checked)}
           disabled={disabled}
@@ -59,7 +65,7 @@ export function Checkbox({
       {label && (
         <div className="min-w-0">
           <label
-            htmlFor={id}
+            htmlFor={inputId}
             className={cn(
               "text-sm font-medium select-none",
               disabled ? "text-muted-darker cursor-not-allowed" : "text-foreground cursor-pointer"

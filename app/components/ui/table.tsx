@@ -108,14 +108,14 @@ export function Table<T>({
                     col.sortable && "cursor-pointer select-none hover:text-foreground",
                     col.headerClassName
                   )}
-                  onClick={col.sortable && onSortChange ? () => onSortChange(col.key) : undefined}
+                  aria-sort={col.sortable ? (sort?.key === col.key ? (sort.direction === "asc" ? "ascending" : "descending") : "none") : undefined}
                 >
-                  <span className="inline-flex items-center gap-1">
+                  {col.sortable && onSortChange ? <button type="button" className="inline-flex min-h-9 items-center gap-1 text-left focus-visible:outline-2 focus-visible:outline-accent rounded-sm" onClick={() => onSortChange(col.key)}>
                     {col.header}
                     {col.sortable && sort?.key === col.key && (
                       sort.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
                     )}
-                  </span>
+                  </button> : col.header}
                 </th>
               ))}
               {rowActions && (
@@ -128,7 +128,11 @@ export function Table<T>({
               <tr
                 key={rowKey(row)}
                 style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
-                className={cn("animate-fade-in-up hover:bg-surface-light/40 transition-colors", onRowClick && "cursor-pointer")}
+                className={cn("animate-fade-in-up hover:bg-surface-light/40 transition-colors focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2", onRowClick && "cursor-pointer")}
+                tabIndex={onRowClick ? 0 : undefined}
+                onKeyDown={onRowClick ? (e) => {
+                  if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onRowClick(row); }
+                } : undefined}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
               >
                 {columns.map((col) => (
@@ -148,7 +152,7 @@ export function Table<T>({
                     <Dropdown
                       align="right"
                       trigger={
-                        <button className="p-1 rounded-md hover:bg-surface-light text-muted-darker hover:text-foreground transition-colors">
+                        <button type="button" aria-label="Acciones de la fila" className="min-h-10 min-w-10 inline-flex items-center justify-center p-1 rounded-md hover:bg-surface-light text-muted-darker hover:text-foreground transition-colors">
                           <MoreVertical size={14} />
                         </button>
                       }
@@ -163,15 +167,19 @@ export function Table<T>({
         </table>
       </div>
 
-      <div className="sm:hidden divide-y divide-border -mx-5">
+      <div className="sm:hidden divide-y divide-border -mx-4">
         {rows.map((row, i) => (
           <div
             key={rowKey(row)}
             style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
             className={cn(
-              "animate-fade-in-up px-5 py-4 flex items-start justify-between gap-3 hover:bg-surface-light/20 transition-colors",
+              "animate-fade-in-up px-4 py-4 flex items-start justify-between gap-3 hover:bg-surface-light/20 transition-colors focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2",
               onRowClick && "cursor-pointer"
             )}
+            tabIndex={onRowClick ? 0 : undefined}
+            onKeyDown={onRowClick ? (e) => {
+              if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onRowClick(row); }
+            } : undefined}
             onClick={onRowClick ? () => onRowClick(row) : undefined}
           >
             <div className="min-w-0 flex-1">
@@ -182,7 +190,7 @@ export function Table<T>({
                 <Dropdown
                   align="right"
                   trigger={
-                    <button className="p-1.5 rounded-md border border-border bg-surface hover:bg-surface-light text-muted-darker hover:text-foreground transition-colors">
+                    <button type="button" aria-label="Acciones de la fila" className="min-h-10 min-w-10 inline-flex items-center justify-center p-1.5 rounded-md border border-border bg-surface hover:bg-surface-light text-muted-darker hover:text-foreground transition-colors">
                       <MoreVertical size={14} />
                     </button>
                   }
@@ -200,14 +208,23 @@ export function Table<T>({
 
 function DefaultMobileCard<T>({ row, columns }: { row: T; columns: TableColumn<T>[] }) {
   const [first, ...rest] = columns;
+  if (!first) return null;
+  const renderFields = (fields: TableColumn<T>[]) => fields.map((col) => (
+    <div key={col.key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-3 text-sm">
+      <div className="text-muted text-xs pt-0.5">{col.header}</div>
+      <div className="min-w-0 break-words">{col.render(row)}</div>
+    </div>
+  ));
   return (
-    <div className="space-y-1">
+    <div className="space-y-3">
       <div className="font-medium text-sm">{first.render(row)}</div>
-      {rest.slice(0, 2).map((col) => (
-        <div key={col.key} className="text-xs text-muted-darker">
-          {col.render(row)}
-        </div>
-      ))}
+      {renderFields(rest.slice(0, 2))}
+      {rest.length > 2 && (
+        <details onClick={(e) => e.stopPropagation()} className="group/mobile">
+          <summary className="cursor-pointer py-2 text-sm text-accent focus-visible:outline-2 focus-visible:outline-accent">Más detalles ({rest.length - 2})</summary>
+          <div className="space-y-3 border-t border-border pt-3">{renderFields(rest.slice(2))}</div>
+        </details>
+      )}
     </div>
   );
 }

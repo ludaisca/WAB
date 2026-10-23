@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Plus, Target, Trash2, Sparkles, Clock, Download, RefreshCw } from "lucide-react";
 import { Badge } from "@/app/components/ui/badge";
 import { Banner } from "@/app/components/ui/banner";
+import { SkeletonRow } from "@/app/components/ui/skeleton";
 import { Switch } from "@/app/components/ui/switch";
 import { ConfirmDialog } from "@/app/components/ui/confirm-dialog";
 import { DropdownItem } from "@/app/components/ui/dropdown";
@@ -24,7 +25,7 @@ import { RadioGroup } from "@/app/components/ui/radio";
 import { Tabs } from "@/app/components/ui/tabs";
 import { useToast } from "@/app/components/ui/toast";
 import { toCsv, downloadCsv } from "@/lib/csv";
-import { formatDateTime } from "@/lib/timezone";
+import { dateKeyInTz, formatDateTime } from "@/lib/timezone";
 import { EXPORT_COLUMNS, labelText, labelTone, type LeadScoreRow } from "@/lib/whatsapp/export-columns";
 import { LeadScorerFormModal } from "./_form";
 
@@ -52,9 +53,7 @@ const INTERVAL_LABEL: Record<number, string> = {
 const LEADS_PAGE_SIZE = 25;
 
 function isoDaysAgo(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+  return dateKeyInTz(new Date(Date.now() - days * 86_400_000));
 }
 
 type Tab = "calificadores" | "leads";
@@ -63,8 +62,9 @@ export default function CalificadoresPage() {
   const { data: session } = useSession();
   // El rol "user" solo puede ver leads ya calificados, no crear/editar/programar
   // calificadores — esa pestaña ni siquiera se ofrece como opción.
-  const canManageScorers = session?.user?.role !== "user";
+  const canManageScorers = !!session?.user && session.user.role !== "user";
   const [tab, setTab] = useState<Tab>("calificadores");
+  if (!session?.user) return <div className="space-y-6" aria-busy="true" aria-label="Cargando calificadores"><PageHeader title="Calificadores de Leads" /><SkeletonRow cols={3} /><SkeletonRow cols={3} /></div>;
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -264,7 +264,11 @@ function LeadsTab() {
   const [rows, setRows] = useState<LeadScoreRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [truncated, setTruncated] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [options, setOptions] = useState<{ scorers: Array<{ id: string; name: string }>; accounts: Array<{ id: string; name: string }> }>({ scorers: [], accounts: [] });
+  const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState("");
+  const requestRef = useRef<AbortController | null>(null);
   const [scorerFilter, setScorerFilter] = useState("all");
   const [labelFilter, setLabelFilter] = useState("all");
   const [accountFilter, setAccountFilter] = useState("all");
@@ -277,63 +281,51 @@ function LeadsTab() {
   const [exportScope, setExportScope] = useState<"current" | "selected">("current");
   const [exportColumns, setExportColumns] = useState<Set<string>>(new Set(EXPORT_COLUMNS.map((c) => c.key)));
 
+  const buildParams = useCallback(() => {
+    const qs = new URLSearchParams();
+    if (dateFrom) qs.set("dateFrom", dateFrom);
+    if (dateTo) qs.set("dateTo", dateTo);
+    if (scorerFilter !== "all") qs.set("scorerId", scorerFilter);
+    if (labelFilter !== "all") qs.set("label", labelFilter);
+    if (accountFilter !== "all") qs.set("accountId", accountFilter);
+    return qs;
+  }, [dateFrom, dateTo, scorerFilter, labelFilter, accountFilter]);
+
   const fetchRows = useCallback(async () => {
-    setLoading(true);
-    setFetchError(null);
+    requestRef.current?.abort();
+    const controller = new AbortController(); requestRef.current = controller;
+    setLoading(true); setFetchError(null);
     try {
-      // El rango de fechas se filtra en el servidor: así el tope de filas
-      // recorta lo más viejo y no un estado completo de la escala.
-      const qs = new URLSearchParams();
-      if (dateFrom) qs.set("dateFrom", dateFrom);
-      if (dateTo) qs.set("dateTo", dateTo);
-      const res = await fetch(`/api/whatsapp/lead-scores?${qs}`);
+      const qs = buildParams();
+      qs.set("page", String(page)); qs.set("pageSize", String(LEADS_PAGE_SIZE)); qs.set("options", "1");
+      const res = await fetch(`/api/whatsapp/lead-scores?${qs}`, { signal: controller.signal });
       const data = await res.json();
-      if (Array.isArray(data)) {
-        setRows(data);
-        setTruncated(res.headers.get("X-Truncated") === "1");
-      } else throw new Error(data.error ?? "Error al cargar leads calificados");
+      if (!res.ok || !Array.isArray(data.items)) throw new Error(data.error ?? "Error al cargar leads calificados");
+      if (controller.signal.aborted) return;
+      setRows(data.items); setTotal(data.total); setOptions(data.options);
+      const lastPage = Math.max(1, Math.ceil(data.total / LEADS_PAGE_SIZE));
+      if (page > lastPage) setPage(lastPage);
     } catch (err) {
-      setFetchError(err instanceof Error ? err.message : "Error al cargar leads calificados");
-      toastError(err instanceof Error ? err.message : "Error al cargar leads calificados");
+      if (!controller.signal.aborted) setFetchError(err instanceof Error ? err.message : "Error al cargar leads calificados");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  }, [toastError, dateFrom, dateTo]);
+  }, [buildParams, page]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / on date range change
-    fetchRows();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-filter/page change; cleanup cancels the previous request.
+    void fetchRows();
+    return () => requestRef.current?.abort();
   }, [fetchRows]);
 
-  const scorers = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const r of rows) seen.set(r.scorer.id, r.scorer.name);
-    return Array.from(seen.entries());
-  }, [rows]);
-
-  const accounts = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const r of rows) seen.set(r.chat.account.id, r.chat.account.name);
-    return Array.from(seen.entries());
-  }, [rows]);
-
-  const filtered = useMemo(() => {
-    return rows.filter((r) => {
-      if (scorerFilter !== "all" && r.scorer.id !== scorerFilter) return false;
-      if (labelFilter !== "all" && r.label !== labelFilter) return false;
-      if (accountFilter !== "all" && r.chat.account.id !== accountFilter) return false;
-      return true;
-    });
-  }, [rows, scorerFilter, labelFilter, accountFilter]);
-
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- keeps pagination valid when filters narrow/widen the result set
-  useEffect(() => { setPage(1); }, [rows, scorerFilter, labelFilter, accountFilter]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / LEADS_PAGE_SIZE));
-  const pageRows = useMemo(
-    () => filtered.slice((page - 1) * LEADS_PAGE_SIZE, page * LEADS_PAGE_SIZE),
-    [filtered, page]
-  );
+  const scorers = options.scorers.map(({ id, name }) => [id, name]);
+  const accounts = options.accounts.map(({ id, name }) => [id, name]);
+  const filtered = rows;
+  const pageRows = rows;
+  const totalPages = Math.max(1, Math.ceil(total / LEADS_PAGE_SIZE));
+  function changeFilter(setter: (value: string) => void, value: string) {
+    setter(value); setPage(1); setSelectedIds(new Set());
+  }
 
   const toggleSelected = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -369,24 +361,46 @@ function LeadsTab() {
     });
   }
 
-  function handleExportCsv() {
-    const exportRows = exportScope === "selected" ? filtered.filter((r) => selectedIds.has(r.id)) : filtered;
-    const activeColumns = EXPORT_COLUMNS.filter((c) => exportColumns.has(c.key));
-    const headers = activeColumns.map((c) => c.label);
-    const csvRows = exportRows.map((r) => activeColumns.map((c) => c.get(r)));
-    downloadCsv(`leads-calificados-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(headers, csvRows));
-    setExportModalOpen(false);
+  async function handleExportCsv() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const allRows: LeadScoreRow[] = [];
+      // Selected rows may span pages. Fetch in bounded ID batches while the
+      // "all results" export iterates every page with exactly the same filters.
+      const ids = [...selectedIds];
+      const batches: Array<string[] | null> = exportScope === "selected"
+        ? Array.from({ length: Math.ceil(ids.length / 100) }, (_, i) => ids.slice(i * 100, (i + 1) * 100)) : [null];
+      for (const batch of batches) {
+        let exportPage = 1; let expected = Infinity;
+        while ((exportPage - 1) * 100 < expected) {
+          const qs = buildParams(); qs.set("page", String(exportPage)); qs.set("pageSize", "100");
+          if (batch) qs.set("ids", batch.join(","));
+          const res = await fetch(`/api/whatsapp/lead-scores?${qs}`);
+          const data = await res.json();
+          if (!res.ok || !Array.isArray(data.items)) throw new Error(data.error ?? "Error al exportar");
+          expected = data.total; allRows.push(...data.items); exportPage++;
+          setExportProgress(`${allRows.length} registros preparados`);
+          if (!data.items.length) break;
+        }
+      }
+      const activeColumns = EXPORT_COLUMNS.filter((c) => exportColumns.has(c.key));
+      const uniqueRows = [...new Map(allRows.map((row) => [row.id, row])).values()];
+      downloadCsv(`leads-calificados-${dateKeyInTz(new Date())}.csv`, toCsv(activeColumns.map((c) => c.label), uniqueRows.map((r) => activeColumns.map((c) => c.get(r)))));
+      setExportModalOpen(false);
+    } catch (err) { toastError(err instanceof Error ? err.message : "Error al exportar"); }
+    finally { setExporting(false); setExportProgress(""); }
   }
 
   const columns: TableColumn<LeadScoreRow>[] = useMemo(() => [
     {
       key: "select",
       header: (
-        <Checkbox checked={allFilteredSelected} onChange={toggleSelectAll} />
+        <Checkbox aria-label="Seleccionar esta página" checked={allFilteredSelected} onChange={toggleSelectAll} />
       ),
       render: (r) => (
         <div onClick={(e) => e.stopPropagation()}>
-          <Checkbox checked={selectedIds.has(r.id)} onChange={() => toggleSelected(r.id)} />
+          <Checkbox aria-label={`Seleccionar ${r.chat.name || r.chat.remoteJid.split("@")[0]}`} checked={selectedIds.has(r.id)} onChange={() => toggleSelected(r.id)} />
         </div>
       ),
     },
@@ -460,7 +474,7 @@ function LeadsTab() {
               size="sm"
               icon={Download}
               onClick={() => setExportModalOpen(true)}
-              disabled={filtered.length === 0}
+              disabled={total === 0 || loading}
             >
               Exportar CSV
             </Button>
@@ -468,13 +482,13 @@ function LeadsTab() {
         />
 
         <div className="flex flex-wrap items-center gap-3">
-          <Select value={scorerFilter} onChange={(e) => setScorerFilter(e.target.value)} className="w-full sm:w-auto sm:min-w-[190px]">
+          <Select value={scorerFilter} aria-label="Calificador" onChange={(e) => changeFilter(setScorerFilter, e.target.value)} className="w-full sm:w-auto sm:min-w-[190px]">
             <option value="all">Todos los calificadores</option>
             {scorers.map(([id, name]) => (
               <option key={id} value={id}>{name}</option>
             ))}
           </Select>
-          <Select value={labelFilter} onChange={(e) => setLabelFilter(e.target.value)} className="w-full sm:w-auto sm:min-w-[190px]">
+          <Select value={labelFilter} aria-label="Calificación" onChange={(e) => changeFilter(setLabelFilter, e.target.value)} className="w-full sm:w-auto sm:min-w-[190px]">
             <option value="all">Todas las calificaciones</option>
             <option value="prioridad_alta">Prioridad alta</option>
             <option value="oportunidad">Oportunidad</option>
@@ -482,23 +496,22 @@ function LeadsTab() {
             <option value="frio">Frío</option>
             <option value="descartado">Descartado</option>
           </Select>
-          <Select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="w-full sm:w-auto sm:min-w-[170px]">
+          <Select value={accountFilter} aria-label="Cuenta" onChange={(e) => changeFilter(setAccountFilter, e.target.value)} className="w-full sm:w-auto sm:min-w-[170px]">
             <option value="all">Todas las cuentas</option>
             {accounts.map(([id, name]) => (
               <option key={id} value={id}>{name}</option>
             ))}
           </Select>
           <div className="flex gap-2 w-full sm:w-auto">
-            <DatePicker value={dateFrom} onChange={setDateFrom} placeholder="Desde" max={dateTo || undefined} />
-            <DatePicker value={dateTo} onChange={setDateTo} placeholder="Hasta" min={dateFrom || undefined} />
+            <DatePicker value={dateFrom} onChange={(value) => changeFilter(setDateFrom, value)} placeholder="Desde" max={dateTo || undefined} />
+            <DatePicker value={dateTo} onChange={(value) => changeFilter(setDateTo, value)} placeholder="Hasta" min={dateFrom || undefined} />
           </div>
         </div>
 
-        {truncated && (
-          <Banner tone="warning">
-            Hay más calificaciones de las que se pueden mostrar a la vez; se muestran las más recientes. Acota el rango de fechas para ver el resto.
-          </Banner>
-        )}
+        <div className="flex flex-wrap justify-between gap-2 text-sm text-muted" aria-live="polite">
+          <span>{loading ? "Buscando leads…" : `${total.toLocaleString("es-MX")} calificaciones encontradas`}</span>
+          <span className="text-xs">Selección por página · puedes conservarla al avanzar</span>
+        </div>
 
         {selectedIds.size > 0 && (
           <p className="text-xs text-muted-darker">{selectedIds.size} lead(s) seleccionado(s).</p>
@@ -521,7 +534,7 @@ function LeadsTab() {
               return (
                 <div className="flex items-start gap-3 min-w-0 w-full">
                   <div onClick={(e) => e.stopPropagation()} className="pt-0.5 shrink-0">
-                    <Checkbox checked={selectedIds.has(r.id)} onChange={() => toggleSelected(r.id)} />
+                    <Checkbox aria-label={`Seleccionar ${r.chat.name || r.chat.remoteJid.split("@")[0]}`} checked={selectedIds.has(r.id)} onChange={() => toggleSelected(r.id)} />
                   </div>
                   <div className="space-y-1 min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
@@ -693,14 +706,15 @@ function LeadsTab() {
 
       <Modal
         open={exportModalOpen}
-        onClose={() => setExportModalOpen(false)}
+        onClose={() => { if (!exporting) setExportModalOpen(false); }}
         title="Exportar CSV"
         size="md"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setExportModalOpen(false)}>Cancelar</Button>
+            <Button variant="secondary" disabled={exporting} onClick={() => setExportModalOpen(false)}>Cancelar</Button>
             <Button
               onClick={handleExportCsv}
+              loading={exporting}
               disabled={exportColumns.size === 0 || (exportScope === "selected" && selectedIds.size === 0)}
             >
               Exportar
@@ -709,6 +723,7 @@ function LeadsTab() {
         }
       >
         <div className="space-y-5">
+          {exporting && <Banner tone="info">{exportProgress || "Preparando exportación…"}</Banner>}
           <div>
             <p className="text-sm font-medium mb-2">Qué exportar</p>
             <RadioGroup
@@ -719,7 +734,7 @@ function LeadsTab() {
                 setExportScope(v as "current" | "selected");
               }}
               options={[
-                { value: "current", label: `Vista actual (${filtered.length} leads)`, description: "Todo lo que cumple los filtros y el rango de fechas activos." },
+                { value: "current", label: `Todos los resultados (${total} calificaciones)`, description: "Incluye todas las páginas con los filtros y fechas actuales." },
                 {
                   value: "selected",
                   label: `Seleccionados (${selectedIds.size} leads)`,

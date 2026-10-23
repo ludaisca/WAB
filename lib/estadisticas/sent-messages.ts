@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export interface SentMessagesCampaignBreakdownRow {
@@ -12,9 +13,9 @@ export interface SentMessagesStats {
   campaignBreakdown: SentMessagesCampaignBreakdownRow[];
 }
 
-function sentMessagesWhere(accountIds: string[], range?: { gte: Date; lt: Date } | null) {
+function sentMessagesWhere(accountIds: string[], range?: { gte: Date; lt: Date } | null, visibility?: Prisma.WAChatWhereInput | null) {
   return {
-    chat: { accountId: { in: accountIds } },
+    chat: { accountId: { in: accountIds }, ...(visibility ? { AND: [visibility] } : {}) },
     direction: "OUTBOUND" as const,
     ...(range ? { createdAt: { gte: range.gte, lt: range.lt } } : {}),
   };
@@ -28,9 +29,10 @@ function sentMessagesWhere(accountIds: string[], range?: { gte: Date; lt: Date }
 // con el total mostrado en la card.
 async function getSentMessagesCampaignBreakdown(
   accountIds: string[],
-  range?: { gte: Date; lt: Date } | null
+  range?: { gte: Date; lt: Date } | null,
+  visibility?: Prisma.WAChatWhereInput | null
 ): Promise<SentMessagesCampaignBreakdownRow[]> {
-  const where = sentMessagesWhere(accountIds, range);
+  const where = sentMessagesWhere(accountIds, range, visibility);
   const groups = await prisma.wAMessage.groupBy({
     by: ["campaignId"],
     where,
@@ -62,14 +64,15 @@ async function getSentMessagesCampaignBreakdown(
 // saliente en el rango (no el total de chats de la cuenta).
 export async function getSentMessagesStats(
   accountIds: string[],
-  range?: { gte: Date; lt: Date } | null
+  range?: { gte: Date; lt: Date } | null,
+  visibility?: Prisma.WAChatWhereInput | null
 ): Promise<SentMessagesStats> {
-  const where = sentMessagesWhere(accountIds, range);
+  const where = sentMessagesWhere(accountIds, range, visibility);
 
   const [messagesSent, distinctChats, campaignBreakdown] = await Promise.all([
     prisma.wAMessage.count({ where }),
     prisma.wAMessage.groupBy({ by: ["chatId"], where }),
-    getSentMessagesCampaignBreakdown(accountIds, range),
+    getSentMessagesCampaignBreakdown(accountIds, range, visibility),
   ]);
 
   return { messagesSent, conversations: distinctChats.length, campaignBreakdown };

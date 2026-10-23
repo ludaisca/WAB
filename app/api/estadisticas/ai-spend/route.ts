@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getAiSpendBreakdown, type SpendPreset } from "@/lib/ai/spend-breakdown";
@@ -7,7 +8,7 @@ const VALID_PRESETS: SpendPreset[] = ["7d", "28d", "90d", "month", "custom"];
 // Mismo gate que /estadisticas (ejecutivo bloqueado por proxy.ts + redirect
 // defensivo en la page) — admin y user sí entran, es su propio gasto de IA
 // (WABot/WALeadScorerBot que ellos mismos son dueños, igual que getMonthlyAiCost).
-export async function GET(req: Request) {
+async function handleGET(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -42,3 +43,5 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);

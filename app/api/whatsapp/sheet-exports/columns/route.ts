@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { EXPORT_COLUMNS_BY_DATASET, type SheetExportDataset } from "@/lib/whatsapp/export-columns";
@@ -5,7 +6,7 @@ import { canUseDataset } from "@/lib/whatsapp/sheet-export-access";
 
 const VALID_DATASETS = Object.keys(EXPORT_COLUMNS_BY_DATASET) as SheetExportDataset[];
 
-export async function GET(req: Request) {
+async function handleGET(req: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -26,3 +27,5 @@ export async function GET(req: Request) {
   const columns = EXPORT_COLUMNS_BY_DATASET[dataset].map((c) => ({ key: c.key, label: c.label }));
   return NextResponse.json({ columns });
 }
+
+export const GET = withMaintenanceGuard(handleGET);

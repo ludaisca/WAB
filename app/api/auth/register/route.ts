@@ -1,10 +1,11 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { registerSchema } from "@/lib/validations";
 import { rateLimit } from "@/lib/rate-limit";
 
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   try {
     const forwarded = req.headers.get("x-forwarded-for");
     const ip = forwarded?.split(",")[0]?.trim() ?? "unknown";
@@ -76,3 +77,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export const POST = withMaintenanceGuard(handlePOST);

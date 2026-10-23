@@ -1,8 +1,10 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { getUserAccountIds } from "@/lib/shared-accounts";
 import { reportRangeToUtc } from "@/lib/reports/date-range";
+import { getChatVisibilityFilter } from "@/lib/whatsapp/chat-visibility";
 import { getSentMessagesStats } from "@/lib/estadisticas/sent-messages";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -10,7 +12,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Filtro interactivo de la card "Mensajes enviados" del Panel — cuenta +
 // rango de fechas, mismo contrato que /api/estadisticas/campanas (sin
 // restricción de rol, ya que el Panel es accesible a todos los roles).
-export async function GET(req: Request) {
+async function handleGET(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -49,7 +51,8 @@ export async function GET(req: Request) {
       range = reportRangeToUtc(dateFrom, dateTo);
     }
 
-    const data = await getSentMessagesStats(scopedAccountIds, range);
+    const visibility = await getChatVisibilityFilter(session.user.id, session.user.role, scopedAccountIds);
+    const data = await getSentMessagesStats(scopedAccountIds, range, visibility);
 
     return NextResponse.json(data);
   } catch (error) {
@@ -57,3 +60,5 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);

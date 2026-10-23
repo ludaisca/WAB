@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -5,7 +6,7 @@ import { getUserAccountIds } from "@/lib/shared-accounts";
 import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
 import { getChatVisibilityFilter } from "@/lib/whatsapp/chat-visibility";
 
-export async function GET(req: Request) {
+async function handleGET(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -24,6 +25,9 @@ export async function GET(req: Request) {
     const where: Record<string, unknown> = {
       accountId: accountId ? accountId : { in: accountIds },
     };
+
+    const chatId = searchParams.get("chatId");
+    if (chatId) where.id = chatId;
 
     // Búsqueda server-side: con la lista paginada, filtrar solo lo ya cargado
     // en el cliente hacía imposible encontrar chats antiguos.
@@ -45,6 +49,11 @@ export async function GET(req: Request) {
     // Ambos filtros son sobre la relación messages[] — se combinan vía AND en
     // lugar de asignar dos veces where.messages, que se pisarían entre sí.
     const messageFilters: Record<string, unknown>[] = [];
+
+    const triage = searchParams.get("triage");
+    if (triage === "unread") where.unreadCount = { gt: 0 };
+    if (triage === "pending") where.status = "PENDING";
+    if (triage === "failed") messageFilters.push({ messages: { some: { direction: "OUTBOUND", status: "FAILED", timestamp: { gte: new Date(Date.now() - 7 * 86_400_000) } } } });
 
     const campaignIdParam = searchParams.get("campaignId");
     if (campaignIdParam) {
@@ -109,8 +118,8 @@ export async function GET(req: Request) {
       prisma.wAChat.findMany({
         where,
         select,
-        orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
-        ...(paginate ? { skip: (page - 1) * pageSize, take: pageSize } : {}),
+        orderBy: [{ lastMessageAt: { sort: "desc", nulls: "last" } }, { id: "desc" }],
+        ...(paginate ? { skip: searchParams.has("offset") ? Math.max(0, Math.floor(Number(searchParams.get("offset")) || 0)) : (page - 1) * pageSize, take: pageSize } : {}),
       }),
       paginate ? prisma.wAChat.count({ where }) : Promise.resolve(null),
     ]);
@@ -130,3 +139,5 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);

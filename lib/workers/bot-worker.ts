@@ -171,6 +171,7 @@ async function sendFallbackReply(botId: string, accountId: string, waChatId: str
 
 async function handleBotMessage(job: BotMessageJob) {
   const { botId, accountId, waChatId } = job;
+  const turnStartedAt = new Date();
 
   const bot = await prisma.wABot.findUnique({ where: { id: botId } });
   // La cuenta se resuelve por el accountId del mensaje entrante, no por el bot
@@ -334,7 +335,7 @@ async function handleBotMessage(job: BotMessageJob) {
         cumulativeDelay += computeTypingDelay(chunk);
         await botSendQueue.add(
           "send-chunk",
-          { accountId, waChatId, remoteJid: chat.remoteJid, chunk },
+          { accountId, waChatId, remoteJid: chat.remoteJid, chunk, botId, botRevision: bot.updatedAt.toISOString(), turnStartedAt: turnStartedAt.toISOString() },
           { delay: cumulativeDelay }
         );
       }

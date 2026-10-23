@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { resolveSpreadsheetTabs } from "@/lib/google/sheets-read";
@@ -5,7 +6,7 @@ import { resolveSpreadsheetTabs } from "@/lib/google/sheets-read";
 // Mismo cuerpo que app/api/whatsapp/lead-sheet-sources/preview/route.ts (ambas
 // delegan en el helper compartido) — namespace propio para que el formulario
 // de exportaciones no dependa de una ruta de una feature distinta.
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -24,3 +25,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
+
+export const POST = withMaintenanceGuard(handlePOST);

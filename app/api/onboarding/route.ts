@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
@@ -7,7 +8,7 @@ import { rateLimit } from "@/lib/rate-limit";
 // Only runs once, right after a fresh deploy: creates the first admin user
 // and the business name shown in the sidebar. Rejected once any user exists —
 // after that, new users go through the normal /register flow.
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   try {
     const forwarded = req.headers.get("x-forwarded-for");
     const ip = forwarded?.split(",")[0]?.trim() ?? "unknown";
@@ -70,3 +71,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export const POST = withMaintenanceGuard(handlePOST);

@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
@@ -6,7 +7,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { backupQueue } from "@/lib/queue";
 import { serializeBackup } from "@/lib/backup/serialize";
 
-export async function GET() {
+async function handleGET() {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   if (session.user.role !== "admin") return NextResponse.json({ error: "No autorizado" }, { status: 403 });
@@ -35,7 +36,7 @@ export async function GET() {
   }
 }
 
-export async function POST() {
+async function handlePOST() {
   try {
     const session = await auth();
     if (!session?.user?.id) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -61,3 +62,6 @@ export async function POST() {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);
+export const POST = withMaintenanceGuard(handlePOST);

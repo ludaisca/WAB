@@ -1,9 +1,10 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { syncExportsForUser } from "@/lib/google/sheet-export-runner";
 
-export async function POST() {
+async function handlePOST() {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -28,3 +29,5 @@ export async function POST() {
   const updated = await prisma.googleAccount.findUnique({ where: { userId: session.user.id } });
   return NextResponse.json({ lastSyncedAt: updated?.lastSyncedAt });
 }
+
+export const POST = withMaintenanceGuard(handlePOST);

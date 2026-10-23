@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -5,8 +6,10 @@ import { sendMessageSchema } from "@/lib/validations";
 import { sendWhatsAppMessage } from "@/lib/whatsapp/send";
 import { chatAccessWhere } from "@/lib/whatsapp/chat-visibility";
 import { rateLimit } from "@/lib/rate-limit";
+import { assertAccountMediaPath } from "@/lib/whatsapp/media-path";
+import { ownsMediaUpload } from "@/lib/whatsapp/media-upload";
 
-export async function POST(
+async function handlePOST(
   req: Request,
   { params }: { params: Promise<{ chatId: string }> }
 ) {
@@ -44,6 +47,22 @@ export async function POST(
     }
 
     const { type, body: textBody, mediaId, caption, mimeType, filename, localMediaPath, bytesSize } = parsed.data;
+
+    if (localMediaPath) {
+      try {
+        assertAccountMediaPath(chat.account.id, localMediaPath);
+      } catch {
+        return NextResponse.json({ error: "Archivo no autorizado para esta cuenta" }, { status: 403 });
+      }
+    }
+    if (type === "text" && (localMediaPath || mediaId)) {
+      return NextResponse.json({ error: "Un mensaje de texto no puede asociar un archivo" }, { status: 400 });
+    }
+    if (localMediaPath && !(await ownsMediaUpload(mediaId, {
+      userId: session.user.id, accountId: chat.account.id, localMediaPath,
+    }))) {
+      return NextResponse.json({ error: "La carga no está autorizada o expiró. Vuelve a subir el archivo." }, { status: 403 });
+    }
 
     const result = await sendWhatsAppMessage(chat.account, {
       to: chat.remoteJid,
@@ -99,3 +118,5 @@ export async function POST(
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const POST = withMaintenanceGuard(handlePOST);

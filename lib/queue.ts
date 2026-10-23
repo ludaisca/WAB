@@ -58,3 +58,11 @@ export const restoreQueue = new Queue("system-restore", {
     attempts: 1,
   },
 });
+
+// Inventario compartido: las nuevas colas deben participar en mantenimiento.
+export const ALL_QUEUES = [
+  botQueue, campaignQueue, ragQueue, mediaDownloadQueue, mediaCleanupQueue,
+  audioTranscribeQueue, botSendQueue, leadScoringQueue, leadRecoveryQueue,
+  sheetsSyncQueue, leadSheetImportQueue, templateSyncQueue, agentActionExpiryQueue,
+  systemDiagnosticsQueue, crmEjecutivosSyncQueue, backupQueue, reportQueue, restoreQueue,
+];

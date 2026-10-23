@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -6,8 +7,9 @@ import { uploadMedia } from "@/lib/whatsapp";
 import { getUserAccountIds } from "@/lib/shared-accounts";
 import { rateLimit } from "@/lib/rate-limit";
 import { saveMediaFromBuffer } from "@/lib/whatsapp/media-store";
+import { rememberMediaUpload } from "@/lib/whatsapp/media-upload";
 
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
@@ -72,6 +74,8 @@ export async function POST(req: Request) {
       console.error("[media-upload] Local copy failed:", err);
     }
 
+    await rememberMediaUpload(uploaded.id, { userId: session.user.id, accountId: account.id, localMediaPath });
+
     return NextResponse.json({
       mediaId: uploaded.id,
       mimeType: file.type || null,
@@ -84,3 +88,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+export const POST = withMaintenanceGuard(handlePOST);

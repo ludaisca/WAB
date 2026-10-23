@@ -1,9 +1,10 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function handleGET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (session?.user?.role !== "admin") {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
@@ -22,7 +23,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json(conversations);
 }
 
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function handlePOST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (session?.user?.role !== "admin") {
     return NextResponse.json({ error: "No autorizado" }, { status: 403 });
@@ -40,3 +41,6 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const conversation = await prisma.wABotTestConversation.create({ data: { botId: id } });
   return NextResponse.json(conversation, { status: 201 });
 }
+
+export const GET = withMaintenanceGuard(handleGET);
+export const POST = withMaintenanceGuard(handlePOST);

@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -9,7 +10,7 @@ import { phoneKeyFromRemoteJid } from "@/lib/crm-ejecutivos/phone-match";
 // badge en este drawer que sí usan. Distinto del resto de rutas de contactos
 // (que solo exigen getUserAccountIds()) — el 403 aquí es del feature, no de
 // pertenencia del contacto.
-export async function GET(
+async function handleGET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -52,3 +53,5 @@ export async function GET(
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const GET = withMaintenanceGuard(handleGET);

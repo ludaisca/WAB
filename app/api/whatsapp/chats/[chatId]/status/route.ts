@@ -1,3 +1,4 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -6,7 +7,7 @@ import { setChatStatus } from "@/lib/whatsapp/chat-status";
 
 const VALID_STATUSES = ["OPEN", "PENDING", "RESOLVED"] as const;
 
-export async function PATCH(
+async function handlePATCH(
   req: Request,
   { params }: { params: Promise<{ chatId: string }> }
 ) {
@@ -44,3 +45,5 @@ export async function PATCH(
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export const PATCH = withMaintenanceGuard(handlePATCH);

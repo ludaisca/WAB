@@ -1,11 +1,17 @@
 import { prisma } from "@/lib/prisma";
 import { sendWhatsAppMessage } from "@/lib/whatsapp/send";
+import { getUserAccountIds } from "@/lib/shared-accounts";
+import { containsInternalBotContent } from "@/lib/whatsapp/bot-tools/reply-safety";
 
 interface BotSendJob {
   accountId: string;
   waChatId: string;
   remoteJid: string;
   chunk: string;
+  botId?: string;
+  botRevision?: string;
+  turnStartedAt?: string;
+  mode?: "manual";
 }
 
 interface AttemptInfo {
@@ -21,11 +27,33 @@ export async function processBotSendJob(
   attemptInfo: AttemptInfo = { attemptsMade: 0, maxAttempts: 1 }
 ) {
   try {
+    // Los jobs legacy no permiten comprobar qué bot/turno los autorizó.
+    if (!job.botId || !job.botRevision || !job.turnStartedAt ||
+        !Number.isFinite(Date.parse(job.turnStartedAt)) || containsInternalBotContent(job.chunk)) return;
+    const bot = await prisma.wABot.findFirst({
+      where: {
+        id: job.botId, isActive: true, status: "ACTIVE",
+        ...(job.mode === "manual" ? {} : { accounts: { some: { waAccountId: job.accountId } } }),
+      },
+    });
+    if (!bot || bot.updatedAt.toISOString() !== job.botRevision) return;
+    const chat = await prisma.wAChat.findFirst({
+      where: { id: job.waChatId, accountId: job.accountId },
+      select: { remoteJid: true, contact: { select: { blockedAt: true } } },
+    });
+    if (!chat || chat.contact?.blockedAt) return;
+    if (!(await getUserAccountIds(bot.userId)).includes(job.accountId)) return;
+    // Una respuesta humana posterior cancela las partes aún pendientes.
+    const humanReply = await prisma.wAMessage.findFirst({
+      where: { chatId: job.waChatId, direction: "OUTBOUND", senderId: { not: null }, timestamp: { gte: new Date(job.turnStartedAt) } },
+      select: { id: true },
+    });
+    if (humanReply) return;
     const account = await prisma.wAAccount.findUnique({ where: { id: job.accountId } });
     if (!account) return;
 
     const sendResult = await sendWhatsAppMessage(account, {
-      to: job.remoteJid,
+      to: chat.remoteJid,
       type: "text",
       body: job.chunk,
     });

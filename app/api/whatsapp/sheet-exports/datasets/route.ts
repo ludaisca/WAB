@@ -1,10 +1,11 @@
+import { withMaintenanceGuard } from "@/lib/maintenance-guard";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { allowedDatasetsForRole, DATASET_LABELS } from "@/lib/whatsapp/sheet-export-access";
 
 // Evita duplicar el gate de rol en el cliente: el <select> del formulario
 // consume esto en vez de traer su propia copia de DATASET_ALLOWED_ROLES.
-export async function GET() {
+async function handleGET() {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -17,3 +18,5 @@ export async function GET() {
 
   return NextResponse.json({ datasets });
 }
+
+export const GET = withMaintenanceGuard(handleGET);
