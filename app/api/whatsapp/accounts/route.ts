@@ -43,7 +43,7 @@ async function handlePOST(req: Request) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
-    const { name, phoneNumberId, accessToken, wabaId, appId, verifyToken, appSecret } =
+    const { name, origen, phoneNumberId, accessToken, wabaId, appId, verifyToken, appSecret } =
       parsed.data;
 
     const validateResult = await validateToken(phoneNumberId, accessToken);
@@ -57,6 +57,7 @@ async function handlePOST(req: Request) {
       data: {
         userId: session.user.id,
         name,
+        origen: origen?.trim() || null,
         phoneNumberId,
         accessToken: encryptedToken,
         verifyTokenHash: verifyHash,

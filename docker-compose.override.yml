@@ -17,7 +17,7 @@ services:
     environment:
       NODE_ENV: development
     command: >
-      sh -c "npx prisma generate && (npx prisma db execute --file prisma/sql/migrate-off-openrouter.sql --schema prisma/schema.prisma || echo 'backfill skipped (columns already dropped)') && npx prisma db push --accept-data-loss && npx prisma db execute --file prisma/sql/ensure-vector-index.sql --schema prisma/schema.prisma && (npx prisma db execute --file prisma/sql/backfill-campaign-costs.sql --schema prisma/schema.prisma || echo 'cost backfill skipped') && (npx prisma db execute --file prisma/sql/backfill-campaign-sent-counts.sql --schema prisma/schema.prisma || echo 'sent-count backfill skipped') && mkdir -p /app/media /app/backups /app/reports && npm run dev"
+      sh -c "npx prisma generate && (npx prisma db execute --file prisma/sql/migrate-off-openrouter.sql --schema prisma/schema.prisma || echo 'backfill skipped (columns already dropped)') && npx prisma db push --accept-data-loss && npx prisma db execute --file prisma/sql/ensure-vector-index.sql --schema prisma/schema.prisma && (npx prisma db execute --file prisma/sql/backfill-campaign-costs.sql --schema prisma/schema.prisma || echo 'cost backfill skipped') && (npx prisma db execute --file prisma/sql/backfill-campaign-sent-counts.sql --schema prisma/schema.prisma || echo 'sent-count backfill skipped') && (npx prisma db execute --file prisma/sql/backfill-marketing-opt-outs.sql --schema prisma/schema.prisma || echo 'opt-out backfill skipped') && mkdir -p /app/media /app/backups /app/reports && npm run dev"
 
 volumes:
   media_data:
