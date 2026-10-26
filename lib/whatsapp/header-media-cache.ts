@@ -43,7 +43,10 @@ export async function getOrSaveHeaderMedia(
       orderBy: { timestamp: "desc" },
       select: { mediaUrl: true, mimeType: true, bytesSize: true },
     });
-    if (existing?.mediaUrl) {
+    // Solo se reutiliza una copia CON mime conocido: las filas viejas con mime
+    // vacío (ver saveMediaFromMeta) harían que el mensaje nuevo naciera otra vez
+    // sin tipo. Si falta, se vuelve a pedir el metadata a Meta.
+    if (existing?.mediaUrl && existing.mimeType) {
       try {
         const stat = await fs.stat(resolveAbsolutePath(existing.mediaUrl));
         return {
