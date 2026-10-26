@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
-import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
+import { CHAT_ATTRIBUTION_MESSAGE_QUERY, fetchLastInboundMessages, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
 import { getChatVisibilityFilter } from "@/lib/whatsapp/chat-visibility";
 
 async function handleGET(req: Request) {
@@ -124,9 +124,15 @@ async function handleGET(req: Request) {
       paginate ? prisma.wAChat.count({ where }) : Promise.resolve(null),
     ]);
 
+    // Último mensaje entrante por chat (una sola consulta batcheada): define la
+    // ventana de servicio de 24 h de Meta, que el composer usa para bloquear el
+    // texto libre y ofrecer plantilla.
+    const lastInbound = await fetchLastInboundMessages(rows.map((r) => r.id));
+
     const chats = rows.map(({ messages, ...chat }) => ({
       ...chat,
       campaign: resolveChatAttribution(messages),
+      lastInboundAt: lastInbound.get(chat.id)?.toISOString() ?? null,
     }));
 
     if (paginate) {

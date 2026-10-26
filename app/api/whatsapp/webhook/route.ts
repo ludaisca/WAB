@@ -291,6 +291,11 @@ async function syncCampaignCounts(campaignId: string): Promise<void> {
   await prisma.wACampaign.update({
     where: { id: campaignId },
     data: {
+      // sentCount también se recalcula: un mensaje aceptado por Meta (SENT) puede
+      // pasar después a FAILED por un webhook tardío, y si no se recontara el
+      // "Enviados" del embudo quedaría inflado para siempre (visto en 447 de
+      // 1,441 campañas: +1.1 en promedio).
+      sentCount: countOf("SENT") + countOf("DELIVERED") + countOf("READ"),
       deliveredCount: countOf("DELIVERED") + countOf("READ"),
       readCount: countOf("READ"),
       failedCount: countOf("FAILED"),

@@ -8,6 +8,7 @@ import { chatAccessWhere } from "@/lib/whatsapp/chat-visibility";
 import { rateLimit } from "@/lib/rate-limit";
 import { assertAccountMediaPath } from "@/lib/whatsapp/media-path";
 import { ownsMediaUpload } from "@/lib/whatsapp/media-upload";
+import { isWithinServiceWindow } from "@/lib/whatsapp/service-window";
 
 async function handlePOST(
   req: Request,
@@ -62,6 +63,24 @@ async function handlePOST(
       userId: session.user.id, accountId: chat.account.id, localMediaPath,
     }))) {
       return NextResponse.json({ error: "La carga no está autorizada o expiró. Vuelve a subir el archivo." }, { status: 403 });
+    }
+
+    // Ventana de servicio de Meta: fuera de las 24 h del último mensaje entrante
+    // solo se aceptan plantillas aprobadas, y esta ruta no envía plantillas (eso
+    // lo hace el worker de campañas). Va después de las validaciones de permisos
+    // de media a propósito: una ruta ajena debe seguir devolviendo 403 y no un
+    // 409 de ventana. Se corta aquí con un mensaje accionable en vez de dejar
+    // que Meta rechace el envío con un error opaco.
+    const lastInbound = await prisma.wAMessage.findFirst({
+      where: { chatId: chat.id, direction: "INBOUND" },
+      orderBy: { timestamp: "desc" },
+      select: { timestamp: true },
+    });
+    if (!lastInbound || !isWithinServiceWindow(lastInbound.timestamp, new Date())) {
+      return NextResponse.json(
+        { error: "La ventana de 24 h de WhatsApp está cerrada. Para reabrir la conversación envía una plantilla aprobada." },
+        { status: 409 }
+      );
     }
 
     const result = await sendWhatsAppMessage(chat.account, {
