@@ -182,7 +182,7 @@ export default function CampaignDetailPage() {
               { label: "Entregados", value: String(campaign.deliveredCount), numeric: campaign.deliveredCount },
               { label: "Leídos", value: String(campaign.readCount), numeric: campaign.readCount },
               { label: "Fallidos", value: String(campaign.failedCount), numeric: campaign.failedCount },
-              { label: "Gasto", value: formatUsd(campaign.totalCostUsd), numeric: campaign.totalCostUsd },
+              { label: "Gasto", value: formatUsd(campaign.totalCostUsd), numeric: campaign.totalCostUsd, numericPrefix: "$", numericDecimals: 2 },
             ]}
           />
         </CardBody>

@@ -9,6 +9,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { assertAccountMediaPath } from "@/lib/whatsapp/media-path";
 import { ownsMediaUpload } from "@/lib/whatsapp/media-upload";
 import { isWithinServiceWindow } from "@/lib/whatsapp/service-window";
+import { describeDecryptError } from "@/lib/crypto";
 
 async function handlePOST(
   req: Request,
@@ -133,7 +134,8 @@ async function handlePOST(
     return NextResponse.json(newMessage);
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Error interno del servidor";
+      describeDecryptError(error) ??
+      (error instanceof Error ? error.message : "Error interno del servidor");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -38,7 +38,7 @@ type StatsTab = "resumen" | "ia" | "campanas" | "equipo";
 const TAB_ITEMS_BASE: Array<{ value: StatsTab; label: string }> = [
   { value: "resumen", label: "Resumen" },
   { value: "ia", label: "IA y costos" },
-  { value: "campanas", label: "Campañas" },
+  { value: "campanas", label: "Campañas y fuentes" },
   { value: "equipo", label: "Equipo y leads" },
 ];
 
