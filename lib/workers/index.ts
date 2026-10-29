@@ -42,6 +42,16 @@ const LONG_JOB_OPTIONS: Partial<WorkerOptions> = {
   maxStalledCount: 2,
 };
 
+// El export de "Resultados de campaña" (160k filas) tardó 6.1 min medido el
+// 2026-10-29, y el tiempo es proporcional al volumen de datos: la escritura a
+// Sheets de cada lote de 2k filas es lo que domina (~3.4s), no la query
+// (100ms). 20 min da margen para que la tabla duplique tamaño sin volver a
+// perder el lock — que es exactamente el bucle que dejó la cola atorada.
+const SHEETS_SYNC_OPTIONS: Partial<WorkerOptions> = {
+  ...LONG_JOB_OPTIONS,
+  lockDuration: 20 * 60_000,
+};
+
 let started = false;
 const workers: Worker[] = [];
 
@@ -131,7 +141,7 @@ export function startWorkers() {
       return;
     }
     await processSheetsSyncTick();
-  }, { connection, concurrency: 1, ...LONG_JOB_OPTIONS });
+  }, { connection, concurrency: 1, ...SHEETS_SYNC_OPTIONS });
 
   const leadSheetImportWorker = createGuardedWorker("lead-sheet-import", async () => {
     await processLeadSheetImportTick();
