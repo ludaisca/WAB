@@ -62,6 +62,26 @@ function dateRange(dateFrom?: string, dateTo?: string): { gte?: Date; lte?: Date
   };
 }
 
+// Paginación opcional para la exportación a Google Sheets. El sync corre dentro
+// del proceso de Next (ver instrumentation.ts), así que materializar decenas de
+// miles de filas de una sola vez bloqueaba el event loop y tumbaba el health
+// check. Con `page` el runner pide lotes y escribe en la hoja por partes.
+// Los builders siempre ordenan con un desempate por `id` para que la
+// paginación sea estable (sin él, dos filas con el mismo timestamp podían
+// repetirse o saltarse entre lotes).
+export interface ExportPage {
+  skip?: number;
+  take?: number;
+}
+
+function pageParams(page?: ExportPage): { skip?: number; take?: number } {
+  if (!page) return {};
+  return {
+    ...(page.skip ? { skip: page.skip } : {}),
+    ...(page.take ? { take: page.take } : {}),
+  };
+}
+
 const LEAD_SHEET_STATUS_MAP: Record<string, CampaignResultStatus> = {
   sent: "SENT",
   delivered: "DELIVERED",
@@ -74,7 +94,9 @@ export async function buildLeadScoreRows(
   userId: string,
   role: string | undefined,
   accountIds: string[],
-  filters: LeadScoresFilters
+  filters: LeadScoresFilters,
+  page?: ExportPage,
+  options: { includePublicLink?: boolean } = {}
 ): Promise<LeadScoreRow[]> {
   const updatedAt = dateRange(filters.dateFrom, filters.dateTo);
   // Igual que en GET /api/whatsapp/lead-scores: sin esto, un export configurado
@@ -110,14 +132,23 @@ export async function buildLeadScoreRows(
     // min), lo que hacía parecer que el formato manual (colores por lead) se
     // perdía al sincronizar — en realidad el color se quedaba anclado a la fila
     // vieja mientras los datos del lead se movían a otra.
-    orderBy: { createdAt: "asc" },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    ...pageParams(page),
   });
 
+  // El link público solo se genera si la exportación va a escribir esa columna.
+  // Antes se generaba siempre: un UPDATE por chat (hasta ~12k en el export
+  // completo) dentro del job de sync, y de paso creaba links públicos que nadie
+  // había pedido. El runner pasa includePublicLink=false cuando la columna no
+  // está seleccionada. Ver lib/google/sheet-export-runner.ts.
+  const includePublicLink = options.includePublicLink !== false;
   // Un token por chat, no por score — un mismo chat puede tener varios
   // WALeadScore (uno por calificador) y todos deben apuntar al mismo link.
-  const tokens = await ensurePublicChatTokensForChats(
-    scores.map((s) => ({ id: s.chat.id, publicShareToken: s.chat.publicShareToken }))
-  );
+  const tokens = includePublicLink
+    ? await ensurePublicChatTokensForChats(
+        scores.map((s) => ({ id: s.chat.id, publicShareToken: s.chat.publicShareToken }))
+      )
+    : new Map<string, string>();
 
   // Batching manual en vez de un `messages: CHAT_ATTRIBUTION_MESSAGE_QUERY`
   // anidado en el select de arriba — ver el comentario de fetchChatAttributions
@@ -128,6 +159,7 @@ export async function buildLeadScoreRows(
 
   return scores.map((s) => {
     const { publicShareToken, contact, ...chatRest } = s.chat;
+    const token = tokens.get(s.chat.id);
     return {
       id: s.id,
       score: s.score,
@@ -141,7 +173,7 @@ export async function buildLeadScoreRows(
       chat: {
         ...chatRest,
         contact: contact ? { ...contact, leadNumber: contact.leadNumber.toString() } : null,
-        publicLink: publicChatUrl(tokens.get(s.chat.id)!),
+        publicLink: token ? publicChatUrl(token) : "",
         lastInboundAt: lastInbound.get(s.chat.id)?.toISOString() ?? null,
       },
     };
@@ -150,7 +182,8 @@ export async function buildLeadScoreRows(
 
 export async function buildCampaignResultRows(
   accountIds: string[],
-  filters: CampaignResultsFilters
+  filters: CampaignResultsFilters,
+  page?: ExportPage
 ): Promise<CampaignResultRow[]> {
   const includeManual = !filters.origins?.length || filters.origins.includes("manual");
   const includeAutomation = !filters.origins?.length || filters.origins.includes("automatizacion");
@@ -175,7 +208,8 @@ export async function buildCampaignResultRows(
               select: { name: true, waTemplate: { select: { name: true } }, waAccount: { select: { origen: true } } },
             },
           },
-          orderBy: { sentAt: "desc" },
+          orderBy: [{ sentAt: "desc" }, { id: "asc" }],
+          ...pageParams(page),
         })
       ).map((r) => ({
         origin: "manual" as const,
@@ -211,7 +245,8 @@ export async function buildCampaignResultRows(
               select: { name: true, waTemplate: { select: { name: true } }, waAccount: { select: { origen: true } } },
             },
           },
-          orderBy: { importedAt: "desc" },
+          orderBy: [{ importedAt: "desc" }, { id: "asc" }],
+          ...pageParams(page),
         })
       ).map((r) => ({
         origin: "automatizacion" as const,
@@ -237,7 +272,8 @@ export async function buildChatRows(
   userId: string,
   role: string | undefined,
   accountIds: string[],
-  filters: ChatsFilters
+  filters: ChatsFilters,
+  page?: ExportPage
 ): Promise<ChatExportRow[]> {
   const base = await chatAccessWhere(userId, role);
   const lastMessageAt = dateRange(filters.dateFrom, filters.dateTo);
@@ -268,7 +304,8 @@ export async function buildChatRows(
       contact: { select: { realName: true } },
       chatTags: { select: { tag: { select: { name: true } } } },
     },
-    orderBy: { lastMessageAt: "desc" },
+    orderBy: [{ lastMessageAt: "desc" }, { id: "asc" }],
+    ...pageParams(page),
   });
 
   // Batching manual en vez de un `messages: CHAT_ATTRIBUTION_MESSAGE_QUERY`
@@ -293,7 +330,11 @@ export async function buildChatRows(
   }));
 }
 
-export async function buildContactRows(accountIds: string[], filters: ContactsFilters): Promise<ContactExportRow[]> {
+export async function buildContactRows(
+  accountIds: string[],
+  filters: ContactsFilters,
+  page?: ExportPage
+): Promise<ContactExportRow[]> {
   const createdAt = dateRange(filters.dateFrom, filters.dateTo);
 
   const contacts = await prisma.contact.findMany({
@@ -314,7 +355,8 @@ export async function buildContactRows(accountIds: string[], filters: ContactsFi
       account: { select: { id: true, name: true, origen: true } },
       tags: { select: { tag: { select: { name: true } } } },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+    ...pageParams(page),
   });
 
   return contacts.map((c) => ({

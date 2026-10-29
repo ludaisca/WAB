@@ -51,15 +51,39 @@ export async function revokePublicChatToken(chatId: string): Promise<void> {
 
 // Variante bulk para exportaciones (CSV / Sheets sync): recibe los chats ya
 // cargados por el caller (evita una query redundante) y solo escribe para los
-// que aún no tienen token. Secuencial a propósito — el volumen es acotado
-// (leads calificados de una página/export, no toda la tabla) y así no hace
-// falta lidiar con colisiones concurrentes de setNewToken en paralelo.
+// que aún no tienen token.
+//
+// Secuencial NO: un export de "Leads calificados" trae ~12k scores y la primera
+// corrida mintaba un token por chat uno detrás de otro dentro del job de sync.
+// Se usa un pool acotado (20 en paralelo) y se deduplica por id de chat, porque
+// un mismo chat puede aparecer varias veces (un WALeadScore por calificador) y
+// sin dedupe se generaban dos tokens, el segundo pisando al primero.
+const TOKEN_MINT_CONCURRENCY = 20;
+
 export async function ensurePublicChatTokensForChats(
   chats: { id: string; publicShareToken: string | null }[]
 ): Promise<Map<string, string>> {
   const tokens = new Map<string, string>();
+  const pending = new Map<string, string | null>();
   for (const chat of chats) {
-    tokens.set(chat.id, chat.publicShareToken ?? (await setNewToken(chat.id)));
+    if (tokens.has(chat.id) || pending.has(chat.id)) continue;
+    if (chat.publicShareToken) tokens.set(chat.id, chat.publicShareToken);
+    else pending.set(chat.id, null);
   }
+
+  const queue = Array.from(pending.keys());
+  let cursor = 0;
+  const worker = async () => {
+    for (;;) {
+      const index = cursor++;
+      if (index >= queue.length) return;
+      const chatId = queue[index];
+      tokens.set(chatId, await setNewToken(chatId));
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(TOKEN_MINT_CONCURRENCY, queue.length) }, worker)
+  );
+
   return tokens;
 }

@@ -10,7 +10,7 @@ import { processAudioTranscribeJob } from "./audio-transcribe-worker";
 import { processBotSendJob } from "./bot-send-worker";
 import { processLeadScoringTick, processBulkRescoreJob } from "./lead-scoring-worker";
 import { processLeadRecoveryTick } from "./lead-recovery-worker";
-import { processSheetsSyncTick } from "./sheets-sync-worker";
+import { processSheetsSyncTick, processSheetsExportJob } from "./sheets-sync-worker";
 import { processLeadSheetImportTick } from "./lead-sheet-worker";
 import { processTemplateSyncTick } from "./template-sync-worker";
 import { processAgentActionExpiryTick } from "./agent-action-expiry-worker";
@@ -27,6 +27,19 @@ import { MEXICO_CITY_TZ } from "@/lib/timezone";
 
 const connection = {
   url: process.env.REDIS_URL || "redis://redis:6379",
+};
+
+// Jobs que pueden durar más que el lock por defecto de BullMQ (30s) y que
+// además hacen trabajo pesado dentro del event loop. Si el lock vence, el job
+// se re-entrega y el propio reintento falla con MISSING_LOCK (code -2) en
+// moveToDelayed: se queda en `active` para siempre y nunca llega a `failed`.
+// Ese ciclo fue lo que dejó atorado el worker de sheets-sync desde el
+// 2026-10-23. 10 min cubre con holgura el export más grande medido (~90s) sin
+// retrasar de más la detección de un proceso caído.
+const LONG_JOB_OPTIONS: Partial<WorkerOptions> = {
+  lockDuration: 10 * 60_000,
+  stalledInterval: 60_000,
+  maxStalledCount: 2,
 };
 
 let started = false;
@@ -69,7 +82,7 @@ export function startWorkers() {
       return;
     }
     await processCampaignJob(job.data);
-  }, { connection, concurrency: 1 });
+  }, { connection, concurrency: 1, ...LONG_JOB_OPTIONS });
 
   const ragWorker = createGuardedWorker("rag-index", async (job) => {
     await processRagJob(job.data);
@@ -111,9 +124,14 @@ export function startWorkers() {
     await processLeadRecoveryTick();
   }, { connection, concurrency: 1 });
 
-  const sheetsSyncWorker = createGuardedWorker("sheets-sync", async () => {
+  const sheetsSyncWorker = createGuardedWorker("sheets-sync", async (job) => {
+    // La misma cola lleva el tick (que solo encola) y un job por exportación.
+    if (job.name === "sync-export") {
+      await processSheetsExportJob(job.data as { userId: string; exportId: string });
+      return;
+    }
     await processSheetsSyncTick();
-  }, { connection, concurrency: 1 });
+  }, { connection, concurrency: 1, ...LONG_JOB_OPTIONS });
 
   const leadSheetImportWorker = createGuardedWorker("lead-sheet-import", async () => {
     await processLeadSheetImportTick();
@@ -147,11 +165,11 @@ export function startWorkers() {
       attemptsMade: job.attemptsMade,
       maxAttempts: job.opts.attempts ?? 1,
     });
-  }, { connection, concurrency: 1 });
+  }, { connection, concurrency: 1, ...LONG_JOB_OPTIONS });
 
   const restoreWorker = createGuardedWorker("system-restore", async (job) => {
     await processRestoreJob(job.data);
-  }, { connection, concurrency: 1 });
+  }, { connection, concurrency: 1, ...LONG_JOB_OPTIONS });
 
   // Sin tick repetible — v1 de Reportes solo tiene generación manual por
   // botón. concurrency:2 es seguro (a diferencia de pg_dump, generar dos
@@ -161,7 +179,7 @@ export function startWorkers() {
       attemptsMade: job.attemptsMade,
       maxAttempts: job.opts.attempts ?? 1,
     });
-  }, { connection, concurrency: 2 });
+  }, { connection, concurrency: 2, ...LONG_JOB_OPTIONS });
 
   workers.push(botWorker, campaignWorker, ragWorker, mediaWorker, mediaCleanupWorker, audioTranscribeWorker, botSendWorker, leadScoringWorker, leadRecoveryWorker, sheetsSyncWorker, leadSheetImportWorker, templateSyncWorker, agentActionExpiryWorker, systemDiagnosticsWorker, backupWorker, restoreWorker, reportWorker, crmEjecutivosSyncWorker);
 
@@ -234,11 +252,19 @@ export function startWorkers() {
 
   // Mismo cron que lead-recovery — resolución de sobra para una sync que no
   // necesita ser casi en tiempo real.
+  // attempts:1 a propósito — un tick de 15 min no necesita reintentos: si falla,
+  // la siguiente corrida ya viene en camino. Con attempts:3 el reintento
+  // inmediato volvía a correr el export completo encima del anterior.
   sheetsSyncQueue
     .add(
       "tick",
       {},
-      { jobId: "sheets-sync-tick", repeat: { pattern: "*/15 * * * *", tz: MEXICO_CITY_TZ } }
+      {
+        jobId: "sheets-sync-tick",
+        attempts: 1,
+        removeOnComplete: { count: 20 },
+        repeat: { pattern: "*/15 * * * *", tz: MEXICO_CITY_TZ },
+      }
     )
     .catch((err) => console.error("[workers] No se pudo programar sheets-sync:", err));
 

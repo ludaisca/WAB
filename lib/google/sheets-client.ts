@@ -3,6 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { encrypt, decrypt } from "@/lib/crypto";
 import { createGoogleOAuthClient } from "@/lib/google/oauth-client";
 
+// gaxios/googleapis no aplican timeout por defecto: una conexión que queda en
+// el vacío (NAT, firewall, proxy) deja la promesa pendiente para siempre y con
+// ella ocupado un slot del worker. Así se quedó atorado sheets-sync durante 6
+// días. 120s es muy por encima de cualquier llamada normal a Sheets (lecturas
+// de segundos, escrituras por lote de segundos) y muy por debajo de un cuelgue.
+google.options({ timeout: 120_000 });
+
 // Punto único de resolución de credencial, análogo a getUserApiKey()/decrypt(account.accessToken)
 // para Meta — con una diferencia clave: aquí el access token puede rotar dentro
 // del mismo proceso (el SDK lo refresca solo antes de cada llamada si detecta

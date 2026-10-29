@@ -103,7 +103,12 @@ export async function importNewLeadsForSource(
   const bodyColumnNames = (source.bodyColumns as unknown as string[]) ?? [];
   const bodyIdxs = bodyColumnNames.map((c) => findColumnIndex(header, c));
 
-  const existingRows = await prisma.leadSheetImportedRow.findMany({ where: { sourceId: source.id } });
+  // Solo las dos columnas que usa el dedupe: una fuente con decenas de miles
+  // de filas importadas cargaba la fila completa (12 campos) cada 5 minutos.
+  const existingRows = await prisma.leadSheetImportedRow.findMany({
+    where: { sourceId: source.id },
+    select: { phoneNumber: true, status: true },
+  });
   const existingByPhone = new Map(existingRows.map((r) => [r.phoneNumber, r]));
 
   if (opts.seedOnly) {
@@ -123,21 +128,7 @@ export async function importNewLeadsForSource(
           leadDate: seedDate.date,
         },
       });
-      existingByPhone.set(phone, {
-        id: "",
-        sourceId: source.id,
-        phoneNumber: phone,
-        contactName: seedContactName,
-        status: "seeded",
-        rotatedValue: null,
-        leadDateRaw: seedDate.raw,
-        leadDate: seedDate.date,
-        wamid: null,
-        deliveredAt: null,
-        readAt: null,
-        errorMessage: null,
-        importedAt: new Date(),
-      });
+      existingByPhone.set(phone, { phoneNumber: phone, status: "seeded" });
       seeded++;
     }
     await prisma.leadSheetSource.update({ where: { id: source.id }, data: { lastRunAt: new Date() } });
