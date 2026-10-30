@@ -4,6 +4,9 @@ import { getGoogleSheetsClientForUser } from "@/lib/google/sheets-client";
 export interface SheetTab {
   title: string;
   sheetId: number;
+  // Filas de la grilla (no filas con datos). Sheets rechaza un values.update
+  // cuyo rango la exceda, así que el runner la amplía antes de escribir.
+  rowCount: number;
 }
 
 // Notación A1: una comilla simple dentro de un nombre de pestaña entrecomillado
@@ -19,7 +22,11 @@ export async function listSheetTabs(sheets: sheets_v4.Sheets, spreadsheetId: str
     fields: "sheets.properties",
   });
   return (data.sheets ?? [])
-    .map((s) => ({ title: s.properties?.title ?? "", sheetId: s.properties?.sheetId ?? 0 }))
+    .map((s) => ({
+      title: s.properties?.title ?? "",
+      sheetId: s.properties?.sheetId ?? 0,
+      rowCount: s.properties?.gridProperties?.rowCount ?? 0,
+    }))
     .filter((t) => t.title);
 }
 

@@ -77,18 +77,27 @@ export async function migrateLegacySyncIfNeeded(account: GoogleAccount): Promise
 // sobre la hoja pegada, ANTES de crear el registro en DB.
 //
 // Devuelve el sheetId numérico (GridRange de batchUpdate no acepta notación
-// A1): writeSheetTab lo necesita para aplicar el formato de fecha/hora.
-export async function ensureSheetTab(sheets: sheets_v4.Sheets, spreadsheetId: string, tabTitle: string): Promise<number | null> {
+// A1) y las filas de la grilla, que writeSheetChunk necesita para ampliarla
+// cuando el export crece más allá del tamaño de la pestaña.
+export async function ensureSheetTab(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  tabTitle: string
+): Promise<{ sheetId: number | null; rowCount: number }> {
   const tabs = await listSheetTabs(sheets, spreadsheetId);
   const existing = tabs.find((t) => t.title === tabTitle);
-  if (existing) return existing.sheetId;
+  if (existing) return { sheetId: existing.sheetId, rowCount: existing.rowCount };
 
   try {
     const { data } = await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       requestBody: { requests: [{ addSheet: { properties: { title: tabTitle } } }] },
     });
-    return data.replies?.[0]?.addSheet?.properties?.sheetId ?? null;
+    return {
+      sheetId: data.replies?.[0]?.addSheet?.properties?.sheetId ?? null,
+      // addSheet crea la grilla con el default de Google (1,000 filas).
+      rowCount: data.replies?.[0]?.addSheet?.properties?.gridProperties?.rowCount ?? 1000,
+    };
   } catch (err) {
     // sync-now corre fuera de la cola BullMQ — dos ejecuciones concurrentes del
     // mismo export recién creado pueden competir por crear la misma pestaña.
@@ -97,8 +106,29 @@ export async function ensureSheetTab(sheets: sheets_v4.Sheets, spreadsheetId: st
     const message = err instanceof Error ? err.message : String(err);
     if (!message.toLowerCase().includes("already exists")) throw err;
     const after = await listSheetTabs(sheets, spreadsheetId);
-    return after.find((t) => t.title === tabTitle)?.sheetId ?? null;
+    const found = after.find((t) => t.title === tabTitle);
+    return { sheetId: found?.sheetId ?? null, rowCount: found?.rowCount ?? 0 };
   }
+}
+
+// Sheets rechaza con 400 "Range exceeds grid limits" cualquier escritura que
+// pase del tamaño de la grilla. Un tab recién creado tiene 1,000 filas y los
+// exports los superan desde el primer día: se amplía antes de escribir.
+async function ensureGridRows(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  sheetId: number | null,
+  currentRows: number,
+  neededRows: number
+): Promise<number> {
+  if (sheetId === null || neededRows <= currentRows) return currentRows;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{ appendDimension: { sheetId, dimension: "ROWS", length: neededRows - currentRows } }],
+    },
+  });
+  return neededRows;
 }
 
 // Las cuatro formas de fila son distintas; esta capa solo proyecta las columnas
@@ -317,7 +347,9 @@ async function runExport(
     throw new Error("La exportación no tiene columnas seleccionadas");
   }
 
-  const sheetId = await ensureSheetTab(sheets, row.spreadsheetId, row.sheetName);
+  const tab = await ensureSheetTab(sheets, row.spreadsheetId, row.sheetName);
+  // Filas de la grilla, se amplía a medida que el export crece (ver ensureGridRows).
+  let gridRows = tab.rowCount;
 
   const pages = iterateExportPages(dataset, {
     userId,
@@ -343,18 +375,26 @@ async function runExport(
     range: quoteTabTitle(row.sheetName),
   });
 
+  gridRows = await ensureGridRows(sheets, row.spreadsheetId, tab.sheetId, gridRows, 1 + firstRows.length);
   await writeSheetChunk(sheets, row.spreadsheetId, row.sheetName, 1, columns, firstRows, true);
   let nextRow = 1 + firstRows.length;
 
   if (!firstPage.done) {
     for await (const page of pages) {
       await sleep(SHEET_WRITE_INTERVAL_MS);
+      gridRows = await ensureGridRows(
+        sheets,
+        row.spreadsheetId,
+        tab.sheetId,
+        gridRows,
+        nextRow + page.length - 1
+      );
       await writeSheetChunk(sheets, row.spreadsheetId, row.sheetName, nextRow, columns, page, false);
       nextRow += page.length;
     }
   }
 
-  await applySheetFormats(sheets, row.spreadsheetId, sheetId, columns);
+  await applySheetFormats(sheets, row.spreadsheetId, tab.sheetId, columns);
 
   await prisma.sheetExport.update({
     where: { id: row.id },
