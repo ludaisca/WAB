@@ -43,7 +43,7 @@ function KpiContent({ item, hero }: { item: KpiItem; hero: boolean }) {
         <span
           className={cn(
             "font-mono font-semibold tracking-tight text-foreground break-words",
-            hero ? "text-3xl sm:text-hero" : "text-xl sm:text-2xl"
+            hero ? "text-3xl lg:text-hero" : "text-xl sm:text-2xl"
           )}
         >
           {item.numeric !== undefined ? (

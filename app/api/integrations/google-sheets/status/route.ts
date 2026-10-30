@@ -21,6 +21,12 @@ async function handleGET() {
     lastSyncedAt: account.lastSyncedAt,
     lastSyncError: account.lastSyncError,
     enabled: account.enabled,
+    // Sin las credenciales OAuth del entorno la conexión guardada es inservible:
+    // la UI debe decirlo en vez de mostrar "Conectado como…" con un banner de
+    // error contradictorio.
+    envConfigured: Boolean(
+      process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_OAUTH_REDIRECT_URI
+    ),
   });
 }
 

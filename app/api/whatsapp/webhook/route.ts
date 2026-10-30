@@ -4,6 +4,7 @@ import { createHmac, createHash, timingSafeEqual } from "crypto";
 import type { RecipientStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ingestInboundMessage } from "@/lib/whatsapp/ingest-message";
+import { isMarketingOptOut, markContactOptedOut } from "@/lib/whatsapp/opt-out";
 import { isMaintenanceMode } from "@/lib/system-maintenance";
 import {
   formatContactsBody,
@@ -217,6 +218,11 @@ async function applyStatusUpdate(accountId: string, status: WebhookStatus): Prom
   if (mapped.status === "FAILED") {
     const detail = statusErrorDetail(status);
     if (detail) updateData.errorMessage = detail;
+    // Baja de marketing reportada por Meta: se marca el contacto para no
+    // volver a incluir su número en campañas futuras.
+    if (isMarketingOptOut(detail)) {
+      await markContactOptedOut(accountId, status.recipient_id);
+    }
   }
   if (mapped.field === "sentAt") {
     updateData.sentAt = new Date();
@@ -291,6 +297,11 @@ async function syncCampaignCounts(campaignId: string): Promise<void> {
   await prisma.wACampaign.update({
     where: { id: campaignId },
     data: {
+      // sentCount también se recalcula: un mensaje aceptado por Meta (SENT) puede
+      // pasar después a FAILED por un webhook tardío, y si no se recontara el
+      // "Enviados" del embudo quedaría inflado para siempre (visto en 447 de
+      // 1,441 campañas: +1.1 en promedio).
+      sentCount: countOf("SENT") + countOf("DELIVERED") + countOf("READ"),
       deliveredCount: countOf("DELIVERED") + countOf("READ"),
       readCount: countOf("READ"),
       failedCount: countOf("FAILED"),

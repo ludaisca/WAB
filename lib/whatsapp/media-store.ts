@@ -75,13 +75,41 @@ export async function saveMediaFromMeta(
     throw new Error(`Descarga de medio Meta fallida (HTTP ${res.status})`);
   }
   const buf = Buffer.from(await res.arrayBuffer());
-  const stored = await persistBuffer(accountId, buf, mimeType);
+
+  // Meta a veces responde sin content-type en el metadata del media (típico en
+  // cabeceras de plantilla subidas por la Resumable Upload API). Antes ese hueco
+  // se guardaba como mime vacío: el archivo quedaba como `.bin` y el WAMessage se
+  // creaba con mimeType null, tipo "document" por defecto. Se resuelve aquí, en
+  // orden: metadata de Meta → content-type de la descarga → magic bytes → binario
+  // genérico. Así ningún mensaje nuevo nace sin mime.
+  const contentLengthType = res.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
+  const effectiveMime = mimeType || contentLengthType || detectMimeFromBuffer(buf) || "application/octet-stream";
+  const stored = await persistBuffer(accountId, buf, effectiveMime);
 
   return {
     ...stored,
-    remoteMimeType: mimeType,
+    remoteMimeType: effectiveMime,
     remoteUrl: url,
   };
+}
+
+// Firma de bytes para los formatos que maneja WhatsApp. Devuelve null cuando no
+// reconoce el contenido; el caller decide el fallback.
+function detectMimeFromBuffer(buf: Buffer): string | null {
+  if (buf.length < 4) return null;
+  const ascii = (start: number, end: number) => buf.subarray(start, end).toString("ascii");
+
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf[0] === 0x89 && ascii(1, 4) === "PNG") return "image/png";
+  if (ascii(0, 3) === "GIF") return "image/gif";
+  if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return "image/webp";
+  if (ascii(0, 5) === "%PDF-") return "application/pdf";
+  if (ascii(4, 8) === "ftyp") return "video/mp4";
+  if (ascii(0, 4) === "OggS") return "audio/ogg";
+  if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WAVE") return "audio/wav";
+  if (ascii(0, 3) === "ID3") return "audio/mpeg";
+  if (buf[0] === 0x50 && buf[1] === 0x4b) return "application/zip";
+  return null;
 }
 
 export async function saveMediaFromBuffer(

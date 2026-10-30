@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
-import { CHAT_ATTRIBUTION_MESSAGE_QUERY, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
+import { CHAT_ATTRIBUTION_MESSAGE_QUERY, fetchLastInboundMessages, resolveChatAttribution } from "@/lib/whatsapp/chat-attribution";
 import { getChatVisibilityFilter } from "@/lib/whatsapp/chat-visibility";
 
 async function handleGET(req: Request) {
@@ -80,12 +80,12 @@ async function handleGET(req: Request) {
       where.AND = messageFilters;
     }
 
-    // Paginación opt-in: sin `page`/`pageSize` en la query se preserva el
-    // comportamiento legado (array plano completo) para los consumidores
-    // que aún no la usan (dashboard/page.tsx, whatsapp/page.tsx).
-    const pageParam = searchParams.get("page");
-    const paginate = pageParam !== null;
-    const page = Math.max(1, Number(pageParam) || 1);
+    // Siempre paginado. Antes, sin `page` en la query, esta ruta devolvía TODAS
+    // las conversaciones (138k en producción): la consulta revienta con el
+    // límite de parámetros de Prisma (negation filters no se pueden partir) y
+    // el cliente recibía un 500 a los 30 s. Los dos consumidores del inbox
+    // mandan `page` explícito, así que el modo "array plano" no tenía uso real.
+    const page = Math.max(1, Number(searchParams.get("page")) || 1);
     const pageSize = Math.min(Math.max(Number(searchParams.get("pageSize")) || 30, 1), 100);
 
     const select = {
@@ -119,20 +119,24 @@ async function handleGET(req: Request) {
         where,
         select,
         orderBy: [{ lastMessageAt: { sort: "desc", nulls: "last" } }, { id: "desc" }],
-        ...(paginate ? { skip: searchParams.has("offset") ? Math.max(0, Math.floor(Number(searchParams.get("offset")) || 0)) : (page - 1) * pageSize, take: pageSize } : {}),
+        skip: searchParams.has("offset") ? Math.max(0, Math.floor(Number(searchParams.get("offset")) || 0)) : (page - 1) * pageSize,
+        take: pageSize,
       }),
-      paginate ? prisma.wAChat.count({ where }) : Promise.resolve(null),
+      prisma.wAChat.count({ where }),
     ]);
+
+    // Último mensaje entrante por chat (una sola consulta batcheada): define la
+    // ventana de servicio de 24 h de Meta, que el composer usa para bloquear el
+    // texto libre y ofrecer plantilla.
+    const lastInbound = await fetchLastInboundMessages(rows.map((r) => r.id));
 
     const chats = rows.map(({ messages, ...chat }) => ({
       ...chat,
       campaign: resolveChatAttribution(messages),
+      lastInboundAt: lastInbound.get(chat.id)?.toISOString() ?? null,
     }));
 
-    if (paginate) {
-      return NextResponse.json({ items: chats, total, page, pageSize });
-    }
-    return NextResponse.json(chats);
+    return NextResponse.json({ items: chats, total, page, pageSize });
   } catch (error) {
     console.error("[api] Error interno:", error);
     const message = "Error interno del servidor";

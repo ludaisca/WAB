@@ -47,3 +47,18 @@ export function decrypt(encrypted: string): string {
 export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
+
+// Un fallo de descifrado por ENCRYPTION_KEY distinta (p. ej. tras restaurar un
+// respaldo de otra instancia) salía como "Unsupported state or unable to
+// authenticate data", incomprensible para el operador. Se traduce a un mensaje
+// accionable; devuelve null cuando el error no es de cifrado.
+export function describeDecryptError(error: unknown): string | null {
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    /unable to authenticate data|Unsupported state|Invalid encrypted data format/i.test(message) ||
+    /ENCRYPTION_KEY must be a 64-character hex string/i.test(message)
+  ) {
+    return "No se pudieron descifrar las credenciales de esta cuenta: la ENCRYPTION_KEY actual no coincide con la que las cifró. Vuelve a conectar la cuenta o restaura el respaldo con la llave original.";
+  }
+  return null;
+}

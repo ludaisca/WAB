@@ -15,7 +15,7 @@ import { EntityList, EntityRow } from "@/app/components/ui/entity-list";
 import { EntityAvatar } from "@/app/components/ui/avatar";
 import { Pagination } from "@/app/components/ui/pagination";
 import { useToast } from "@/app/components/ui/toast";
-import { formatDate } from "@/lib/timezone";
+import { formatDateTime } from "@/lib/timezone";
 import { TemplateFormModal } from "./_form";
 import { TemplateMetricsModal } from "@/app/components/whatsapp/template-metrics-modal";
 
@@ -241,7 +241,7 @@ function TemplatesContent() {
                 meta={
                   <>
                     <span className="font-mono">
-                      {formatDate(t.syncedAt, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                      {formatDateTime(t.syncedAt)}
                     </span>
                     <span className="text-accent">Ver métricas →</span>
                   </>

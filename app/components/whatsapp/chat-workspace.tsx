@@ -63,6 +63,19 @@ interface ChatItem {
   account: { id: string; name: string; phoneNumber: string | null };
   campaign: { id: string; name: string } | null;
   contact: { blockedAt: string | null } | null;
+  // Timestamp del último mensaje ENTRANTE — define la ventana de servicio de
+  // Meta (24 h). Ver isServiceWindowOpen().
+  lastInboundAt?: string | null;
+}
+
+// Ventana de servicio de Meta: 24 h desde el último mensaje entrante. Fuera de
+// ella la API solo acepta plantillas aprobadas, así que el composer se bloquea
+// (el backend lo valida igual en chats/[chatId]/send).
+const SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function isServiceWindowOpen(lastInboundAt: string | null | undefined): boolean {
+  if (!lastInboundAt) return false;
+  return Date.now() - new Date(lastInboundAt).getTime() < SERVICE_WINDOW_MS;
 }
 
 interface CannedResponseItem {
@@ -555,6 +568,7 @@ export function ChatWorkspace({
     return () => controller.abort();
   }, [selectedChatId, detailRetry]);
   const selectedChat = chats.find((c) => c.id === selectedChatId) ?? (chatDetail?.id === selectedChatId ? chatDetail : null);
+  const serviceWindowOpen = isServiceWindowOpen(selectedChat?.lastInboundAt);
 
   // Scope quick replies to the current account, including late responses.
   useEffect(() => {
@@ -640,6 +654,9 @@ export function ChatWorkspace({
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     if ((!newMessage.trim() && !attachment) || !selectedChatId || !selectedChat || !drafts.ready) return;
+    // Fuera de la ventana de 24 h Meta rechaza el texto libre/media; el backend
+    // devuelve 409 igual, pero no dejamos gastar el intento ni el adjunto.
+    if (!serviceWindowOpen) return;
     const targetId = selectedChatId;
     const snapshot = draft;
     if (!drafts.begin(targetId, attachment ? "uploading" : "sending")) return;
@@ -1016,6 +1033,12 @@ export function ChatWorkspace({
 
             <form onSubmit={handleSend} className="flex flex-col gap-2 px-4 py-3 border-t border-border bg-surface shrink-0 relative">
               {send?.error && <Banner tone="danger">{send.error} Tu borrador sigue disponible.</Banner>}
+              {!serviceWindowOpen && (
+                <Banner tone="warning">
+                  La ventana de 24 h de WhatsApp está cerrada: Meta no acepta mensajes libres en este chat. Para
+                  reabrir la conversación hay que enviar una plantilla aprobada (Campañas).
+                </Banner>
+              )}
               {cannedSuggestions.length > 0 && (
                 <div className="absolute bottom-full left-4 right-4 mb-1.5 rounded-lg border border-border bg-surface shadow-lg overflow-hidden z-20">
                   {cannedSuggestions.map((c, i) => (
@@ -1074,7 +1097,7 @@ export function ChatWorkspace({
                 <button
                   type="button"
                   onClick={pickFile}
-                  disabled={sending}
+                  disabled={sending || !serviceWindowOpen}
                   className="text-accent hover:text-accent/80 transition-colors p-2.5 rounded-lg border border-accent/30 bg-accent/10 hover:bg-accent/15 disabled:opacity-50 shrink-0 cursor-pointer"
                   title="Adjuntar medio"
                   aria-label="Adjuntar medio"
@@ -1115,15 +1138,21 @@ export function ChatWorkspace({
                       handleSend(e as unknown as React.FormEvent);
                     }
                   }}
-                  placeholder={attachment ? "Añadir comentario (opcional)..." : "Escribe un mensaje... (usa /atajo para respuestas rápidas)"}
-                  disabled={sending || !drafts.ready || !selectedChat}
+                  placeholder={
+                    !serviceWindowOpen
+                      ? "Ventana de 24 h cerrada — usa una plantilla desde Campañas"
+                      : attachment
+                        ? "Añadir comentario (opcional)..."
+                        : "Escribe un mensaje... (usa /atajo para respuestas rápidas)"
+                  }
+                  disabled={sending || !drafts.ready || !selectedChat || !serviceWindowOpen}
                 />
                 <Button
                   type="submit"
                   icon={Send}
                   loading={sending}
                   aria-label="Enviar mensaje"
-                  disabled={(!newMessage.trim() && !attachment) || sending || !drafts.ready || !selectedChat}
+                  disabled={(!newMessage.trim() && !attachment) || sending || !drafts.ready || !selectedChat || !serviceWindowOpen}
                 >
                   <span className="hidden sm:inline">Enviar</span>
                 </Button>

@@ -122,7 +122,7 @@ export default function CampaignsPage() {
       { label: "Leídos", value: read.toLocaleString("es-MX"), numeric: read },
       { label: "Fallidos", value: failed.toLocaleString("es-MX"), numeric: failed },
       { label: "Tasa entrega", value: deliveryRate != null ? `${deliveryRate}%` : "—" },
-      { label: "Gasto", value: formatUsd(totalCost), numeric: totalCost },
+      { label: "Gasto", value: formatUsd(totalCost), numeric: totalCost, numericPrefix: "$", numericDecimals: 2 },
     ];
   }, [campaigns]);
 

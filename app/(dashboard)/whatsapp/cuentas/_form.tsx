@@ -20,6 +20,7 @@ const WEBHOOK_PATH = "/api/whatsapp/webhook";
 
 export function CuentaFormModal({ open, onClose, onCreated }: Props) {
   const [name, setName] = useState("");
+  const [origen, setOrigen] = useState("");
   const [phoneNumberId, setPhoneNumberId] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [wabaId, setWabaId] = useState("");
@@ -33,6 +34,7 @@ export function CuentaFormModal({ open, onClose, onCreated }: Props) {
 
   const resetForm = useCallback(() => {
     setName("");
+    setOrigen("");
     setPhoneNumberId("");
     setAccessToken("");
     setWabaId("");
@@ -76,6 +78,7 @@ export function CuentaFormModal({ open, onClose, onCreated }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
+          origen: origen.trim() || undefined,
           phoneNumberId: phoneNumberId.trim(),
           accessToken: accessToken.trim(),
           wabaId: wabaId.trim() || undefined,
@@ -183,6 +186,12 @@ export function CuentaFormModal({ open, onClose, onCreated }: Props) {
         <FormField label="Nombre de la cuenta" required error={errors.name} hint="Un nombre descriptivo para identificar este número">
           {(id) => (
             <Input id={id} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Soporte Ventas" error={errors.name} />
+          )}
+        </FormField>
+
+        <FormField label="Origen (opcional)" hint="Unidad de negocio o marca del número (ej. Medicalbuy). Alimenta la columna &quot;Origen de cuenta&quot; de las exportaciones y los cortes por origen en estadísticas.">
+          {(id) => (
+            <Input id={id} value={origen} onChange={(e) => setOrigen(e.target.value)} placeholder="Ej: Medicalbuy" />
           )}
         </FormField>
 

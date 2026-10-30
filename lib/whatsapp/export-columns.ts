@@ -196,7 +196,7 @@ export const EXPORT_COLUMNS: ExportColumnDef<LeadScoreRow>[] = [
   { key: "senales_compra", label: "Señales de compra", get: (r) => (r.details?.senales_compra ?? []).join(" | ") },
   { key: "objeciones_dudas", label: "Objeciones / dudas", get: (r) => (r.details?.objeciones_dudas ?? []).join(" | ") },
   { key: "proximos_pasos", label: "Próximos pasos", get: (r) => (r.details?.proximos_pasos ?? []).join(" | ") },
-  { key: "nombre_real", label: "Nombre real", get: (r) => r.details?.nombre_real ?? "" },
+  { key: "nombre_real", label: "Nombre real (IA)", get: (r) => r.details?.nombre_real ?? "" },
   { key: "tono_interes", label: "Tono de interés", get: (r) => r.details?.tono_interes ?? "" },
   { key: "nivel_interaccion", label: "Nivel de interacción", get: (r) => r.details?.nivel_interaccion ?? "" },
   { key: "updatedAt", label: "Actualizado", get: (r) => formatDate(r.updatedAt) },
@@ -315,7 +315,7 @@ export const CHATS_EXPORT_COLUMNS: ExportColumnDef<ChatExportRow>[] = [
   { key: "campaign", label: "Campaña", get: (r) => r.campaign?.name ?? "" },
   { key: "campaignType", label: "Tipo", get: (r) => (r.campaign ? campaignFirstWord(r.campaign.name) : "") },
   { key: "origin", label: "Origen", get: (r) => (r.campaign ? CAMPAIGN_ORIGIN_LABEL[r.campaign.origin] : "") },
-  { key: "createdAt", label: "Creado", get: (r) => formatDate(r.createdAt) },
+  { key: "createdAt", label: "Registrado", get: (r) => formatDate(r.createdAt) },
   { key: "lastMessageAt", label: "Último mensaje", get: (r) => formatDateOrEmpty(r.lastMessageAt) },
 ];
 
@@ -340,7 +340,7 @@ export const CONTACTS_EXPORT_COLUMNS: ExportColumnDef<ContactExportRow>[] = [
   { key: "leadStatus", label: "Estado de lead", get: (r) => LEAD_STATUS_LABEL[r.leadStatus] ?? r.leadStatus },
   { key: "tags", label: "Etiquetas", get: (r) => r.tags.join(" | ") },
   { key: "optedOut", label: "Baja de marketing", get: (r) => (r.optedOutMarketing ? "Sí" : "No") },
-  { key: "createdAt", label: "Creado", get: (r) => formatDate(r.createdAt) },
+  { key: "createdAt", label: "Registrado", get: (r) => formatDate(r.createdAt) },
 ];
 
 export type SheetExportDataset = "LEAD_SCORES" | "CAMPAIGN_RESULTS" | "CHATS" | "CONTACTS";

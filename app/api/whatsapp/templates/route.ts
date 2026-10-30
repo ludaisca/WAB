@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
 import { rateLimit } from "@/lib/rate-limit";
 import { syncAccountTemplates } from "@/lib/whatsapp/template-sync";
+import { describeDecryptError } from "@/lib/crypto";
 
 async function handleGET(req: Request) {
   try {
@@ -40,7 +41,8 @@ async function handleGET(req: Request) {
     return NextResponse.json(templates);
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Error interno del servidor";
+      describeDecryptError(error) ??
+      (error instanceof Error ? error.message : "Error interno del servidor");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -97,7 +99,8 @@ async function handlePOST(req: Request) {
     return NextResponse.json(templates);
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Error interno del servidor";
+      describeDecryptError(error) ??
+      (error instanceof Error ? error.message : "Error interno del servidor");
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -40,6 +40,10 @@ export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
 export const waAccountSchema = z.object({
   name: z.string().min(1, "El nombre es requerido").max(100),
+  // Unidad de negocio / marca a la que pertenece el número (ej. "Medicalbuy").
+  // Alimenta la columna "Origen de cuenta" de las exportaciones y los cortes
+  // por origen en estadísticas; sin esto esos cortes salen vacíos.
+  origen: z.string().max(200).optional().or(z.literal("")),
   phoneNumberId: z.string().min(1, "El Phone Number ID es requerido").regex(/^\d+$/, "Debe ser un ID numérico"),
   accessToken: z.string().min(1, "El token de acceso es requerido"),
   wabaId: z.string().regex(/^\d+$/, "Debe ser un ID numérico").optional().or(z.literal("")),

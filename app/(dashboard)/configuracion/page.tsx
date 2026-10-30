@@ -26,6 +26,7 @@ interface GoogleSheetsStatus {
   lastSyncedAt?: string | null;
   lastSyncError?: string | null;
   enabled?: boolean;
+  envConfigured?: boolean;
 }
 
 export default function SettingsPage() {
@@ -393,40 +394,60 @@ export default function SettingsPage() {
 
               {!loadingGoogleStatus && googleStatus.connected && (
                 <div className="space-y-3">
-                  {googleStatus.lastSyncError && (
-                    <Banner tone="danger">{googleStatus.lastSyncError}</Banner>
+                  {googleStatus.envConfigured === false ? (
+                    <>
+                      <Banner tone="warning">
+                        La cuenta está vinculada pero faltan las credenciales de Google en el servidor
+                        (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_OAUTH_REDIRECT_URI). La sincronización no
+                        puede ejecutarse hasta configurarlas.
+                      </Banner>
+                      <p className="text-sm text-muted-darker">
+                        Vinculada como <span className="font-medium">{googleStatus.googleEmail}</span>
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button size="sm" variant="danger" icon={Unlink} onClick={() => setDisconnectConfirmOpen(true)}>
+                          Desconectar
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {googleStatus.lastSyncError && (
+                        <Banner tone="danger">{googleStatus.lastSyncError}</Banner>
+                      )}
+                      <p className="text-sm text-foreground">
+                        Conectado como <span className="font-medium">{googleStatus.googleEmail}</span>
+                      </p>
+                      <p className="text-xs text-muted-darker">
+                        Última sincronización:{" "}
+                        {googleStatus.lastSyncedAt
+                          ? formatDateTime(googleStatus.lastSyncedAt)
+                          : "Nunca"}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button size="sm" icon={FileSpreadsheet} href="/configuracion/exportaciones">
+                          Administrar exportaciones
+                        </Button>
+                        {googleStatus.spreadsheetId && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            icon={ExternalLink}
+                            href={`https://docs.google.com/spreadsheets/d/${googleStatus.spreadsheetId}`}
+                            external
+                          >
+                            Abrir hoja
+                          </Button>
+                        )}
+                        <Button size="sm" variant="secondary" icon={RefreshCw} onClick={handleSyncNow} loading={syncingNow}>
+                          Sincronizar ahora
+                        </Button>
+                        <Button size="sm" variant="danger" icon={Unlink} onClick={() => setDisconnectConfirmOpen(true)}>
+                          Desconectar
+                        </Button>
+                      </div>
+                    </>
                   )}
-                  <p className="text-sm text-foreground">
-                    Conectado como <span className="font-medium">{googleStatus.googleEmail}</span>
-                  </p>
-                  <p className="text-xs text-muted-darker">
-                    Última sincronización:{" "}
-                    {googleStatus.lastSyncedAt
-                      ? formatDateTime(googleStatus.lastSyncedAt)
-                      : "Nunca"}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button size="sm" icon={FileSpreadsheet} href="/configuracion/exportaciones">
-                      Administrar exportaciones
-                    </Button>
-                    {googleStatus.spreadsheetId && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        icon={ExternalLink}
-                        href={`https://docs.google.com/spreadsheets/d/${googleStatus.spreadsheetId}`}
-                        external
-                      >
-                        Abrir hoja
-                      </Button>
-                    )}
-                    <Button size="sm" variant="secondary" icon={RefreshCw} onClick={handleSyncNow} loading={syncingNow}>
-                      Sincronizar ahora
-                    </Button>
-                    <Button size="sm" variant="danger" icon={Unlink} onClick={() => setDisconnectConfirmOpen(true)}>
-                      Desconectar
-                    </Button>
-                  </div>
                 </div>
               )}
             </CardBody>

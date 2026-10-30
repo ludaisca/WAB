@@ -35,6 +35,18 @@ echo "2b. Backfilling campaign costs (no-op once already computed)..."
 # quitarlo después de la primera vez.
 npx prisma db execute --file prisma/sql/backfill-campaign-costs.sql --schema prisma/schema.prisma || echo "campaign cost backfill skipped"
 
+echo "2c. Backfilling campaign sent counts (no-op once consistent)..."
+# Corrige el "Enviados" inflado por webhooks tardíos SENT->FAILED: el webhook
+# ahora recontará sentCount, y este script arregla el historial. Idempotente
+# (solo toca filas donde el contador no coincide con los estados reales).
+npx prisma db execute --file prisma/sql/backfill-campaign-sent-counts.sql --schema prisma/schema.prisma || echo "campaign sent-count backfill skipped"
+
+echo "2d. Backfilling marketing opt-outs (no-op once applied)..."
+# Marca como baja de marketing a los contactos que Meta reportó con "chosen to
+# stop receiving marketing messages…". El webhook ya lo hace en vivo; esto
+# corrige el historial previo. Idempotente (solo optedOutMarketing = false).
+npx prisma db execute --file prisma/sql/backfill-marketing-opt-outs.sql --schema prisma/schema.prisma || echo "marketing opt-out backfill skipped"
+
 echo "3. Ensuring pgvector index..."
 npx prisma db execute --file prisma/sql/ensure-vector-index.sql --schema prisma/schema.prisma
 
