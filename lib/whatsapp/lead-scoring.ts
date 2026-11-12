@@ -183,7 +183,11 @@ export async function scoreChatWithScorer(chatId: string, scorer: WALeadScorerBo
   const result = await client.complete({
     model: scorer.model,
     temperature: 0.2,
-    maxTokens: 600,
+    // Gemini 2.5+/3 "piensan" por defecto y ese razonamiento consume el mismo
+    // maxOutputTokens que la respuesta. Con 600, el pensamiento se comía casi
+    // todo el presupuesto y el JSON (summary de 3-5 líneas + details) salía
+    // truncado o vacío → "La IA no devolvió un resultado válido" en cada chat.
+    maxTokens: 8192,
     messages: [
       { role: "system", content: wrapUserPrompt(scorer.systemPrompt) },
       { role: "system", content: JSON_CONTRACT },
@@ -198,6 +202,10 @@ export async function scoreChatWithScorer(chatId: string, scorer: WALeadScorerBo
 
   const parsed = parseScoreResponse(result.content);
   if (!parsed) {
+    console.warn(
+      `[lead-scoring] Respuesta no parseable (chat ${chatId}, modelo ${scorer.model}, ` +
+        `tokens de salida ${result.usage?.completionTokens ?? "?"}): ${JSON.stringify(result.content.slice(0, 300))}`,
+    );
     throw new LeadScoringError("La IA no devolvió un resultado válido");
   }
 
