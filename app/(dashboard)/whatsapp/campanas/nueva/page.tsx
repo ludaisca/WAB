@@ -17,7 +17,14 @@ import { Spinner } from "@/app/components/ui/spinner";
 import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
 import { getTemplateVariables } from "@/lib/whatsapp/template-variables";
-import { parseCsv, type ParsedCsvRow } from "@/lib/whatsapp/parse-csv";
+import {
+  parseCsvTable,
+  guessCsvMapping,
+  applyCsvMapping,
+  type CsvTable,
+  type CsvColumnMapping,
+  type ParsedCsvRow,
+} from "@/lib/whatsapp/parse-csv";
 import { TemplatePreview } from "@/app/components/whatsapp/template-preview";
 import { zonedDateTimeToUtc } from "@/lib/timezone";
 
@@ -61,7 +68,8 @@ export default function NewCampaignPage() {
     { phoneNumber: "", contactName: "", params: [] },
   ]);
 
-  const [csvRows, setCsvRows] = useState<ParsedCsvRow[]>([]);
+  const [csvTable, setCsvTable] = useState<CsvTable | null>(null);
+  const [csvMapping, setCsvMapping] = useState<CsvColumnMapping | null>(null);
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
   const [csvPage, setCsvPage] = useState(0);
 
@@ -77,6 +85,14 @@ export default function NewCampaignPage() {
     [selectedTemplate]
   );
   const bodyParamCount = templateVars?.bodyParamCount ?? 0;
+  const bodyParamNames = templateVars?.bodyParamNames ?? null;
+
+  // Destinatarios del CSV, derivados de la tabla cruda + el mapeo de columnas
+  // que el usuario confirma — cambiar una columna recalcula todo al instante.
+  const csvRows = useMemo<ParsedCsvRow[]>(
+    () => (csvTable && csvMapping ? applyCsvMapping(csvTable, csvMapping) : []),
+    [csvTable, csvMapping]
+  );
 
   // La vista previa se llena con los valores del primer destinatario que tenga
   // algún parámetro capturado (manual primero, luego CSV) — solo uno, aunque
@@ -119,7 +135,8 @@ export default function NewCampaignPage() {
     setHeaderPreviewUrl(null);
     setHeaderFileName(null);
     setButtonParam("");
-    setCsvRows([]);
+    setCsvTable(null);
+    setCsvMapping(null);
     setCsvFileName(null);
     setCsvPage(0);
     setRecipients(prev => prev.map(r => ({ ...r, params: [] })));
@@ -181,17 +198,21 @@ export default function NewCampaignPage() {
 
     const reader = new FileReader();
     reader.onload = () => {
-      const parsed = parseCsv(String(reader.result ?? ""));
-      setCsvRows(parsed.rows);
+      const table = parseCsvTable(String(reader.result ?? ""));
+      if (table.headers.length === 0 || table.rows.length === 0) {
+        toastError("El archivo está vacío o solo tiene encabezados");
+        return;
+      }
+      const mapping = guessCsvMapping(table.headers, bodyParamCount, bodyParamNames);
+      setCsvTable(table);
+      setCsvMapping(mapping);
       setCsvFileName(file.name);
       setCsvPage(0);
 
-      if (parsed.rows.length === 0) {
-        toastError("No se encontraron destinatarios válidos en el archivo");
-      } else if (bodyParamCount > 0 && parsed.paramColumnCount !== bodyParamCount) {
-        toastError(`El archivo trae ${parsed.paramColumnCount} columna(s) de variables, pero la plantilla requiere ${bodyParamCount}`);
+      if (mapping.params.some((p) => p === null)) {
+        toastError("Asigna una columna a cada variable de la plantilla");
       } else {
-        success(`${parsed.rows.length} destinatarios importados`);
+        success(`${table.rows.length} filas leídas — revisa las columnas asignadas`);
       }
     };
     reader.onerror = () => toastError("Error al leer el archivo");
@@ -199,10 +220,40 @@ export default function NewCampaignPage() {
   }
 
   function clearCsv() {
-    setCsvRows([]);
+    setCsvTable(null);
+    setCsvMapping(null);
     setCsvFileName(null);
     setCsvPage(0);
   }
+
+  function updateCsvMapping(role: "phone" | "name" | number, value: string) {
+    const col = value === "" ? null : Number(value);
+    setCsvMapping((prev) => {
+      if (!prev) return prev;
+      if (role === "phone") return col === null ? prev : { ...prev, phone: col };
+      if (role === "name") return { ...prev, name: col };
+      const params = [...prev.params];
+      params[role] = col;
+      return { ...prev, params };
+    });
+    setCsvPage(0);
+  }
+
+  const csvColumnOptions = useMemo(() => {
+    if (!csvTable) return [];
+    const first = csvTable.rows[0] ?? [];
+    return csvTable.headers.map((h, i) => {
+      const sample = (first[i] ?? "").trim();
+      const shortSample = sample.length > 28 ? `${sample.slice(0, 28)}…` : sample;
+      return { value: String(i), label: `${h || `Columna ${i + 1}`}${shortSample ? ` (ej. ${shortSample})` : ""}` };
+    });
+  }, [csvTable]);
+
+  const csvIgnoredColumns = useMemo(() => {
+    if (!csvTable || !csvMapping) return [];
+    const used = new Set<number | null>([csvMapping.phone, csvMapping.name, ...csvMapping.params]);
+    return csvTable.headers.map((h, i) => (used.has(i) ? null : h || `Columna ${i + 1}`)).filter((h): h is string => h !== null);
+  }, [csvTable, csvMapping]);
 
   const csvTotalPages = Math.max(1, Math.ceil(csvRows.length / CSV_PAGE_SIZE));
   const csvPageRows = useMemo(
@@ -289,6 +340,8 @@ export default function NewCampaignPage() {
       const invalidPhones = allRecipients.filter(r => !/^\d{8,15}$/.test(r.phoneNumber.trim())).length;
       if (invalidPhones > 0) {
         newErrors.recipients = `Hay ${invalidPhones} teléfono(s) inválido(s) — usa solo dígitos (8 a 15), con código de país y sin espacios ni "+"`;
+      } else if (csvMapping && csvMapping.params.some((p) => p === null)) {
+        newErrors.recipients = "Asigna una columna del CSV a cada variable de la plantilla";
       } else if (bodyParamCount > 0) {
         const incomplete = allRecipients.some(r => r.params.filter(Boolean).length !== bodyParamCount);
         if (incomplete) {
@@ -551,7 +604,7 @@ export default function NewCampaignPage() {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-darker">
-                      Primera fila con encabezados: <code className="bg-surface px-1 rounded">telefono</code>, <code className="bg-surface px-1 rounded">nombre</code>{bodyParamCount > 0 ? `, y ${bodyParamCount} columna(s) más para las variables del cuerpo` : ""}.
+                      La primera fila debe tener los encabezados. Al subirlo eliges qué columna es el teléfono, el nombre{bodyParamCount > 0 ? " y cada variable del cuerpo" : ""}; las demás se ignoran.
                     </p>
 
                     {csvFileName && (
@@ -564,6 +617,48 @@ export default function NewCampaignPage() {
                             Quitar
                           </Button>
                         </div>
+
+                        {csvMapping && (
+                          <div className="rounded-lg bg-surface p-3 space-y-3">
+                            <p className="text-xs font-medium">Columnas del archivo</p>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <FormField label="Teléfono">
+                                {(id) => (
+                                  <Select id={id} value={String(csvMapping.phone)} onChange={(e) => updateCsvMapping("phone", e.target.value)}>
+                                    {csvColumnOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                  </Select>
+                                )}
+                              </FormField>
+                              <FormField label="Nombre del contacto (opcional)">
+                                {(id) => (
+                                  <Select id={id} value={csvMapping.name === null ? "" : String(csvMapping.name)} onChange={(e) => updateCsvMapping("name", e.target.value)}>
+                                    <option value="">— Ninguna —</option>
+                                    {csvColumnOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                  </Select>
+                                )}
+                              </FormField>
+                              {csvMapping.params.map((col, slot) => (
+                                <FormField
+                                  key={slot}
+                                  label={`Variable {{${bodyParamNames?.[slot] ?? slot + 1}}}`}
+                                  error={col === null ? "Elige una columna" : undefined}
+                                >
+                                  {(id) => (
+                                    <Select id={id} value={col === null ? "" : String(col)} onChange={(e) => updateCsvMapping(slot, e.target.value)}>
+                                      <option value="">— Sin asignar —</option>
+                                      {csvColumnOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                    </Select>
+                                  )}
+                                </FormField>
+                              ))}
+                            </div>
+                            {csvIgnoredColumns.length > 0 && (
+                              <p className="text-xs text-muted-darker">
+                                Se ignoran: {csvIgnoredColumns.join(", ")}
+                              </p>
+                            )}
+                          </div>
+                        )}
 
                         <Table
                           columns={csvColumns}
