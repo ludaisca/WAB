@@ -1,7 +1,7 @@
 "use client";
 
 import { FileText, Video, AlertTriangle, CheckCircle2, CornerUpLeft } from "lucide-react";
-import { getTemplateVariables } from "@/lib/whatsapp/template-variables";
+import { getTemplateVariables, parseBodyParams } from "@/lib/whatsapp/template-variables";
 
 interface MetaTemplateComponent {
   type: string;
@@ -15,6 +15,13 @@ interface Props {
   // Local (object URL or server) preview of the image the user uploaded for an
   // IMAGE-format header — falls back to a placeholder icon when not provided.
   headerImagePreview?: string | null;
+  // Valores de ejemplo (p. ej. los del primer destinatario de la campaña) que
+  // reemplazan los `{{n}}`/`{{nombre}}` en la vista previa. Un placeholder sin
+  // valor (vacío o fuera de rango) se sigue mostrando como marcador.
+  bodyParams?: string[];
+  headerParam?: string | null;
+  // Texto opcional bajo la burbuja para aclarar de dónde salen los valores.
+  sampleLabel?: string | null;
 }
 
 // This mirrors WhatsApp's own light chat wallpaper/bubble colors, not the
@@ -30,20 +37,37 @@ const WA = {
   border: "#e9e9e9",
 };
 
-function highlightVariables(text: string) {
-  const parts = text.split(/(\{\{\s*\d+\s*\}\})/g);
-  return parts.map((part, i) =>
-    /^\{\{\s*\d+\s*\}\}$/.test(part) ? (
+const PLACEHOLDER_SPLIT_RE = /(\{\{\s*[A-Za-z0-9_]+\s*\}\})/g;
+const PLACEHOLDER_TOKEN_RE = /^\{\{\s*([A-Za-z0-9_]+)\s*\}\}$/;
+
+// Resuelve el valor de un placeholder con la misma convención que
+// renderTemplateText(): posicional para `{{n}}`, por nombre (alineado con el
+// orden de primera aparición) para `{{nombre}}`.
+function resolveValue(token: string, params: string[], names: string[] | null): string | null {
+  const idx = names ? names.indexOf(token) : /^\d+$/.test(token) ? Number(token) - 1 : -1;
+  const value = idx >= 0 ? params[idx]?.trim() : "";
+  return value ? value : null;
+}
+
+function highlightVariables(text: string, params: string[] = [], names: string[] | null = null) {
+  const parts = text.split(PLACEHOLDER_SPLIT_RE);
+  return parts.map((part, i) => {
+    const match = part.match(PLACEHOLDER_TOKEN_RE);
+    if (!match) return <span key={i}>{part}</span>;
+    const value = resolveValue(match[1], params, names);
+    return value ? (
+      <span key={i} className="rounded px-0.5 font-semibold" style={{ background: "rgba(0,128,105,0.08)", color: WA.text }}>
+        {value}
+      </span>
+    ) : (
       <span key={i} className="inline-block rounded px-1 text-[10px] font-bold" style={{ background: "rgba(0,128,105,0.12)", color: WA.accent }}>
         {part}
       </span>
-    ) : (
-      <span key={i}>{part}</span>
-    )
-  );
+    );
+  });
 }
 
-export function TemplatePreview({ components, headerImagePreview }: Props) {
+export function TemplatePreview({ components, headerImagePreview, bodyParams, headerParam, sampleLabel }: Props) {
   const list = Array.isArray(components) ? (components as MetaTemplateComponent[]) : [];
   const header = list.find((c) => c.type === "HEADER");
   const body = list.find((c) => c.type === "BODY");
@@ -86,11 +110,13 @@ export function TemplatePreview({ components, headerImagePreview }: Props) {
           <div className="px-3 py-2.5">
             {header?.format === "TEXT" && (
               <p className="text-xs font-bold mb-1" style={{ color: WA.text }}>
-                {header.text ? highlightVariables(header.text) : "(cabecera de texto)"}
+                {header.text ? highlightVariables(header.text, headerParam ? [headerParam] : []) : "(cabecera de texto)"}
               </p>
             )}
             <p className="text-xs leading-relaxed whitespace-pre-wrap" style={{ color: WA.text }}>
-              {body?.text ? highlightVariables(body.text) : <span style={{ color: WA.muted }}>(sin cuerpo)</span>}
+              {body?.text
+                ? highlightVariables(body.text, bodyParams, parseBodyParams(body.text).names)
+                : <span style={{ color: WA.muted }}>(sin cuerpo)</span>}
             </p>
             {footer?.text && (
               <p className="text-[10px] mt-1" style={{ color: WA.muted }}>{footer.text}</p>
@@ -113,6 +139,9 @@ export function TemplatePreview({ components, headerImagePreview }: Props) {
             </div>
           )}
         </div>
+        {sampleLabel && (
+          <p className="text-[10px] text-center mt-2" style={{ color: WA.muted }}>{sampleLabel}</p>
+        )}
       </div>
 
       <div className="rounded-lg border border-border divide-y divide-border text-xs">

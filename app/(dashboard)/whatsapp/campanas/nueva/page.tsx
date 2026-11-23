@@ -78,6 +78,17 @@ export default function NewCampaignPage() {
   );
   const bodyParamCount = templateVars?.bodyParamCount ?? 0;
 
+  // La vista previa se llena con los valores del primer destinatario que tenga
+  // algún parámetro capturado (manual primero, luego CSV) — solo uno, aunque
+  // haya varios, para mostrar cómo se verá el mensaje real.
+  const previewSample = useMemo(() => {
+    const candidates = [...recipients, ...csvRows];
+    return candidates.find((r) => r.params.some((p) => p?.trim())) ?? null;
+  }, [recipients, csvRows]);
+  const previewSampleLabel = previewSample
+    ? `Ejemplo con los datos de ${previewSample.contactName.trim() || previewSample.phoneNumber.trim() || "el primer destinatario"}`
+    : null;
+
   useEffect(() => {
     fetch("/api/whatsapp/accounts").then(r => r.json()).then(d => {
       if (Array.isArray(d)) setAccounts(d.filter((a: Account) => a.channel === "META_CLOUD"));
@@ -607,7 +618,13 @@ export default function NewCampaignPage() {
 
         <div className="lg:sticky lg:top-6">
           {selectedTemplate ? (
-            <TemplatePreview components={selectedTemplate.components} headerImagePreview={headerPreviewUrl} />
+            <TemplatePreview
+              components={selectedTemplate.components}
+              headerImagePreview={headerPreviewUrl}
+              bodyParams={previewSample?.params}
+              headerParam={templateVars?.header.format === "TEXT" ? headerParam : null}
+              sampleLabel={previewSampleLabel}
+            />
           ) : (
             <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-darker">
               Selecciona una plantilla para ver la vista previa
