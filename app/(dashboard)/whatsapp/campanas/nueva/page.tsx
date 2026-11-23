@@ -94,15 +94,27 @@ export default function NewCampaignPage() {
     [csvTable, csvMapping]
   );
 
-  // La vista previa se llena con los valores del primer destinatario que tenga
-  // algún parámetro capturado (manual primero, luego CSV) — solo uno, aunque
-  // haya varios, para mostrar cómo se verá el mensaje real.
-  const previewSample = useMemo(() => {
-    const candidates = [...recipients, ...csvRows];
-    return candidates.find((r) => r.params.some((p) => p?.trim())) ?? null;
-  }, [recipients, csvRows]);
-  const previewSampleLabel = previewSample
-    ? `Ejemplo con los datos de ${previewSample.contactName.trim() || previewSample.phoneNumber.trim() || "el primer destinatario"}`
+  // La vista previa muestra un destinatario a la vez con sus valores reales;
+  // las flechas bajo la burbuja recorren las filas manuales con datos y luego
+  // las del CSV, en el orden en que se enviarán.
+  const previewCandidates = useMemo(
+    () => [
+      ...recipients.filter((r) => r.phoneNumber.trim() || r.params.some((p) => p?.trim())),
+      ...csvRows,
+    ],
+    [recipients, csvRows]
+  );
+  const [previewIndexRaw, setPreviewIndex] = useState(0);
+  const previewIndex = Math.min(previewIndexRaw, Math.max(0, previewCandidates.length - 1));
+  const previewSample = previewCandidates[previewIndex] ?? null;
+  const previewNav = previewSample
+    ? {
+        index: previewIndex,
+        total: previewCandidates.length,
+        label: [previewSample.contactName.trim(), previewSample.phoneNumber.trim()].filter(Boolean).join(" · ") || "Destinatario sin teléfono",
+        onPrev: () => setPreviewIndex(Math.max(0, previewIndex - 1)),
+        onNext: () => setPreviewIndex(Math.min(previewCandidates.length - 1, previewIndex + 1)),
+      }
     : null;
 
   useEffect(() => {
@@ -208,6 +220,7 @@ export default function NewCampaignPage() {
       setCsvMapping(mapping);
       setCsvFileName(file.name);
       setCsvPage(0);
+      setPreviewIndex(0);
 
       if (mapping.params.some((p) => p === null)) {
         toastError("Asigna una columna a cada variable de la plantilla");
@@ -718,7 +731,7 @@ export default function NewCampaignPage() {
               headerImagePreview={headerPreviewUrl}
               bodyParams={previewSample?.params}
               headerParam={templateVars?.header.format === "TEXT" ? headerParam : null}
-              sampleLabel={previewSampleLabel}
+              sampleNav={previewNav}
             />
           ) : (
             <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-darker">

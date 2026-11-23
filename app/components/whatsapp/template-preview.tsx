@@ -1,6 +1,7 @@
 "use client";
 
-import { FileText, Video, AlertTriangle, CheckCircle2, CornerUpLeft } from "lucide-react";
+import type { ReactNode } from "react";
+import { FileText, Video, AlertTriangle, CheckCircle2, CornerUpLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { getTemplateVariables, parseBodyParams } from "@/lib/whatsapp/template-variables";
 
 interface MetaTemplateComponent {
@@ -20,8 +21,17 @@ interface Props {
   // valor (vacío o fuera de rango) se sigue mostrando como marcador.
   bodyParams?: string[];
   headerParam?: string | null;
-  // Texto opcional bajo la burbuja para aclarar de dónde salen los valores.
-  sampleLabel?: string | null;
+  // Navegación bajo la burbuja entre los destinatarios cuyos datos llenan la
+  // vista previa (p. ej. las filas importadas de un CSV). Sin flechas si solo hay uno.
+  sampleNav?: SampleNav | null;
+}
+
+export interface SampleNav {
+  index: number;
+  total: number;
+  label: string;
+  onPrev: () => void;
+  onNext: () => void;
 }
 
 // This mirrors WhatsApp's own light chat wallpaper/bubble colors, not the
@@ -67,7 +77,7 @@ function highlightVariables(text: string, params: string[] = [], names: string[]
   });
 }
 
-export function TemplatePreview({ components, headerImagePreview, bodyParams, headerParam, sampleLabel }: Props) {
+export function TemplatePreview({ components, headerImagePreview, bodyParams, headerParam, sampleNav }: Props) {
   const list = Array.isArray(components) ? (components as MetaTemplateComponent[]) : [];
   const header = list.find((c) => c.type === "HEADER");
   const body = list.find((c) => c.type === "BODY");
@@ -139,8 +149,25 @@ export function TemplatePreview({ components, headerImagePreview, bodyParams, he
             </div>
           )}
         </div>
-        {sampleLabel && (
-          <p className="text-[10px] text-center mt-2" style={{ color: WA.muted }}>{sampleLabel}</p>
+        {sampleNav && sampleNav.total > 0 && (
+          <div className="max-w-[280px] mx-auto mt-2 flex items-center justify-between gap-2">
+            {sampleNav.total > 1 && (
+              <SampleNavButton label="Destinatario anterior" disabled={sampleNav.index === 0} onClick={sampleNav.onPrev}>
+                <ChevronLeft size={16} />
+              </SampleNavButton>
+            )}
+            <div className="min-w-0 flex-1 text-center" aria-live="polite">
+              <p className="text-[11px] font-medium truncate" style={{ color: WA.text }}>{sampleNav.label}</p>
+              <p className="text-[10px] font-mono" style={{ color: WA.muted }}>
+                {(sampleNav.index + 1).toLocaleString("es-MX")} de {sampleNav.total.toLocaleString("es-MX")}
+              </p>
+            </div>
+            {sampleNav.total > 1 && (
+              <SampleNavButton label="Destinatario siguiente" disabled={sampleNav.index >= sampleNav.total - 1} onClick={sampleNav.onNext}>
+                <ChevronRight size={16} />
+              </SampleNavButton>
+            )}
+          </div>
         )}
       </div>
 
@@ -173,6 +200,22 @@ export function TemplatePreview({ components, headerImagePreview, bodyParams, he
         />
       </div>
     </div>
+  );
+}
+
+function SampleNavButton({ label, disabled, onClick, children }: { label: string; disabled: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="shrink-0 rounded-full p-1.5 shadow-sm transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+      style={{ background: WA.bubble, color: WA.accent }}
+    >
+      {children}
+    </button>
   );
 }
 
