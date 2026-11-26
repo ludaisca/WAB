@@ -33,6 +33,8 @@ const JSON_CONTRACT = `Eres además un auditor de calidad de leads. Aplica SIEMP
 - Prioriza los mensajes más recientes del lead si hay contradicciones con mensajes anteriores.
 - Mensajes ofensivos, agresivos, o de rechazo explícito del lead → label "descartado" y score 0, sin excepción.
 - Si el lead responde y delega la revisión a un tercero (ej. "lo reviso con el doctor/socio/área técnica"), es una señal de interés real, no de frialdad — normalmente clasifica como "interesado" u "oportunidad", no "frio".
+- Los mensajes "Agente (plantilla automática):" son envíos masivos de campaña o seguimiento, no conversación. Si la transcripción TERMINA con mensajes del agente (plantilla o seguimiento) que el lead todavía no contesta, eso NO es una señal negativa ni baja la fase: puede no haberlos visto aún. Califica con lo que el lead ya dijo; solo un mensaje del propio lead puede bajar la fase.
+- Los mensajes "Lead (nota de voz):" son la transcripción automática de un audio del lead: cuentan como palabras propias, igual que un texto.
 - Venta inversa: si el "lead" en realidad está ofreciendo o promocionando SU PROPIO producto/servicio (outreach de proveedor, publicidad, venta de leads/SEO/marketing, freelancers ofreciendo sus servicios, etc.) → label "descartado" y score 0, sin importar cuánto conteste, qué tan detallado sea su mensaje o cuánta "conversación" haya. No es un comprador real — el volumen de interacción no lo cambia.
 
 Clasifica en UNA de estas 5 fases, con un score dentro de su rango:
@@ -133,7 +135,15 @@ export async function scoreChatWithScorer(chatId: string, scorer: WALeadScorerBo
       where: { chatId },
       orderBy: { timestamp: "desc" },
       take: 200,
-      select: { direction: true, body: true, caption: true, messageType: true },
+      select: {
+        direction: true,
+        body: true,
+        caption: true,
+        messageType: true,
+        transcription: true,
+        campaignId: true,
+        leadSheetSourceId: true,
+      },
     })
   ).reverse();
 
@@ -169,13 +179,22 @@ export async function scoreChatWithScorer(chatId: string, scorer: WALeadScorerBo
   const predefinedCount = inboundMessages.filter(isPredefined).length;
   const onlyPredefined = predefinedCount > 0 && predefinedCount === inboundMessages.length;
 
+  // Las notas de voz van con su transcripción (audio-transcribe-worker): antes
+  // llegaban como "[audio]" y un lead que hablaba por audio se calificaba como
+  // si no hubiera dicho nada. Las plantillas de campaña se marcan aparte para
+  // que el modelo no lea un envío masivo sin respuesta como desinterés.
   const transcript = messages
     .map((m) => {
-      const text = m.caption ?? m.body ?? `[${m.messageType}]`;
       if (m.direction === "INBOUND") {
+        if (m.messageType === "audio" && m.transcription?.trim()) {
+          return `Lead (nota de voz): ${m.transcription.trim()}`;
+        }
+        const text = m.caption ?? m.body ?? `[${m.messageType}]`;
         return isPredefined(m) ? `Lead ${PREDEFINED_TAG}: ${text}` : `Lead: ${text}`;
       }
-      return `Agente: ${text}`;
+      const text = m.caption ?? m.body ?? `[${m.messageType}]`;
+      const automated = m.messageType === "template" || m.campaignId !== null || m.leadSheetSourceId !== null;
+      return automated ? `Agente (plantilla automática): ${text}` : `Agente: ${text}`;
     })
     .join("\n");
 

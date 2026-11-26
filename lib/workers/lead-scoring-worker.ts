@@ -50,34 +50,43 @@ async function runScheduledScorer(scorer: WALeadScorerBot, now: Date) {
     return;
   }
 
-  const candidates = await prisma.wAChat.findMany({
+  // Candidatos por el último mensaje DEL LEAD, no por lastMessageAt: antes
+  // cualquier saliente (una plantilla de campaña, la respuesta del bot) volvía
+  // "pendiente" al chat y se recalificaba sin que el lead dijera nada nuevo.
+  // Una campaña de reactivación recalificaba así a cientos de leads minutos
+  // después del envío, y el modelo leía la plantilla sin respuesta como
+  // desinterés (visto en producción en nov-2026). Solo un mensaje nuevo del
+  // lead cambia lo que hay que evaluar. Agrupar por chat ya implica al menos un
+  // INBOUND, así que un chat de pura campaña sin respuesta nunca entra.
+  const latestInbound = await prisma.wAMessage.groupBy({
+    by: ["chatId"],
     where: {
-      accountId: { in: scopedAccountIds },
-      status: { in: ["OPEN", "PENDING"] },
-      lastMessageAt: { not: null },
-      // Otherwise a campaign-only chat the lead never replied to would be reselected as
-      // "due" on every single tick forever (scoreChatWithScorer throws before creating a
-      // score, so it never satisfies the `!lastScore` exemption below) — crowding out
-      // real candidates from the batch. scoreChatWithScorer enforces this same rule for
-      // the manual "Calificar" button; this mirrors it here purely for efficiency.
-      messages: { some: { direction: "INBOUND" } },
-      // Lista negra: los chats con contacto bloqueado no se recalifican.
-      OR: [{ contact: null }, { contact: { blockedAt: null } }],
+      direction: "INBOUND",
+      chat: {
+        accountId: { in: scopedAccountIds },
+        status: { in: ["OPEN", "PENDING"] },
+        // Lista negra: los chats con contacto bloqueado no se recalifican.
+        OR: [{ contact: null }, { contact: { blockedAt: null } }],
+      },
     },
-    select: {
-      id: true,
-      lastMessageAt: true,
-      leadScores: { where: { scorerId: scorer.id }, select: { updatedAt: true } },
-    },
-    orderBy: { lastMessageAt: "desc" },
+    _max: { timestamp: true },
+    orderBy: { _max: { timestamp: "desc" } },
     take: CANDIDATE_POOL,
   });
 
-  const dueChats = candidates
+  const scores = await prisma.wALeadScore.findMany({
+    where: { scorerId: scorer.id, chatId: { in: latestInbound.map((c) => c.chatId) } },
+    select: { chatId: true, updatedAt: true },
+  });
+  const scoredAt = new Map(scores.map((s) => [s.chatId, s.updatedAt]));
+
+  const dueChats = latestInbound
     .filter((c) => {
-      const lastScore = c.leadScores[0];
-      return !lastScore || (c.lastMessageAt !== null && lastScore.updatedAt < c.lastMessageAt);
+      const lastScore = scoredAt.get(c.chatId);
+      const lastInbound = c._max.timestamp;
+      return !lastScore || (lastInbound !== null && lastScore < lastInbound);
     })
+    .map((c) => ({ id: c.chatId }))
     .slice(0, BATCH_SIZE_PER_SCORER);
 
   let anySuccess = false;
