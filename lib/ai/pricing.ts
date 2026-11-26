@@ -23,6 +23,20 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   "google/gemini-3.1-pro-preview": { input: 2.00,  output: 12.00 },
   "gemini-3.1-flash-lite":         { input: 0.25,  output: 1.50 },
   "gemini-3.1-pro-preview":        { input: 2.00,  output: 12.00 },
+  // Precio introductorio hasta el 31-dic-2026 (ver PRICE_CHANGES abajo para el
+  // estándar). Faltaba en la tabla: el "Agente Calificador" usa este modelo y
+  // en nov-2026 registró 800+ calificaciones a $0. Verificado 2026-11-26.
+  "google/gemini-3.8-flash":       { input: 0.75,  output: 3.75 },
+  "gemini-3.8-flash":              { input: 0.75,  output: 3.75 },
+};
+
+// Cambios de precio ya anunciados por Google con fecha. A partir de `from`
+// (instante UTC) se usa este precio en lugar del de MODEL_PRICING — así el
+// costo cambia solo el día correcto sin depender de un deploy ese día.
+const PRICE_CHANGES: Record<string, { from: Date; input: number; output: number }> = {
+  // Fin del precio introductorio de Gemini 3.8 Flash.
+  "google/gemini-3.8-flash": { from: new Date("2027-01-01T00:00:00Z"), input: 1.50, output: 7.50 },
+  "gemini-3.8-flash":        { from: new Date("2027-01-01T00:00:00Z"), input: 1.50, output: 7.50 },
 };
 
 export async function estimateCost(
@@ -30,7 +44,9 @@ export async function estimateCost(
   promptTokens: number,
   completionTokens: number
 ): Promise<number> {
-  const pricing: ModelPricing | undefined = MODEL_PRICING[model];
+  const change = PRICE_CHANGES[model];
+  const pricing: ModelPricing | undefined =
+    change && Date.now() >= change.from.getTime() ? change : MODEL_PRICING[model];
 
   if (!pricing) {
     // Surface this instead of silently logging $0 forever — a model missing
