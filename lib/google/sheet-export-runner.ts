@@ -83,10 +83,10 @@ export async function ensureSheetTab(
   sheets: sheets_v4.Sheets,
   spreadsheetId: string,
   tabTitle: string
-): Promise<{ sheetId: number | null; rowCount: number }> {
+): Promise<{ sheetId: number | null; rowCount: number; columnCount: number }> {
   const tabs = await listSheetTabs(sheets, spreadsheetId);
   const existing = tabs.find((t) => t.title === tabTitle);
-  if (existing) return { sheetId: existing.sheetId, rowCount: existing.rowCount };
+  if (existing) return { sheetId: existing.sheetId, rowCount: existing.rowCount, columnCount: existing.columnCount };
 
   try {
     const { data } = await sheets.spreadsheets.batchUpdate({
@@ -97,6 +97,7 @@ export async function ensureSheetTab(
       sheetId: data.replies?.[0]?.addSheet?.properties?.sheetId ?? null,
       // addSheet crea la grilla con el default de Google (1,000 filas).
       rowCount: data.replies?.[0]?.addSheet?.properties?.gridProperties?.rowCount ?? 1000,
+      columnCount: data.replies?.[0]?.addSheet?.properties?.gridProperties?.columnCount ?? 26,
     };
   } catch (err) {
     // sync-now corre fuera de la cola BullMQ — dos ejecuciones concurrentes del
@@ -107,7 +108,7 @@ export async function ensureSheetTab(
     if (!message.toLowerCase().includes("already exists")) throw err;
     const after = await listSheetTabs(sheets, spreadsheetId);
     const found = after.find((t) => t.title === tabTitle);
-    return { sheetId: found?.sheetId ?? null, rowCount: found?.rowCount ?? 0 };
+    return { sheetId: found?.sheetId ?? null, rowCount: found?.rowCount ?? 0, columnCount: found?.columnCount ?? 0 };
   }
 }
 
@@ -173,6 +174,39 @@ function buildSheetValues(
     );
   }
   return values;
+}
+
+// 1 → "A", 27 → "AA" (notación A1).
+function columnLetter(index: number): string {
+  let n = index;
+  let letters = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    letters = String.fromCharCode(65 + rem) + letters;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letters;
+}
+
+// Limpia lo que quedó de la corrida anterior FUERA de lo recién escrito: filas
+// debajo de la última fila de datos y columnas a la derecha de las del export
+// (si se quitaron columnas). Acotado a la grilla real — un rango que la exceda
+// lo rechaza Sheets.
+async function clearSheetTail(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  tabTitle: string,
+  firstUnusedRow: number,
+  gridRows: number,
+  columnCount: number,
+  gridColumns: number
+): Promise<void> {
+  const tab = quoteTabTitle(tabTitle);
+  const ranges: string[] = [];
+  if (firstUnusedRow <= gridRows) ranges.push(`${tab}!${firstUnusedRow}:${gridRows}`);
+  if (columnCount < gridColumns) ranges.push(`${tab}!${columnLetter(columnCount + 1)}:${columnLetter(gridColumns)}`);
+  if (ranges.length === 0) return;
+  await sheets.spreadsheets.values.batchClear({ spreadsheetId, requestBody: { ranges } });
 }
 
 async function writeSheetChunk(
@@ -359,25 +393,23 @@ async function runExport(
     includePublicLink: selected.includes("publicLink"),
   });
 
-  // El primer lote se lee ANTES de limpiar la pestaña: si la query falla, la
-  // hoja del usuario conserva los datos de la corrida anterior en vez de quedar
-  // vacía. Antes se limpiaba y después se construía todo en memoria.
+  // Se escribe ENCIMA de la corrida anterior y al final se limpia solo lo que
+  // sobra (clearSheetTail). Antes se borraba la pestaña completa antes de
+  // escribir: mientras duraba el export (minutos en los grandes, cada 15 min)
+  // quien abría la hoja la veía vacía o a medias, y un fallo a mitad la dejaba
+  // así hasta la siguiente corrida. Como el orden es estable (createdAt, id),
+  // las filas existentes casi siempre caen en la misma posición.
   const firstPage = await pages.next();
   let firstRows: AnyRow[] = [];
   if (!firstPage.done) firstRows = firstPage.value;
 
-  // Se limpia la pestaña completa (el nombre de pestaña a secas es un rango
-  // válido y queda acotado a la grilla real). El viejo A1:Z100000 dejaba fuera
-  // de la limpieza cualquier columna más allá de la Z — con 29 columnas eso ya
-  // era AA-AC, y si el export se recorta quedarían datos fantasma.
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: row.spreadsheetId,
-    range: quoteTabTitle(row.sheetName),
-  });
-
+  // Fila 1 = encabezado, datos desde la fila 2. El primer lote ocupa las filas
+  // 1..(1 + firstRows.length), así que el siguiente empieza una DESPUÉS. Antes
+  // se calculaba sin contar el encabezado y el 2º lote pisaba la última fila
+  // del 1º: todo export de más de 2,000 filas perdía el lead #2,000.
   gridRows = await ensureGridRows(sheets, row.spreadsheetId, tab.sheetId, gridRows, 1 + firstRows.length);
   await writeSheetChunk(sheets, row.spreadsheetId, row.sheetName, 1, columns, firstRows, true);
-  let nextRow = 1 + firstRows.length;
+  let nextRow = 2 + firstRows.length;
 
   if (!firstPage.done) {
     for await (const page of pages) {
@@ -393,6 +425,8 @@ async function runExport(
       nextRow += page.length;
     }
   }
+
+  await clearSheetTail(sheets, row.spreadsheetId, row.sheetName, nextRow, gridRows, columns.length, tab.columnCount);
 
   await applySheetFormats(sheets, row.spreadsheetId, tab.sheetId, columns);
 

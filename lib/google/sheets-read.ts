@@ -7,6 +7,7 @@ export interface SheetTab {
   // Filas de la grilla (no filas con datos). Sheets rechaza un values.update
   // cuyo rango la exceda, así que el runner la amplía antes de escribir.
   rowCount: number;
+  columnCount: number;
 }
 
 // Notación A1: una comilla simple dentro de un nombre de pestaña entrecomillado
@@ -26,6 +27,7 @@ export async function listSheetTabs(sheets: sheets_v4.Sheets, spreadsheetId: str
       title: s.properties?.title ?? "",
       sheetId: s.properties?.sheetId ?? 0,
       rowCount: s.properties?.gridProperties?.rowCount ?? 0,
+      columnCount: s.properties?.gridProperties?.columnCount ?? 0,
     }))
     .filter((t) => t.title);
 }
