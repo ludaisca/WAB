@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Send, Trash2, Users } from "lucide-react";
+import { ArrowLeft, RotateCcw, Send, Trash2, Users } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardBody } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
 import { Button } from "@/app/components/ui/button";
@@ -46,6 +46,7 @@ interface CampaignDetail {
   readCount: number;
   failedCount: number;
   totalCostUsd: number;
+  retryableCount: number;
   scheduledAt: string | null;
   sentAt: string | null;
   completedAt: string | null;
@@ -77,6 +78,8 @@ export default function CampaignDetailPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [retryOpen, setRetryOpen] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   const fetchCampaign = useCallback(async (p = 1, opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -122,6 +125,22 @@ export default function CampaignDetailPage() {
     }
   }
 
+  async function handleRetry() {
+    setRetrying(true);
+    try {
+      const res = await fetch(`/api/whatsapp/campaigns/${id}/retry`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      success(data.message ?? "Reintento en cola");
+      setRetryOpen(false);
+      fetchCampaign(page);
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : "Error");
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   const recipientColumns: TableColumn<Recipient>[] = useMemo(() => [
     { key: "phoneNumber", header: "Número", render: (r) => <span className="font-mono text-xs">{r.phoneNumber}</span> },
     { key: "contactName", header: "Nombre", render: (r) => <span className="text-xs">{r.contactName || "—"}</span>, hideBelow: "sm" },
@@ -162,6 +181,11 @@ export default function CampaignDetailPage() {
           {(campaign.status === "DRAFT" || campaign.status === "SCHEDULED") && (
             <Button icon={Send} size="sm" onClick={handleSend} disabled={sending}>
               {sending ? <Spinner /> : "Enviar ahora"}
+            </Button>
+          )}
+          {(campaign.status === "COMPLETED" || campaign.status === "FAILED") && campaign.retryableCount > 0 && (
+            <Button variant="secondary" size="sm" icon={RotateCcw} onClick={() => setRetryOpen(true)}>
+              Reintentar fallidos ({campaign.retryableCount})
             </Button>
           )}
           {campaign.status === "DRAFT" && (
@@ -287,6 +311,17 @@ export default function CampaignDetailPage() {
           )}
         </CardBody>
       </Card>
+
+      <ConfirmDialog
+        open={retryOpen}
+        onClose={() => setRetryOpen(false)}
+        title="Reintentar fallidos"
+        description={`Se volverá a enviar la plantilla a ${campaign.retryableCount} destinatario(s) que fallaron, dentro de esta misma campaña. Quienes ya recibieron el mensaje no se tocan. No se reintentan los fallos que no tienen solución (bajas de marketing, contactos bloqueados, números que no reciben WhatsApp). Resuelve antes la causa del fallo o volverán a fallar.`}
+        confirmLabel="Reintentar"
+        tone="primary"
+        loading={retrying}
+        onConfirm={handleRetry}
+      />
 
       <ConfirmDialog
         open={deleteOpen}

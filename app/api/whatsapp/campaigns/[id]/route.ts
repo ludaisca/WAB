@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
-import { deleteCampaign } from "@/lib/whatsapp/campaigns";
+import { deleteCampaign, countRetryableRecipients } from "@/lib/whatsapp/campaigns";
 import { NotFoundError, ValidationError } from "@/lib/errors";
 
 async function handleGET(
@@ -56,7 +56,7 @@ async function handleGET(
     const limit = Math.min(Number(searchParams.get("limit")) || 50, 100);
     const skip = (page - 1) * limit;
 
-    const [recipients, totalRecipients] = await Promise.all([
+    const [recipients, totalRecipients, retryableCount] = await Promise.all([
       prisma.wACampaignRecipient.findMany({
         where: { campaignId: id },
         orderBy: { phoneNumber: "asc" },
@@ -64,10 +64,12 @@ async function handleGET(
         take: limit,
       }),
       prisma.wACampaignRecipient.count({ where: { campaignId: id } }),
+      countRetryableRecipients(id),
     ]);
 
     return NextResponse.json({
       ...campaign,
+      retryableCount,
       recipients,
       recipientsPagination: {
         page,
