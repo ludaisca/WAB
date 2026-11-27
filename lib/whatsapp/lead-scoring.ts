@@ -31,14 +31,15 @@ const JSON_CONTRACT = `Eres además un auditor de calidad de leads. Aplica SIEMP
 
 - Basa tu análisis SOLO en mensajes explícitos del lead (los marcados "Lead:" en la transcripción). No infieras ni completes datos que no estén dichos — si un dato no está explícito, usa null (o [] para listas).
 - Prioriza los mensajes más recientes del lead si hay contradicciones con mensajes anteriores.
-- Mensajes ofensivos, agresivos, o de rechazo explícito del lead → label "descartado" y score 0, sin excepción.
+- Mensajes ofensivos, agresivos, o de rechazo explícito y DEFINITIVO del lead ("no me interesa", "no me vuelvan a escribir") → label "descartado" y score 0, sin excepción.
+- Un aplazamiento NO es un rechazo definitivo: "no por el momento", "ahorita no", "más adelante", "el próximo año", "lo retomamos después", o tocar el botón "Más adelante" → label "frio" (score 1-15), nunca "descartado". Es un lead que se puede recontactar; si además dio datos concretos (equipo, especialidad, fecha estimada), usa la parte alta del rango.
 - Si el lead responde y delega la revisión a un tercero (ej. "lo reviso con el doctor/socio/área técnica"), es una señal de interés real, no de frialdad — normalmente clasifica como "interesado" u "oportunidad", no "frio".
 - Los mensajes "Agente (plantilla automática):" son envíos masivos de campaña o seguimiento, no conversación. Si la transcripción TERMINA con mensajes del agente (plantilla o seguimiento) que el lead todavía no contesta, eso NO es una señal negativa ni baja la fase: puede no haberlos visto aún. Califica con lo que el lead ya dijo; solo un mensaje del propio lead puede bajar la fase.
 - Los mensajes "Lead (nota de voz):" son la transcripción automática de un audio del lead: cuentan como palabras propias, igual que un texto.
 - Venta inversa: si el "lead" en realidad está ofreciendo o promocionando SU PROPIO producto/servicio (outreach de proveedor, publicidad, venta de leads/SEO/marketing, freelancers ofreciendo sus servicios, etc.) → label "descartado" y score 0, sin importar cuánto conteste, qué tan detallado sea su mensaje o cuánta "conversación" haya. No es un comprador real — el volumen de interacción no lo cambia.
 
 Clasifica en UNA de estas 5 fases, con un score dentro de su rango:
-- "descartado" (score 0 fijo): no relacionado con el negocio, contacto equivocado, spam, venta inversa (alguien ofreciéndonos su propio producto/servicio), o rechazo explícito. Si aplica, no evalúes nada más — deja "details" con sus valores en null/[].
+- "descartado" (score 0 fijo): no relacionado con el negocio, contacto equivocado, spam, venta inversa (alguien ofreciéndonos su propio producto/servicio), o rechazo explícito y definitivo (un aplazamiento es "frio", ver arriba). Si aplica, no evalúes nada más — deja "details" con sus valores en null/[].
 - "frio" (score 1-15): solo un mensaje automático, o preguntó algo genérico ("info", "precio") y no volvió a responder. Score más alto si mencionó algo concreto del negocio aunque no continuó.
 - "interesado" (score 16-35): hay conversación real — explica qué busca, da contexto — pero NO ha pedido cotización, llamada o visita todavía. Score más alto si está cerca de pedirla o hizo preguntas concretas.
 - "oportunidad" (score 36-65): necesidad clara + pidió cotización, llamada, visita o evaluación comercial. Score más alto con urgencia o detalles concretos.
@@ -106,8 +107,9 @@ function templateRepliesNote(quickReplies: string[]): string {
 Los mensajes del lead marcados ${PREDEFINED_TAG} son un toque en uno de esos botones (respuesta predefinida), NO palabras propias del lead. Reglas estrictas:
 - NO los cuentes como interés genuino, necesidad, intención de compra, urgencia ni como senales_compra, y no los cites en "reasons" como motivo para subir la calificación. El lead solo pulsó una opción que el propio mensaje le puso enfrente.
 - Evalúa la fase únicamente con lo que el lead escribió con sus propias palabras (mensajes sin esa marca).
+- Que la conversación haya EMPEZADO con un botón no resta nada: si después el lead escribió con sus propias palabras (su especialidad, el uso del equipo, preguntas por precio, planes de pago o crédito), califícalo exactamente igual que a un lead que escribió desde el inicio.
 - Si TODOS los mensajes del lead son de ese tipo (no escribió nada propio), la fase es "frio" (score 1-15) y nivel_interaccion "bajo"; di en el summary que solo respondió con el botón predefinido.
-- Excepción: si el botón es un rechazo explícito (ej. "No me interesa", "Dejar de recibir mensajes"), aplica la regla de "descartado".`;
+- Excepción: si el botón es un rechazo explícito (ej. "No me interesa", "Dejar de recibir mensajes"), aplica la regla de "descartado". Un botón de aplazamiento (ej. "Más adelante") es "frio", no "descartado".`;
 }
 
 export class LeadScoringError extends Error {}
