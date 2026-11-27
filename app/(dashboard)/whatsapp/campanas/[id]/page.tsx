@@ -19,6 +19,7 @@ import { Table, type TableColumn } from "@/app/components/ui/table";
 import { useToast } from "@/app/components/ui/toast";
 import { formatDateTime } from "@/lib/timezone";
 import { formatUsd } from "@/lib/format";
+import { CampaignProgress, type LiveCounts } from "@/app/components/whatsapp/campaign-progress";
 
 const STATUS_BADGE: Record<string, { label: string; tone: "success" | "warning" | "info" | "danger" | "neutral" }> = {
   DRAFT: { label: "Borrador", tone: "neutral" },
@@ -47,6 +48,8 @@ interface CampaignDetail {
   failedCount: number;
   totalCostUsd: number;
   retryableCount: number;
+  liveCounts: LiveCounts;
+  sendState: "waiting" | "active" | null;
   scheduledAt: string | null;
   sentAt: string | null;
   completedAt: string | null;
@@ -163,9 +166,14 @@ export default function CampaignDetailPage() {
   if (loading) return <div className="space-y-6 max-w-3xl mx-auto"><SkeletonDetail cards={2} /></div>;
   if (!campaign) return <Banner tone="danger" title="Campaña no encontrada">La campaña solicitada no existe.</Banner>;
 
+  // Cifras en vivo desde el estado de cada destinatario: los contadores de la
+  // campaña solo se recalculan al terminar el envío.
+  const live = campaign.liveCounts ?? {};
+  const readN = live.READ ?? 0;
+  const deliveredN = (live.DELIVERED ?? 0) + readN;
+  const sentN = (live.SENT ?? 0) + deliveredN;
+  const failedN = live.FAILED ?? 0;
   const statusBadge = STATUS_BADGE[campaign.status] ?? { label: campaign.status, tone: "neutral" as const };
-  const progress = campaign.recipientCount > 0
-    ? Math.round(((campaign.sentCount) / campaign.recipientCount) * 100) : 0;
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
@@ -174,7 +182,15 @@ export default function CampaignDetailPage() {
       </Link>
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{campaign.name}</h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-2xl font-bold tracking-tight">{campaign.name}</h1>
+            <Badge tone={statusBadge.tone}>
+              {campaign.status === "SENDING" && (
+                <span className="inline-block size-1.5 rounded-full bg-current animate-pulse mr-1.5" />
+              )}
+              {statusBadge.label}
+            </Badge>
+          </div>
           <p className="text-sm text-muted-darker mt-1">{campaign.waAccount.name} · {campaign.waTemplate.name}</p>
         </div>
         <div className="flex gap-2">
@@ -202,10 +218,10 @@ export default function CampaignDetailPage() {
             size="compact"
             items={[
               { label: "Destinatarios", value: String(campaign.recipientCount), numeric: campaign.recipientCount },
-              { label: "Enviados", value: String(campaign.sentCount), numeric: campaign.sentCount },
-              { label: "Entregados", value: String(campaign.deliveredCount), numeric: campaign.deliveredCount },
-              { label: "Leídos", value: String(campaign.readCount), numeric: campaign.readCount },
-              { label: "Fallidos", value: String(campaign.failedCount), numeric: campaign.failedCount },
+              { label: "Enviados", value: String(sentN), numeric: sentN },
+              { label: "Entregados", value: String(deliveredN), numeric: deliveredN },
+              { label: "Leídos", value: String(readN), numeric: readN },
+              { label: "Fallidos", value: String(failedN), numeric: failedN },
               { label: "Gasto", value: formatUsd(campaign.totalCostUsd), numeric: campaign.totalCostUsd, numericPrefix: "$", numericDecimals: 2 },
             ]}
           />
@@ -214,7 +230,7 @@ export default function CampaignDetailPage() {
 
       {/* Embudo: las 4 cifras de arriba no muestran la relación entre ellas —
           aquí se ve la caída enviados → entregados → leídos de un vistazo. */}
-      {campaign.status !== "DRAFT" && campaign.sentCount > 0 && (
+      {campaign.status !== "DRAFT" && sentN > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Embudo de entrega</CardTitle>
@@ -222,9 +238,9 @@ export default function CampaignDetailPage() {
           <CardBody>
             <FunnelBars
               steps={[
-                { name: "Enviados", value: campaign.sentCount },
-                { name: "Entregados", value: campaign.deliveredCount },
-                { name: "Leídos", value: campaign.readCount },
+                { name: "Enviados", value: sentN },
+                { name: "Entregados", value: deliveredN },
+                { name: "Leídos", value: readN },
               ]}
             />
           </CardBody>
@@ -234,27 +250,12 @@ export default function CampaignDetailPage() {
       {campaign.status !== "DRAFT" && (
         <Card>
           <CardBody>
-            <div className="flex items-center gap-3">
-              <div className="flex-1 bg-surface rounded-full h-2 overflow-hidden relative">
-                <div
-                  className="h-full bg-accent rounded-full transition-all duration-700 ease-out"
-                  style={{ width: `${progress}%` }}
-                />
-                {campaign.status === "SENDING" && (
-                  <div
-                    className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-transparent via-white/50 to-transparent bg-[length:200%_100%] animate-[shimmer_1.5s_linear_infinite] transition-all duration-700 ease-out"
-                    style={{ width: `${progress}%` }}
-                  />
-                )}
-              </div>
-              <span className="text-sm font-medium tabular-nums">{progress}%</span>
-              <Badge tone={statusBadge.tone}>
-                {campaign.status === "SENDING" && (
-                  <span className="inline-block size-1.5 rounded-full bg-current animate-pulse mr-1.5" />
-                )}
-                {statusBadge.label}
-              </Badge>
-            </div>
+            <CampaignProgress
+              status={campaign.status}
+              sendState={campaign.sendState}
+              counts={live}
+              total={campaign.recipientCount}
+            />
           </CardBody>
         </Card>
       )}

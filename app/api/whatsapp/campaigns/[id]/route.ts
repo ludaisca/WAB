@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getUserAccountIds } from "@/lib/shared-accounts";
-import { deleteCampaign, countRetryableRecipients } from "@/lib/whatsapp/campaigns";
+import { deleteCampaign, countRetryableRecipients, getCampaignSendState } from "@/lib/whatsapp/campaigns";
 import { NotFoundError, ValidationError } from "@/lib/errors";
 
 async function handleGET(
@@ -56,7 +56,7 @@ async function handleGET(
     const limit = Math.min(Number(searchParams.get("limit")) || 50, 100);
     const skip = (page - 1) * limit;
 
-    const [recipients, totalRecipients, retryableCount] = await Promise.all([
+    const [recipients, totalRecipients, retryableCount, statusGroups, sendState] = await Promise.all([
       prisma.wACampaignRecipient.findMany({
         where: { campaignId: id },
         orderBy: { phoneNumber: "asc" },
@@ -65,11 +65,19 @@ async function handleGET(
       }),
       prisma.wACampaignRecipient.count({ where: { campaignId: id } }),
       countRetryableRecipients(id),
+      // Conteo en vivo por estado: los contadores de WACampaign (sentCount,
+      // failedCount) solo se recalculan al terminar el envío, así que no
+      // sirven para mostrar avance mientras la campaña está en curso.
+      prisma.wACampaignRecipient.groupBy({ by: ["status"], where: { campaignId: id }, _count: { _all: true } }),
+      campaign.status === "SENDING" ? getCampaignSendState(id) : Promise.resolve(null),
     ]);
+    const liveCounts = Object.fromEntries(statusGroups.map((g) => [g.status, g._count._all]));
 
     return NextResponse.json({
       ...campaign,
       retryableCount,
+      liveCounts,
+      sendState,
       recipients,
       recipientsPagination: {
         page,

@@ -78,6 +78,22 @@ async function retryableRecipientIds(campaignId: string): Promise<string[]> {
   return failed.filter((r) => isRetryableFailure(r.errorMessage)).map((r) => r.id);
 }
 
+// Estado del job de envío en la cola: "waiting" = formada detrás de otra
+// campaña (la cola envía de una en una), "active" = enviándose ahora. null si
+// no hay job vivo. Solo para mostrar avance en la UI; nunca falla la página.
+export async function getCampaignSendState(campaignId: string): Promise<"waiting" | "active" | null> {
+  try {
+    const job = await campaignQueue.getJob(`campaign-send-${campaignId}`);
+    if (!job) return null;
+    const state = await job.getState();
+    if (state === "active") return "active";
+    if (state === "waiting" || state === "delayed" || state === "prioritized" || state === "waiting-children") return "waiting";
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function countRetryableRecipients(campaignId: string): Promise<number> {
   return (await retryableRecipientIds(campaignId)).length;
 }
