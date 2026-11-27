@@ -128,7 +128,10 @@ export function startWorkers() {
       return;
     }
     await processLeadScoringTick();
-  }, { connection, concurrency: 1 });
+  // Una corrida de 40 chats (~20 s cada uno con Gemini) o una recalificación
+  // masiva duran varios minutos: lock largo, mismo criterio que los demás
+  // jobs largos.
+  }, { connection, concurrency: 1, ...LONG_JOB_OPTIONS });
 
   const leadRecoveryWorker = createGuardedWorker("lead-recovery", async () => {
     await processLeadRecoveryTick();

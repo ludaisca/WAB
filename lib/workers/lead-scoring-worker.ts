@@ -8,8 +8,14 @@ import type { WALeadScorerBot } from "@prisma/client";
 // only chats still "active" (OPEN/PENDING) and only ones that have new
 // messages since this scorer last scored them — otherwise every enabled
 // scorer would re-score its entire chat history every tick.
-const BATCH_SIZE_PER_SCORER = 15;
-const CANDIDATE_POOL = 200;
+//
+// Capacidad: con 15 por corrida y el calificador cada 30 min el tope era ~30
+// chats/hora, y una campaña genera 40-90 respuestas en una hora (visto en
+// nov-2026): los leads se quedaban horas sin calificar. 40 por corrida y la
+// fila atendida del más antiguo al más nuevo (ver dueChats) evitan que un lead
+// quede rezagado detrás de respuestas más recientes.
+const BATCH_SIZE_PER_SCORER = 40;
+const CANDIDATE_POOL = 500;
 
 export async function processLeadScoringTick() {
   const now = new Date();
@@ -86,6 +92,11 @@ async function runScheduledScorer(scorer: WALeadScorerBot, now: Date) {
       const lastInbound = c._max.timestamp;
       return !lastScore || (lastInbound !== null && lastScore < lastInbound);
     })
+    // Del que lleva más tiempo esperando al más reciente (FIFO). El pool viene
+    // ordenado del más nuevo al más viejo; tomar los primeros N del pool
+    // dejaba atrás indefinidamente a quien escribió antes mientras siguieran
+    // llegando respuestas nuevas.
+    .sort((a, b) => (a._max.timestamp?.getTime() ?? 0) - (b._max.timestamp?.getTime() ?? 0))
     .map((c) => ({ id: c.chatId }))
     .slice(0, BATCH_SIZE_PER_SCORER);
 
